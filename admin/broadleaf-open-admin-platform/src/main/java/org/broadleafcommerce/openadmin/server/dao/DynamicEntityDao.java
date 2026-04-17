@@ -28,7 +28,6 @@ import org.broadleafcommerce.openadmin.dto.PersistencePerspective;
 import org.broadleafcommerce.openadmin.dto.TabMetadata;
 import org.broadleafcommerce.openadmin.server.dao.provider.metadata.FieldMetadataProvider;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldManager;
-import org.hibernate.Criteria;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.type.Type;
 
@@ -119,7 +118,12 @@ public interface DynamicEntityDao {
 
     List<String> getPropertyNames(Class<?> entityClass);
 
-    Criteria createCriteria(Class<?> entityClass);
+    /**
+     * @deprecated Legacy Hibernate Criteria API was removed in Hibernate 6.
+     *             Use JPA CriteriaQuery via EntityManager.getCriteriaBuilder() instead.
+     */
+    @Deprecated
+    jakarta.persistence.criteria.CriteriaQuery createCriteria(Class<?> entityClass);
 
     Field[] getAllFields(Class<?> targetClass);
 

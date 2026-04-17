@@ -28,7 +28,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.lang.instrument.IllegalClassFormatException;
+import jakarta.persistence.spi.TransformerException;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -97,7 +97,7 @@ public class SingleTableInheritanceClassTransformer extends AbstractClassTransfo
             Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain,
             byte[] classfileBuffer
-    ) throws IllegalClassFormatException {
+    ) throws TransformerException {
         // Lambdas and anonymous methods in Java 8 do not have a class name defined and so no transformation should be done
         if (className == null) {
             return null;
@@ -174,7 +174,7 @@ public class SingleTableInheritanceClassTransformer extends AbstractClassTransfo
                 return bos.toByteArray();
             } catch (Exception ex) {
                 ex.printStackTrace();
-                throw new IllegalClassFormatException("Unable to convert " + convertedClassName
+                throw new TransformerException("Unable to convert " + convertedClassName
                         + " to a SingleTable inheritance strategy: " + ex.getMessage());
             }
         } else {

@@ -173,15 +173,15 @@ public class DefaultFieldMetadataProvider extends BasicFieldMetadataProvider {
             Column column = null;
             for (Property property : addMetadataFromMappingDataRequest.getComponentProperties()) {
                 if (property.getName().equals(addMetadataFromMappingDataRequest.getPropertyName())) {
-                    Object columnObject = property.getColumnIterator().next();
-                    if (columnObject instanceof Column) {
-                        column = (Column) columnObject;
+                    java.util.List<org.hibernate.mapping.Column> columns = property.getColumns();
+                    if (!columns.isEmpty() && columns.get(0) instanceof Column) {
+                        column = columns.get(0);
                     }
                     break;
                 }
             }
             if (column != null) {
-                fieldMetadata.setLength(column.getLength());
+                fieldMetadata.setLength(column.getLength() != null ? column.getLength().intValue() : null);
                 fieldMetadata.setScale(column.getScale());
                 fieldMetadata.setPrecision(column.getPrecision());
                 fieldMetadata.setRequired(!column.isNullable());

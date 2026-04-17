@@ -88,9 +88,8 @@ public class HibernateMappingProvider implements SessionFactoryBuilderFactory {
         if (metadata == null) {
             return propertyNames;
         }
-        Iterator propertyIterator = metadata.getPropertyClosureIterator();
-        while (propertyIterator.hasNext()) {
-            org.hibernate.mapping.Property prop = (org.hibernate.mapping.Property) propertyIterator.next();
+        List<Property> properties = metadata.getPropertyClosure();
+        for (Property prop : properties) {
             propertyNames.add(prop.getName());
         }
         return propertyNames;
@@ -110,9 +109,8 @@ public class HibernateMappingProvider implements SessionFactoryBuilderFactory {
         if (metadata == null) {
             return propertyTypes;
         }
-        Iterator propertyIterator = metadata.getPropertyClosureIterator();
-        while (propertyIterator.hasNext()) {
-            org.hibernate.mapping.Property prop = (org.hibernate.mapping.Property) propertyIterator.next();
+        List<Property> properties = metadata.getPropertyClosure();
+        for (Property prop : properties) {
             propertyTypes.add(prop.getType());
         }
         return propertyTypes;

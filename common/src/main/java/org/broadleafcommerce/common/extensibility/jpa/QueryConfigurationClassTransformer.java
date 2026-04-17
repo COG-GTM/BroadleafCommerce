@@ -23,7 +23,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.lang.instrument.IllegalClassFormatException;
+import jakarta.persistence.spi.TransformerException;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -89,7 +89,7 @@ public class QueryConfigurationClassTransformer implements BroadleafClassTransfo
             Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain,
             byte[] classfileBuffer
-    ) throws IllegalClassFormatException {
+    ) throws TransformerException {
         if (className == null || isExecuted) {
             return null;
         }
@@ -121,7 +121,7 @@ public class QueryConfigurationClassTransformer implements BroadleafClassTransfo
                 return bos.toByteArray();
             } catch (Exception e) {
                 e.printStackTrace();
-                throw new IllegalClassFormatException("Unable to convert " + convertedClassName
+                throw new TransformerException("Unable to convert " + convertedClassName
                         + " to a SingleTable inheritance strategy: " + e.getMessage());
             }
         } else {

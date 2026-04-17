@@ -20,7 +20,8 @@ package org.broadleafcommerce.common.util.sql.importsql;
 import org.broadleafcommerce.common.logging.SupportLogManager;
 import org.broadleafcommerce.common.logging.SupportLogger;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.tool.hbm2ddl.SingleLineSqlCommandExtractor;
+import org.hibernate.tool.schema.internal.script.SingleLineSqlScriptExtractor;
+import org.hibernate.tool.schema.spi.SqlScriptCommandExtractor;
 
 import java.io.Reader;
 import java.util.ArrayList;
@@ -32,11 +33,12 @@ import java.util.List;
  *
  * @author Phillip Verheyden (phillipuniverse)
  */
-public class DemoHsqlSingleLineSqlCommandExtractor extends SingleLineSqlCommandExtractor {
+public class DemoHsqlSingleLineSqlCommandExtractor implements SqlScriptCommandExtractor {
 
     @Override
-    public String[] extractCommands(Reader reader) {
-        String[] commands = super.extractCommands(reader);
+    public List<String> extractCommands(Reader reader, Dialect dialect) {
+        List<String> commandList = SingleLineSqlScriptExtractor.INSTANCE.extractCommands(reader, dialect);
+        String[] commands = commandList.toArray(new String[0]);
         String[] newCommands = new String[commands.length];
         int i = 0;
         for (String command : commands) {
@@ -57,7 +59,7 @@ public class DemoHsqlSingleLineSqlCommandExtractor extends SingleLineSqlCommandE
             newCommands[i] = newCommand;
             i++;
         }
-        return newCommands;
+        return List.of(newCommands);
     }
 
 }

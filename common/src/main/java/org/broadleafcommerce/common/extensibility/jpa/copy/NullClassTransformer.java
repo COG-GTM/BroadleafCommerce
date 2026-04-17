@@ -19,7 +19,7 @@ package org.broadleafcommerce.common.extensibility.jpa.copy;
 
 import org.broadleafcommerce.common.extensibility.jpa.convert.BroadleafClassTransformer;
 
-import java.lang.instrument.IllegalClassFormatException;
+import jakarta.persistence.spi.TransformerException;
 import java.security.ProtectionDomain;
 import java.util.Properties;
 
@@ -45,7 +45,7 @@ public class NullClassTransformer implements BroadleafClassTransformer {
             Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain,
             byte[] classfileBuffer
-    ) throws IllegalClassFormatException {
+    ) throws TransformerException {
         return null;
     }
 

@@ -17,10 +17,11 @@
  */
 package org.broadleafcommerce.common.dialect;
 
-import org.hibernate.dialect.PostgreSQL95Dialect;
-import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
-
-import java.sql.Types;
+import org.hibernate.boot.model.TypeContributions;
+import org.hibernate.dialect.PostgreSQLDialect;
+import org.hibernate.service.ServiceRegistry;
+import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
+import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 
 /**
  * This custom dialect will treat all Clob types as if they contain a string instead of an OID.
@@ -28,20 +29,17 @@ import java.sql.Types;
  * https://github.com/hibernate/hibernate-orm/wiki/Migration-Guide---5.2#changes-to-how-clob-values-are-processed-using-postgresql81dialect-and-its-subclasses
  *
  */
-public class BroadleafPostgreSQLDialect extends PostgreSQL95Dialect {
+public class BroadleafPostgreSQLDialect extends PostgreSQLDialect {
 
     public BroadleafPostgreSQLDialect() {
         super();
-        registerColumnType(Types.CLOB, "text");
     }
 
     @Override
-    public SqlTypeDescriptor getSqlTypeDescriptorOverride(int sqlCode) {
-        if (sqlCode == Types.CLOB) {
-            return new PostgreSQLClobTypeDescriptor();
-        }
-
-        return super.getSqlTypeDescriptorOverride(sqlCode);
+    public void contributeTypes(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
+        super.contributeTypes(typeContributions, serviceRegistry);
+        JdbcTypeRegistry jdbcTypeRegistry = typeContributions.getTypeConfiguration().getJdbcTypeRegistry();
+        jdbcTypeRegistry.addDescriptor(java.sql.Types.CLOB, ClobJdbcType.STRING_BINDING);
     }
 
 }
