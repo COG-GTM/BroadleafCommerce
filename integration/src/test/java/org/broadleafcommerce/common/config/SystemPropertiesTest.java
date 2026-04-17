@@ -29,8 +29,8 @@ import org.springframework.core.env.Environment;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.ContextHierarchy;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.Assert;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -72,14 +72,14 @@ public class SystemPropertiesTest extends TestNGSiteIntegrationSetup {
         
         String resolvedProperty = env.getProperty(prop.getName(), String.class);
         
-        Assert.assertEquals(resolvedProperty, prop.getValue());
+        Assertions.assertEquals(resolvedProperty, prop.getValue());
     }
     
     @Test
     @Transactional
     public void testOverridesPropertyFiles() {
         String propertyFileResolved = env.getProperty("property.file.override.test", String.class);
-        Assert.assertEquals(propertyFileResolved, "propertyfile");
+        Assertions.assertEquals(propertyFileResolved, "propertyfile");
         
         clearSystemPropertiesCache();
         
@@ -88,13 +88,13 @@ public class SystemPropertiesTest extends TestNGSiteIntegrationSetup {
         prop.setValue("testngtest");
         prop = propsDao.saveSystemProperty(prop);
         String resolvedProperty = env.getProperty(prop.getName(), String.class);
-        Assert.assertEquals(resolvedProperty, prop.getValue());
+        Assertions.assertEquals(resolvedProperty, prop.getValue());
         
         propsDao.deleteSystemProperty(prop);
         clearSystemPropertiesCache();
         
         String fromPropertiesFile = propsSvc.resolveSystemProperty("property.file.override.test");
-        Assert.assertEquals(fromPropertiesFile, "propertyfile");
+        Assertions.assertEquals(fromPropertiesFile, "propertyfile");
     }
     
     /**

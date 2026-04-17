@@ -38,7 +38,7 @@ import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.mvel2.MVEL;
 import org.mvel2.ParserContext;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -74,7 +74,7 @@ public class MVELTest extends TestNGSiteIntegrationSetup {
                 try {
                     is.close();
                 } catch (Exception e){
-                    logger.error("An error has occurred ",e);
+                    LOG.error("An error has occurred ",e);
                 }
             }
         }
@@ -154,7 +154,6 @@ public class MVELTest extends TestNGSiteIntegrationSetup {
         product = catalogService.saveProduct(product);
         return product;
     }
-
 
     @Test
     public void testBasicMVELFunctions() {

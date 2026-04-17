@@ -19,11 +19,8 @@ package org.broadleafcommerce.profile.dataprovider;
 
 import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.AddressImpl;
-import org.testng.annotations.DataProvider;
 
 public class AddressDataProvider {
-
-    @DataProvider(name = "setupAddress")
     public static Object[][] createAddress() {
         Address address1 = new AddressImpl();
         address1.setAddressLine1("1234 Merit Drive");

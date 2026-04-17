@@ -19,9 +19,9 @@ package org.broadleafcommerce.common.email.service;
 
 import org.broadleafcommerce.common.email.service.info.EmailInfo;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetup;
@@ -35,7 +35,7 @@ public class EmailTest extends TestNGSiteIntegrationSetup {
     
     private GreenMail greenMail;
 
-    @BeforeClass
+    @BeforeAll
     protected void setupEmailTest() {
         greenMail = new GreenMail(
                 new ServerSetup[] {
@@ -45,7 +45,7 @@ public class EmailTest extends TestNGSiteIntegrationSetup {
         greenMail.start();
     }
 
-    @AfterClass
+    @AfterAll
     protected void tearDownEmailTest() {
         greenMail.stop();
     }

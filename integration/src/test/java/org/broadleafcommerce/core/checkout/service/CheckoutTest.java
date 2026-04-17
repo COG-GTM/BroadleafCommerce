@@ -63,7 +63,9 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.Currency;
@@ -98,7 +100,8 @@ public class CheckoutTest extends TestNGSiteIntegrationSetup {
     @Resource(name = "blCurrencyService")
     protected BroadleafCurrencyService currencyService;
 
-    @Test(groups = { "checkout" }, dependsOnGroups = { "createCartForCustomer" }, dataProvider = "USCurrency", dataProviderClass = BroadleafCurrencyProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.common.currency.BroadleafCurrencyProvider#provideUSCurrency")
     @Transactional
     public void testCheckout(BroadleafCurrency usCurrency) throws Exception {
         HashMap currencyConsiderationContext = new HashMap();
@@ -128,8 +131,6 @@ public class CheckoutTest extends TestNGSiteIntegrationSetup {
         
         assert (order.getTotal().greaterThan(order.getSubTotal()));
     }
-
-
 
     private OrderPayment addPaymentToOrder(Order order, Address address) {
         OrderPayment payment = new OrderPaymentImpl();

@@ -27,7 +27,7 @@ import org.broadleafcommerce.core.order.service.type.OrderStatus;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -83,7 +83,7 @@ public class CartTest extends OrderBaseTest {
         return true;
     }
 
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testMoveAllItemsToCartFromNamedOrder() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -95,7 +95,7 @@ public class CartTest extends OrderBaseTest {
         assert namedOrder.getOrderItems().size() == 0;
     }
     
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testAddAllItemsToCartFromNamedOrder() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -108,7 +108,7 @@ public class CartTest extends OrderBaseTest {
         assert cartContainsOnlyTheseItems(cart, namedOrderItems);
     }
 
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testAddAllItemsToCartFromNamedOrderWithoutExistingCart() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -120,7 +120,7 @@ public class CartTest extends OrderBaseTest {
         assert cartContainsOnlyTheseItems(cart, namedOrderItems);
     }
 
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testAddItemToCartFromNamedOrder() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -135,7 +135,7 @@ public class CartTest extends OrderBaseTest {
         assert cartContainsOnlyTheseItems(cart, movedOrderItems);
     }
 
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testMoveItemToCartFromNamedOrder() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -152,7 +152,7 @@ public class CartTest extends OrderBaseTest {
         assert cartContainsOnlyTheseItems(cart, movedOrderItems);
     }
 
-    @Test(groups = { "testCartAndNamedOrder" })
+    @Test
     @Transactional
     public void testMoveItemToCartFromNamedOrderWithoutExistingCart() throws RemoveFromCartException, AddToCartException {
         Order namedOrder = setUpNamedOrder();
@@ -170,7 +170,7 @@ public class CartTest extends OrderBaseTest {
     }
     
     @Transactional
-    @Test(groups = { "testMergeCart" }) 
+    @Test
     public void testMergeWithNoAnonymousCart() throws PricingException, RemoveFromCartException, AddToCartException {
         Order anonymousCart = null;
         Order customerCart = setUpCartWithActiveSku();
@@ -184,7 +184,7 @@ public class CartTest extends OrderBaseTest {
     }
     
     @Transactional
-    @Test(groups = { "testMergeCart" }) 
+    @Test
     public void testMergeWithNoCustomerCart() throws PricingException, RemoveFromCartException, AddToCartException {
         Order anonymousCart = setUpCartWithActiveSku();
         Order customerCart = null;
@@ -198,7 +198,7 @@ public class CartTest extends OrderBaseTest {
     }
     
     @Transactional
-    @Test(groups = { "testMergeCart" }) 
+    @Test
     public void testMergeWithBothCarts() throws PricingException, RemoveFromCartException, AddToCartException {
         Order anonymousCart = setUpCartWithActiveSku();
         Order customerCart = setUpCartWithActiveSku();
@@ -213,7 +213,7 @@ public class CartTest extends OrderBaseTest {
     }
     
     @Transactional
-    @Test(groups = { "testMergeCart" }) 
+    @Test
     public void testMergeWithInactiveAnonymousCart() throws PricingException, RemoveFromCartException, AddToCartException {
         Order anonymousCart = null;
         Order customerCart = setUpCartWithInactiveSku();

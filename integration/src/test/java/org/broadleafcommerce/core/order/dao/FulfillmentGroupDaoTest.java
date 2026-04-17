@@ -27,7 +27,9 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
@@ -49,7 +51,8 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     @Resource
     private OrderDao orderDao;
 
-    @Test(groups = "createDefaultFulfillmentGroup", dataProvider = "basicFulfillmentGroup", dataProviderClass = FulfillmentGroupDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Transactional
     @Rollback(false)
     public void createDefaultFulfillmentGroup(FulfillmentGroup fulfillmentGroup) {
@@ -72,7 +75,7 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         defaultFulfillmentGroupId = fulfillmentGroup.getId();
     }
 
-    @Test(groups = { "readDefaultFulfillmentGroupForOrder" }, dependsOnGroups = { "createDefaultFulfillmentGroup" })
+    @Test
     @Transactional
     public void readDefaultFulfillmentGroupForOrder() {
         Order order = orderDao.readOrderById(defaultFulfillmentGroupOrderId);
@@ -83,7 +86,7 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         assert fg.getId().equals(defaultFulfillmentGroupId);
     }
 
-    @Test(groups = { "readDefaultFulfillmentGroupForId" }, dependsOnGroups = { "createDefaultFulfillmentGroup" })
+    @Test
     @Transactional
     public void readDefaultFulfillmentGroupForId() {
         FulfillmentGroup fg = fulfillmentGroupDao.readFulfillmentGroupById(defaultFulfillmentGroupId);
@@ -92,7 +95,8 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         assert fg.getId().equals(defaultFulfillmentGroupId);
     }
 
-    @Test(groups = "createFulfillmentGroup", dataProvider = "basicFulfillmentGroup", dataProviderClass = FulfillmentGroupDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Transactional
     @Rollback(false)
     public void createFulfillmentGroup(FulfillmentGroup fulfillmentGroup) {
@@ -114,7 +118,7 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         fulfillmentGroupId = fulfillmentGroup.getId();
     }
 
-    @Test(groups = { "readFulfillmentGroupsForId" }, dependsOnGroups = { "createFulfillmentGroup" })
+    @Test
     @Transactional
     public void readFulfillmentGroupsForId() {
         FulfillmentGroup fg = fulfillmentGroupDao.readFulfillmentGroupById(fulfillmentGroupId);

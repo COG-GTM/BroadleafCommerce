@@ -25,15 +25,19 @@ import org.broadleafcommerce.test.config.BroadleafSiteIntegrationTest;
 import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.jdbc.SqlScriptsTestExecutionListener;
 import org.springframework.test.context.support.DependencyInjectionTestExecutionListener;
-import org.springframework.test.context.testng.AbstractTestNGSpringContextTests;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
 import org.springframework.test.context.web.ServletTestExecutionListener;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.BeforeMethod;
 
 /**
- * Base TestNG support class used for Broadleaf Site tests. This is slightly different than the normal {@link AbstractTestNGSpringContextTests}
+ * Base TestNG support class used for Broadleaf Site tests. This is slightly different than a basic Spring test setup
  * in that this also includes the other default {@link TestExecutionListeners} in order to use {@literal @}Transactional in test methods,
  * while not marking the entire test as {@literal @}Transactional (like in {@link TestNGTransactionalSiteIntegrationSetup}.
  * 
@@ -46,9 +50,14 @@ import org.testng.annotations.BeforeMethod;
 //because of defined listeners explicitly it doesn't have it, and so test classes are missing injected beans
 // and also spring context is not started early enough, so some other code triggers loading of entities before we register our transformers
 @TestExecutionListeners({TransactionalTestExecutionListener.class, SqlScriptsTestExecutionListener.class, DependencyInjectionTestExecutionListener.class, ServletTestExecutionListener.class})
-public abstract class TestNGSiteIntegrationSetup extends AbstractTestNGSpringContextTests {
+@ExtendWith(SpringExtension.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+public abstract class TestNGSiteIntegrationSetup {
 
     protected final Log LOG = LogFactory.getLog(getClass());
+
+    @Autowired
+    protected ApplicationContext applicationContext;
 
     /**
      * This was added as a result of update to 7.0 with new spring, hdsqldb, testng, surefire and maybe something else
@@ -83,18 +92,18 @@ public abstract class TestNGSiteIntegrationSetup extends AbstractTestNGSpringCon
      * from class B, and then continue to run some other method from class A, so context is bouncing between runs and
      * this can cause that some queries(that are run through PostLoaderDao) return unexpected results - like something not found etc.
      */
-    @BeforeMethod(alwaysRun = true)
+    @BeforeEach
     public void reSetApplicationContext() {
         DefaultPostLoaderDao.resetApplicationContext(this.applicationContext);
         ApplicationContextHolder.resetApplicationContext(applicationContext);
     }
 
-    @BeforeClass(alwaysRun = true, dependsOnMethods = "springTestContextPrepareTestInstance")
+    @BeforeAll
     public void logStart(){
         LOG.info("Staring Test Class:"+getClass());
     }
 
-    @AfterClass(alwaysRun = true)
+    @AfterAll
     public void logWhenDone(){
         LOG.info("Ending Test Class:"+getClass());
     }

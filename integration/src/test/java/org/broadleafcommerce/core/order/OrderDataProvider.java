@@ -20,13 +20,10 @@ package org.broadleafcommerce.core.order;
 import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.core.order.domain.OrderImpl;
 import org.broadleafcommerce.core.order.service.type.OrderStatus;
-import org.testng.annotations.DataProvider;
 
 import java.math.BigDecimal;
 
 public class OrderDataProvider {
-
-    @DataProvider(name = "basicOrder")
     public static Object[][] provideBasicSalesOrder() {
         OrderImpl so = new OrderImpl();
         so.setStatus(OrderStatus.IN_PROCESS);

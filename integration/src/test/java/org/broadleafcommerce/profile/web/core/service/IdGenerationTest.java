@@ -23,7 +23,7 @@ import org.broadleafcommerce.common.id.service.IdGenerationService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,7 +44,7 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
 
     List<String> userNames = new ArrayList<>();
 
-    @Test(groups = "createId")
+    @Test
     @Rollback(false)
     @Transactional
     public void createId() {
@@ -55,7 +55,7 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         em.persist(idGeneration);
     }
 
-    @Test(groups = "findIds", dependsOnGroups = "createId")
+    @Test
     @Rollback(true)
     public void findIds() {
         for (int i = 1; i < 101; i++) {
@@ -64,7 +64,7 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(groups = "createIdForBeginEndSequence")
+    @Test
     @Rollback(false)
     @Transactional
     public void createIdForBeginEndSequence() {
@@ -77,7 +77,7 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         em.persist(idGeneration);
     }
 
-    @Test(groups = "findIdsForBeginEndSequence", dependsOnGroups = "createIdForBeginEndSequence")
+    @Test
     @Rollback(true)
     public void findIdsForBeginEndSequence() {
         for (int i = 1; i < 101; i++) {

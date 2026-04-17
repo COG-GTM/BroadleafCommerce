@@ -27,7 +27,9 @@ import org.broadleafcommerce.profile.dataprovider.CustomerPhoneDataProvider;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,7 +48,8 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CustomerService customerService;
 
-    @Test(groups = "createCustomerPhone", dataProvider = "setupCustomerPhone", dataProviderClass = CustomerPhoneDataProvider.class, dependsOnGroups = "readCustomer")
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerPhoneDataProvider#createCustomerPhone")
     @Transactional
     @Rollback(false)
     public void createCustomerPhone(CustomerPhone customerPhone) {
@@ -62,7 +65,7 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
         userId = customerPhone.getCustomer().getId();
     }
 
-    @Test(groups = "readCustomerPhone", dependsOnGroups = "createCustomerPhone")
+    @Test
     @Transactional
     public void readCustomerPhoneByUserId() {
         List<CustomerPhone> customerPhoneList = customerPhoneService.readActiveCustomerPhonesByCustomerId(userId);
@@ -71,7 +74,7 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
         }
     }
     
-    @Test(groups = "readCustomerPhone", dependsOnGroups = "createCustomerPhone")
+    @Test
     @Transactional
     public void readDeafultCustomerPhoneByUserId() {
         CustomerPhone customerPhone = customerPhoneService.findDefaultCustomerPhone(userId);

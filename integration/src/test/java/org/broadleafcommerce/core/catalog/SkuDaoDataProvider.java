@@ -19,11 +19,8 @@ package org.broadleafcommerce.core.catalog;
 
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.domain.SkuImpl;
-import org.testng.annotations.DataProvider;
 
 public class SkuDaoDataProvider {
-
-    @DataProvider(name = "basicSku")
     public static Object[][] provideBasicSku() {
         Sku si = new SkuImpl();
         return new Object[][] { { si } };

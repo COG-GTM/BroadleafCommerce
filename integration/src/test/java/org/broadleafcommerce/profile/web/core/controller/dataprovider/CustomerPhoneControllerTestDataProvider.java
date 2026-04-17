@@ -20,11 +20,8 @@ package org.broadleafcommerce.profile.web.core.controller.dataprovider;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.domain.PhoneImpl;
 import org.broadleafcommerce.profile.web.core.model.PhoneNameForm;
-import org.testng.annotations.DataProvider;
 
 public class CustomerPhoneControllerTestDataProvider {
-
-    @DataProvider(name = "setupCustomerPhoneControllerData")
     public static Object[][] createCustomerPhone() {
         PhoneNameForm pnf1 = new PhoneNameForm();
         Phone phone1 = new PhoneImpl();

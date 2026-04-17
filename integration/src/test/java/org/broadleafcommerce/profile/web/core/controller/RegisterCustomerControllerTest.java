@@ -29,9 +29,11 @@ import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetup;
@@ -48,7 +50,7 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
 
     private GreenMail greenMail;
 
-    @BeforeClass
+    @BeforeAll
     protected void setupControllerTest() {
         greenMail = new GreenMail(
                 new ServerSetup[] {
@@ -58,12 +60,13 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         greenMail.start();
     }
 
-    @AfterClass
+    @AfterAll
     protected void tearDownControllerTest() {
         greenMail.stop();
     }
 
-    @Test(groups = "createCustomerFromController", dataProvider = "setupCustomerControllerData", dataProviderClass = RegisterCustomerDataProvider.class, enabled=false)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.web.core.controller.dataprovider.RegisterCustomerDataProvider#createCustomer")
     @Transactional
     @Rollback(false)
     public void createCustomerFromController(RegisterCustomerForm registerCustomer) {
@@ -76,7 +79,7 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         assert(customerFromDb != null);
     }
 
-    @Test(groups = "viewRegisterCustomerFromController")
+    @Test
     public void viewRegisterCustomerFromController() {
         String view = registerCustomerController.registerCustomer();
         assert (view.equals("/account/registration/registerCustomer"));

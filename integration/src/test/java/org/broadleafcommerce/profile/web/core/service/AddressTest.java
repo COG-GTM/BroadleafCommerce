@@ -19,7 +19,7 @@ package org.broadleafcommerce.profile.web.core.service;
 
 import org.broadleafcommerce.profile.core.domain.Country;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,22 +30,21 @@ public class AddressTest extends CommonSetupBaseTest {
     String userName = new String();
     Long userId;
 
-    @Test(groups = "createCountry")
+    @Test
     public void createCountry() {
         super.createCountry();
     }
 
-    @Test(groups = "findCountries", dependsOnGroups = "createCountry")
+    @Test
     public void findCountries() {
         List<Country> countries = countryService.findCountries();
         assert countries.size() > 0;
     }
 
-    @Test(groups = "findCountryByShortName", dependsOnGroups = "createCountry")
+    @Test
     public void findCountryByShortName() {
         Country country = countryService.findCountryByAbbreviation("US");
         assert country != null;
     }
-
 
 }

@@ -20,8 +20,8 @@ package org.broadleafcommerce.common.workflow;
 import org.broadleafcommerce.core.workflow.SequenceProcessor;
 import org.broadleafcommerce.core.workflow.WorkflowException;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
-import org.testng.Assert;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,7 +56,7 @@ public class RollbackTest extends TestNGSiteIntegrationSetup {
             "NestedActivityException",
             "RollbackActivity2",
             "RollbackActivity1");
-        Assert.assertTrue(exceptionThrown);
-        Assert.assertEquals(results, expected, "Rollback occurred out of order");
+        Assertions.assertTrue(exceptionThrown);
+        Assertions.assertEquals(results, expected, "Rollback occurred out of order");
     }
 }

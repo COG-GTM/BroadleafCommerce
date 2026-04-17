@@ -35,7 +35,9 @@ import org.broadleafcommerce.core.order.service.type.FulfillmentType;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -64,11 +66,11 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
 
     protected final OfferDataItemProvider dataProvider = new OfferDataItemProvider();
 
-
     private long sku1;
     private long sku2;
 
-    @Test(groups = { "offerCreateSku1" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku1(Sku sku) {
         offerUtil = new CreateOfferUtility(offerDao, offerCodeDao, offerService);
@@ -82,7 +84,8 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         sku1 = sku.getId();
     }
 
-    @Test(groups = { "offerCreateSku2" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku2(Sku sku) {
         sku.setSalePrice(new Money(BigDecimal.valueOf(10.0)));
@@ -94,8 +97,7 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         sku2 = sku.getId();
     }
 
-
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testTwoFutureCreditPercentOffOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -123,7 +125,7 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(115D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountPercentOffOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -151,7 +153,7 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(100D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountOrderAndOrderItemOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -179,7 +181,7 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(108.5D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testFutureCreditAllOfferTypes() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());

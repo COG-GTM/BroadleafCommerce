@@ -26,7 +26,9 @@ import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Commit;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +49,7 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
 
     List<String> userNames = new ArrayList<>();
 
-    @Test(groups = { "createCustomerIdGeneration" })
+    @Test
     @Commit
     @Transactional
     public void createCustomerIdGeneration() {
@@ -61,7 +63,8 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(groups = "createCustomers", dependsOnGroups="createCustomerIdGeneration", dataProvider = "setupCustomers", dataProviderClass = CustomerDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerDataProvider#createCustomers")
     @Rollback(false)
     public void createCustomer(Customer customerInfo) {
         Customer customer = customerService.createCustomerFromId(null);
@@ -75,7 +78,7 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         userNames.add(customer.getUsername());
     }
 
-    @Test(groups = { "readCustomer" }, dependsOnGroups = { "createCustomers", "createCustomerIdGeneration" })
+    @Test
     public void readCustomersById() {
         for (Long userId : userIds) {
             Customer customer = customerService.readCustomerById(userId);
@@ -83,8 +86,7 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-
-    @Test(groups = { "changeCustomerPassword" }, dependsOnGroups = { "readCustomer" })
+    @Test
     @Transactional
     @Commit
     public void changeCustomerPasswords() {

@@ -17,12 +17,14 @@
  */
 package org.broadleafcommerce.test;
 
-import org.springframework.context.ApplicationContext;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.ContextHierarchy;
 import org.springframework.test.context.TestExecutionListeners;
-import org.springframework.test.context.testng.AbstractTestNGSpringContextTests;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
 import org.springframework.test.context.web.WebAppConfiguration;
 
@@ -44,10 +46,14 @@ import jakarta.persistence.PersistenceContext;
 @WebAppConfiguration
 @TestExecutionListeners(TransactionalTestExecutionListener.class)
 @Deprecated
-public abstract class BaseTest extends AbstractTestNGSpringContextTests {
+@ExtendWith(SpringExtension.class)
+public abstract class BaseTest {
 
     @PersistenceContext(unitName = "blPU")
     protected EntityManager em;
+
+    @Autowired
+    protected ApplicationContext applicationContext;
 
     protected ApplicationContext getContext() {
         return applicationContext;

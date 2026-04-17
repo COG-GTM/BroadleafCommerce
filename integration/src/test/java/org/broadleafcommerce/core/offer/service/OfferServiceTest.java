@@ -50,7 +50,7 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -200,7 +200,7 @@ public class OfferServiceTest extends CommonSetupBaseTest {
         return order;
     }
 
-    @Test(groups =  {"testOffersWithGiftWrap"})
+    @Test
     @Transactional(value = "blTransactionManager")
     public void testOrderItemOfferWithGiftWrap() throws PricingException {
         Order order = createTestOrderWithOfferAndGiftWrap();

@@ -22,11 +22,8 @@ import org.broadleafcommerce.profile.core.domain.ChallengeQuestionImpl;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerImpl;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
-import org.testng.annotations.DataProvider;
 
 public class RegisterCustomerDataProvider {
-
-    @DataProvider(name = "setupCustomerControllerData")
     public static Object[][] createCustomer() {
         Customer customer = new CustomerImpl();
         customer.setEmailAddress("testCase@test.com");

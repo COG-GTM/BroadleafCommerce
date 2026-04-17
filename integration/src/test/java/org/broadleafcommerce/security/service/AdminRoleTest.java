@@ -22,7 +22,9 @@ import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityServ
 import org.broadleafcommerce.security.service.dataprovider.AdminRoleDataProvider;
 import org.broadleafcommerce.test.TestNGAdminIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
@@ -30,7 +32,8 @@ public class AdminRoleTest extends TestNGAdminIntegrationSetup {
     @Resource
     AdminSecurityService adminSecurityService;
 
-    @Test(groups =  {"testAdminRoleSave"}, dataProvider = "setupAdminRole", dataProviderClass = AdminRoleDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.security.service.dataprovider.AdminRoleDataProvider#createAdminRole")
     @Rollback(true)
     public void testAdminRoleSave(AdminRole role) throws Exception {
         AdminRole newRole = adminSecurityService.saveAdminRole(role);

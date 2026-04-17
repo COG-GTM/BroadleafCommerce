@@ -30,7 +30,9 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 
@@ -53,7 +55,8 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CustomerService customerService;
 
-    @Test(groups={"createPaymentInfo"}, dataProvider="basicPaymentInfo", dataProviderClass=PaymentInfoDataProvider.class, dependsOnGroups={"readCustomer", "createOrder"})
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Rollback(false)
     @Transactional
     public void createPayment(OrderPayment payment){
@@ -75,14 +78,14 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
         this.paymentInfo = payment;
     }
 
-    @Test(groups={"readPaymentInfoById"}, dependsOnGroups={"createPaymentInfo"})
+    @Test
     public void readPaymentInfoById(){
         OrderPayment sop = paymentInfoService.readPaymentById(paymentInfo.getId());
         assert sop !=null;
         assert sop.getId().equals(paymentInfo.getId());
     }
 
-    @Test(groups={"readPaymentInfosByOrder"}, dependsOnGroups={"createPaymentInfo"})
+    @Test
     @Transactional
     public void readPaymentInfoByOrder(){
         List<OrderPayment> payments = paymentInfoService.readPaymentsForOrder(paymentInfo.getOrder());
@@ -90,7 +93,7 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
         assert payments.size() > 0;
     }
 
-    @Test(groups={"testCreatePaymentInfo"}, dependsOnGroups={"createPaymentInfo"})
+    @Test
     @Transactional
     public void createTestPayment(){
         userName = "customer1";

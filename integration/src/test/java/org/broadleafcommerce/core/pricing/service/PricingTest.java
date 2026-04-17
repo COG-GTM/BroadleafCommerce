@@ -59,7 +59,7 @@ import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -93,8 +93,7 @@ public class PricingTest extends TestNGSiteIntegrationSetup {
     @Resource
     private ISOService isoService;
 
-
-    @Test(groups = {"testPricing"}, dependsOnGroups = {  "createCustomerIdGeneration" })
+    @Test
     @Transactional
     public void testPricing() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -112,7 +111,6 @@ public class PricingTest extends TestNGSiteIntegrationSetup {
         isoCountry.setName("UNITED STATES");
 
         isoCountry = isoService.save(isoCountry);
-
 
         Address address = new AddressImpl();
         address.setAddressLine1("123 Test Rd");
@@ -216,7 +214,7 @@ public class PricingTest extends TestNGSiteIntegrationSetup {
         return result;
     }
 
-    @Test(groups = { "testShipping" }, dependsOnGroups = {  "createCustomerIdGeneration"})
+    @Test
     @Transactional
     public void testShipping() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());

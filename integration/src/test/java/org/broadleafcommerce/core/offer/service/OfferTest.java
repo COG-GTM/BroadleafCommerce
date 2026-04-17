@@ -44,7 +44,9 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -91,7 +93,8 @@ public class OfferTest extends CommonSetupBaseTest {
     private CreateOfferUtility offerUtil;
     private CreateOrderEntityUtility orderUtil;
 
-    @Test(groups = { "offerCreateSku1" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku1(Sku sku) {
         offerUtil = new CreateOfferUtility(offerDao, offerCodeDao, offerService);
@@ -105,7 +108,8 @@ public class OfferTest extends CommonSetupBaseTest {
         sku1 = sku.getId();
     }
 
-    @Test(groups = { "offerCreateSku2" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku2(Sku sku) {
         sku.setSalePrice(new Money(BigDecimal.valueOf(10.0)));
@@ -117,7 +121,7 @@ public class OfferTest extends CommonSetupBaseTest {
         sku2 = sku.getId();
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testThreePercentOffOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -137,7 +141,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(6D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testTwoPercentOffOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -156,7 +160,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(985D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testBOGOCombination() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -175,7 +179,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(1070D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testBOGOAmountOffCombination() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -194,7 +198,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(1070D) ));
     }
     
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testPercentOffOfferWithScaleGreaterThanTwo() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -215,7 +219,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(238.50D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1" })
+    @Test
     @Transactional
     public void testPercentOffOfferWithItemMinPriceSecondEvaluation() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -233,7 +237,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(2.50D) ));
     }
 
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1" })
+    @Test
     @Transactional
     public void testPercentOffOfferWithItemMinPriceQuantityReduction() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -252,7 +256,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(3.00D) ));
     }
 
-    @Test(groups =  {"offerUsedForPricing"}, dependsOnGroups = { "offerCreateSku1", "offerCreateSku2" })
+    @Test
     @Transactional
     public void testOfferUsedForPricing() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -270,7 +274,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
 
-    @Test(groups =  {"testOfferNotCombinableItemOffers"}, dependsOnGroups = { "offerUsedForPricing"})
+    @Test
     @Transactional
     public void testOfferNotCombinableItemOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -289,7 +293,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getSubTotal().equals(new Money(300D)));
     }
 
-    @Test(groups =  {"testOfferLowerSalePriceWithNotCombinableOffer"}, dependsOnGroups = { "testOfferNotCombinableItemOffers"})
+    @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -306,7 +310,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getSubTotal().equals(new Money(180D)));
     }
 
-    @Test(groups =  {"testOfferLowerSalePriceWithNotCombinableOfferAndInformation"}, dependsOnGroups = { "testOfferLowerSalePriceWithNotCombinableOffer"})
+    @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOfferAndInformation() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -335,7 +339,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert(order.getAdditionalOfferInformation().get(offerCode1.getOffer()).equals(info1));
     }
 
-    @Test(groups =  {"testOfferLowerSalePriceWithNotCombinableOffer2"}, dependsOnGroups = { "testOfferLowerSalePriceWithNotCombinableOffer"})
+    @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer2() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -359,7 +363,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getOrderAdjustmentsValue().equals(new Money("20"));
     }
 
-    @Test(groups =  {"testOfferNotStackableOrderOffers"}, dependsOnGroups = { "testOfferLowerSalePriceWithNotCombinableOffer2"})
+    @Test
     @Transactional
     public void testOfferNotStackableOrderOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -378,7 +382,7 @@ public class OfferTest extends CommonSetupBaseTest {
         //     assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(240D));
     }
 
-    @Test(groups =  {"testOfferNotCombinableOrderOffers"}, dependsOnGroups = { "testOfferNotStackableOrderOffers"})
+    @Test
     @Transactional
     public void testOfferNotCombinableOrderOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -396,7 +400,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(290D));
     }
 
-    @Test(groups =  {"testOfferNotCombinableOrderOffersWithItemOffer"}, dependsOnGroups = { "testOfferNotCombinableOrderOffers"})
+    @Test
     @Transactional
     public void testOfferNotCombinableOrderOffersWithItemOffer() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -417,7 +421,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(210D));
     }
 
-    @Test(groups =  {"testGlobalOffers"}, dependsOnGroups = { "testOfferNotCombinableOrderOffersWithItemOffer"})
+    @Test
     @Transactional
     public void testGlobalOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -438,7 +442,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
 
-    @Test(groups =  {"testCustomerAssociatedOffers"}, dependsOnGroups = { "testGlobalOffers"})
+    @Test
     @Transactional
     public void testCustomerAssociatedOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -462,7 +466,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
 
-    @Test(groups =  {"testCustomerAssociatedOffers2"}, dependsOnGroups = { "testCustomerAssociatedOffers"})
+    @Test
     @Transactional
     public void testCustomerAssociatedOffers2() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -492,7 +496,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getSubTotal().equals(new Money(33D)));
     }
 
-    @Test(groups =  {"testFulfillmentGroupOffers"}, dependsOnGroups = { "testCustomerAssociatedOffers2"})
+    @Test
     @Transactional
     public void testFulfillmentGroupOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());
@@ -515,7 +519,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getFulfillmentGroups().get(0).getShippingPrice().equals(new Money(1.6D)));
     }
 
-    @Test(groups =  {"testOfferDelete"}, dependsOnGroups = { "testFulfillmentGroupOffers"})
+    @Test
     @Transactional
     public void testOfferDelete() throws Exception {
         CustomerOffer customerOffer = customerOfferDao.create();
@@ -551,7 +555,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert customerOffer == null || ((OfferImpl) customerOffer).getArchived() == 'Y';
     }
 
-    @Test(groups =  {"testReadAllOffers"}, dependsOnGroups = { "testOfferDelete"})
+    @Test
     @Transactional
     public void testReadAllOffers() throws Exception {
         Offer offer = offerUtil.createOffer("1.20 Dollars Off Order Offer", OfferType.ORDER, OfferDiscountType.AMOUNT_OFF, 1.20, null, true, true, 10, null);
@@ -560,7 +564,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert allOffers != null && allOffers.isEmpty() == false;
     }
 
-    @Test(groups =  {"testOfferCodeDao"}, dependsOnGroups = { "testReadAllOffers"})
+    @Test
     @Transactional
     public void testOfferCodeDao() throws Exception {
         String offerCodeString = "AJ's Code";
@@ -586,7 +590,7 @@ public class OfferTest extends CommonSetupBaseTest {
         assert deletedOfferCode == null;
     }
 
-    @Test(groups =  {"testCustomerOffers"}, dependsOnGroups = { "testOfferCodeDao"})
+    @Test
     @Transactional
     public void testCustomerOffers() throws Exception {
         Order order = orderService.createNewCartForCustomer(createCustomer());

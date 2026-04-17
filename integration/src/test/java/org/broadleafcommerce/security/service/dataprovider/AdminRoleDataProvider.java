@@ -19,10 +19,8 @@ package org.broadleafcommerce.security.service.dataprovider;
 
 import org.broadleafcommerce.openadmin.server.security.domain.AdminRole;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminRoleImpl;
-import org.testng.annotations.DataProvider;
 
 public class AdminRoleDataProvider {
-    @DataProvider(name = "setupAdminRole")
     public static Object[][] createAdminRole() {
         AdminRole adminRole = new AdminRoleImpl();
         adminRole.setName("TestAdminUserRole");

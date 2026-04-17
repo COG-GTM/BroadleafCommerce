@@ -21,11 +21,8 @@ import org.broadleafcommerce.profile.core.domain.CustomerPhone;
 import org.broadleafcommerce.profile.core.domain.CustomerPhoneImpl;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.domain.PhoneImpl;
-import org.testng.annotations.DataProvider;
 
 public class CustomerPhoneDataProvider {
-
-    @DataProvider(name = "setupCustomerPhone")
     public static Object[][] createCustomerPhone() {
         CustomerPhone cp1 = new CustomerPhoneImpl();
         Phone phone1 = new PhoneImpl();
