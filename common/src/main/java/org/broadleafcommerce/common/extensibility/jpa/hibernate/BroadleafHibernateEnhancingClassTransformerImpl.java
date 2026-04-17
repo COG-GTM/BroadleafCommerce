@@ -91,7 +91,7 @@ public class BroadleafHibernateEnhancingClassTransformerImpl extends EnhancingCl
             } catch (Exception e) {
                 // In Hibernate 6, the enhancer may encounter classes that were transformed by Javassist
                 // with bytecode that the enhancer cannot fully process. Log and skip rather than fail.
-                LOG.debug("Hibernate bytecode enhancement skipped for class [" + convertedClassName
+                LOG.warn("Hibernate bytecode enhancement skipped for class [" + convertedClassName
                         + "] due to: " + e.getMessage());
                 return null;
             }

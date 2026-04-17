@@ -900,36 +900,17 @@ public class DirectCopyClassTransformer extends AbstractClassTransformer impleme
     }
 
     /**
-     * Creates a new cache annotation from the template's cache annotation. Supports both
-     * {@code org.hibernate.annotations.Cache} (used in Hibernate 5.x and still supported in 6.x) and
-     * the JPA-standard {@code jakarta.persistence.Cacheable} annotation.
+     * Creates a new Hibernate-specific {@code @org.hibernate.annotations.Cache} annotation from the
+     * template's cache annotation.
      * <p>
      * <b>Hibernate 6 Note:</b> In Hibernate 6.2+, {@code @org.hibernate.annotations.Cache} is deprecated
-     * in favor of JPA-standard {@code @jakarta.persistence.Cacheable} combined with
-     * {@code @jakarta.persistence.Cache}. This method preserves the Hibernate-specific annotation for
-     * backward compatibility, as Hibernate 6 still processes it. When the source annotation is a
-     * JPA-standard {@code jakarta.persistence.Cache}, it is propagated as-is.
+     * in favor of JPA-standard {@code @jakarta.persistence.Cacheable}. However, Hibernate 6 still fully
+     * processes the Hibernate-specific annotation, so no change is needed here for backward compatibility.
+     * If templates are migrated to use {@code @Cacheable} in the future, both {@code buildClassCacheAnnotation}
+     * and this method will need to be updated to handle the different annotation structure (a single
+     * {@code boolean value()} attribute rather than usage/region/include).
      */
     protected Annotation getNewCacheAnnotation(ConstPool constantPool, Annotation annotation) {
-        // If the template uses the JPA-standard @jakarta.persistence.Cache, propagate it directly
-        // rather than converting to the Hibernate-specific annotation
-        if (annotation.getTypeName().equals(jakarta.persistence.Cache.class.getName())) {
-            Annotation newAnnotation = new Annotation(jakarta.persistence.Cache.class.getName(), constantPool);
-            if (annotation.getMemberValue("usage") != null) {
-                EnumMemberValue usage = new EnumMemberValue(constantPool);
-                usage.setType("jakarta.persistence.CacheStoreMode");
-                usage.setValue(((EnumMemberValue) annotation.getMemberValue("usage")).getValue());
-                newAnnotation.addMemberValue("usage", usage);
-            }
-            if (annotation.getMemberValue("region") != null) {
-                StringMemberValue region = new StringMemberValue(constantPool);
-                region.setValue(((StringMemberValue) annotation.getMemberValue("region")).getValue());
-                newAnnotation.addMemberValue("region", region);
-            }
-            return newAnnotation;
-        }
-
-        // Default: create Hibernate-specific @Cache annotation (works in both Hibernate 5.x and 6.x)
         Annotation newAnnotation = new Annotation(org.hibernate.annotations.Cache.class.getName(), constantPool);
         if (annotation.getMemberValue("usage") != null) {
             EnumMemberValue usage = new EnumMemberValue(constantPool);
