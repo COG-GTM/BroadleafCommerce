@@ -64,7 +64,7 @@ public class UpdateExecutor {
      * </p>
      * An example looks like: 'UPDATE BLC_SNDBX_WRKFLW_ITEM SET SCHEDULED_DATE = ? WHERE WRKFLW_SNDBX_ITEM_ID IN (%s)'
      *
-     * @deprecated Highly recommended not to use this method. This method results in global L2 cache region clearing. Use {@link #executeUpdateQuery(EntityManager, String, String, Object[], Type[], List)} instead.
+     * @deprecated Highly recommended not to use this method. This method results in global L2 cache region clearing. Use {@link #executeUpdateQuery(EntityManager, String, String, Object[], Object[], List)} instead.
      * @param em The entity manager to use for the persistence operation
      * @param template the overall update sql template. The IN clause parameter should be written using 'IN (%s)'.
      * @param params any other params that are present in the sql template, other than the IN clause. Should be written using '?'. Should be in order. Can be null.
