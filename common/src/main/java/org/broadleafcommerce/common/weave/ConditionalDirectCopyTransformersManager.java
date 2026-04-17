@@ -49,6 +49,13 @@ package org.broadleafcommerce.common.weave;
  * Spring. The activity of this configuration will remain dormant until the "conditionalProperty" is defined and set to true in the implementation's
  * Spring property files (or override property file). At that point, based on the type of templateTokens defined, Hibernate will
  * expect to find and utilize the new columns in the database associated with those templateTokens.
+ * <p>
+ * <b>Hibernate 6 Compatibility:</b> This manager operates purely at the Spring configuration level,
+ * resolving conditional properties during {@code @PostConstruct} initialization. It does not interact
+ * directly with Hibernate APIs. The conditional template tokens it provides are consumed by
+ * {@link org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyClassTransformer} during
+ * load-time weaving, which occurs before Hibernate 6's metamodel construction. Therefore, this
+ * manager is fully compatible with Hibernate 6 without modification.
  *
  * @author Jeff Fischer
  */

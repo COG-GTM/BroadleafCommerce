@@ -51,7 +51,25 @@ public class BroadleafCommonConfig {
     protected List<DirectCopyIgnorePattern> ignorePatterns = new ArrayList<>();
 
     /**
-     * Other enterprise/mulititenant modules override this adapter to provide one that supports dynamic filtration
+     * Other enterprise/mulititenant modules override this adapter to provide one that supports dynamic filtration.
+     * <p>
+     * <b>Hibernate 6 Compatibility:</b> This bean creates a custom {@link PersistenceProvider} that wraps
+     * Hibernate's {@link EntityManagerFactoryBuilderImpl} with a custom {@link PersistenceUnitInfoDescriptor}.
+     * The key integration point is {@code pushClassTransformer()}, which registers a filtered version of
+     * Hibernate's bytecode enhancement transformer ({@link BroadleafHibernateEnhancingClassTransformerImpl}).
+     * <p>
+     * This design ensures correct ordering of class transformations:
+     * <ol>
+     *   <li>Broadleaf's {@code DirectCopyClassTransformer} runs first (registered via
+     *       {@link org.broadleafcommerce.common.extensibility.jpa.MergePersistenceUnitManager})</li>
+     *   <li>Hibernate's bytecode enhancer runs second (registered here via {@code pushClassTransformer})</li>
+     * </ol>
+     * This ordering is critical because Hibernate's enhancer must operate on classes that already contain
+     * woven fields from the DirectCopy infrastructure.
+     * <p>
+     * Note: {@link EntityManagerFactoryBuilderImpl} and {@link PersistenceUnitInfoDescriptor} are Hibernate
+     * internal APIs. While the constructor signatures have remained stable through Hibernate 6.x, these
+     * classes are not part of the public API and may change in future major versions.
      */
     @Bean
     @ConditionalOnMissingBean(name = "blJpaVendorAdapter")
