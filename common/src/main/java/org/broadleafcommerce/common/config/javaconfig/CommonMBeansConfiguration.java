@@ -92,4 +92,14 @@ public class CommonMBeansConfiguration {
         exporter.setRegistrationPolicy(RegistrationPolicy.IGNORE_EXISTING);
         return exporter;
     }
+
+    @Bean(name = "blStatisticsService")
+    public StatisticsServiceImpl blStatisticsService(
+            @Qualifier("blJmxNamingBean") Object blJmxNamingBean,
+            @Qualifier("blStatisticsServiceLogAdapter") StatisticsServiceLogAdapter blStatisticsServiceLogAdapter) {
+        StatisticsServiceImpl statisticsService = new StatisticsServiceImpl();
+        statisticsService.setAppName(String.valueOf(blJmxNamingBean));
+        statisticsService.setAdapter(blStatisticsServiceLogAdapter);
+        return statisticsService;
+    }
 }
