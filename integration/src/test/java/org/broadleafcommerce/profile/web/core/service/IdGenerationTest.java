@@ -23,7 +23,10 @@ import org.broadleafcommerce.common.id.service.IdGenerationService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,7 @@ import jakarta.annotation.Resource;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class IdGenerationTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -44,6 +48,9 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
 
     List<String> userNames = new ArrayList<>();
 
+    @Order(1)
+
+
     @Test
     @Rollback(false)
     @Transactional
@@ -55,6 +62,9 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         em.persist(idGeneration);
     }
 
+    @Order(2)
+
+
     @Test
     @Rollback(true)
     public void findIds() {
@@ -63,6 +73,9 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
             assert id == i;
         }
     }
+
+    @Order(3)
+
 
     @Test
     @Rollback(false)
@@ -76,6 +89,9 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         idGeneration.setBatchSize(3L);
         em.persist(idGeneration);
     }
+
+    @Order(4)
+
 
     @Test
     @Rollback(true)

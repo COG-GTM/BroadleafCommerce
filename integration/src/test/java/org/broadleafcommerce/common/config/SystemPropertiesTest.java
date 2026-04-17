@@ -72,14 +72,14 @@ public class SystemPropertiesTest extends TestNGSiteIntegrationSetup {
         
         String resolvedProperty = env.getProperty(prop.getName(), String.class);
         
-        Assertions.assertEquals(resolvedProperty, prop.getValue());
+        Assertions.assertEquals(prop.getValue(), resolvedProperty);
     }
     
     @Test
     @Transactional
     public void testOverridesPropertyFiles() {
         String propertyFileResolved = env.getProperty("property.file.override.test", String.class);
-        Assertions.assertEquals(propertyFileResolved, "propertyfile");
+        Assertions.assertEquals("propertyfile", propertyFileResolved);
         
         clearSystemPropertiesCache();
         
@@ -88,13 +88,13 @@ public class SystemPropertiesTest extends TestNGSiteIntegrationSetup {
         prop.setValue("testngtest");
         prop = propsDao.saveSystemProperty(prop);
         String resolvedProperty = env.getProperty(prop.getName(), String.class);
-        Assertions.assertEquals(resolvedProperty, prop.getValue());
+        Assertions.assertEquals(prop.getValue(), resolvedProperty);
         
         propsDao.deleteSystemProperty(prop);
         clearSystemPropertiesCache();
         
         String fromPropertiesFile = propsSvc.resolveSystemProperty("property.file.override.test");
-        Assertions.assertEquals(fromPropertiesFile, "propertyfile");
+        Assertions.assertEquals("propertyfile", fromPropertiesFile);
     }
     
     /**

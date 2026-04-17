@@ -57,6 +57,6 @@ public class RollbackTest extends TestNGSiteIntegrationSetup {
             "RollbackActivity2",
             "RollbackActivity1");
         Assertions.assertTrue(exceptionThrown);
-        Assertions.assertEquals(results, expected, "Rollback occurred out of order");
+        Assertions.assertEquals(expected, results, "Rollback occurred out of order");
     }
 }

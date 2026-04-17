@@ -24,7 +24,9 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -32,6 +34,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderDaoTest extends TestNGSiteIntegrationSetup {
 
     String userName = new String();
@@ -42,6 +45,9 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
 
     @Resource
     private CustomerService customerService;
+
+    @org.junit.jupiter.api.Order(1)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderDataProvider#provideBasicSalesOrder")
@@ -57,11 +63,17 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
         orderId = order.getId();
     }
 
+    @org.junit.jupiter.api.Order(2)
+
+
     @Test
     public void readOrderById() {
         Order result = orderDao.readOrderById(orderId);
         assert result != null;
     }
+
+    @org.junit.jupiter.api.Order(3)
+
 
     @Test
     @Transactional

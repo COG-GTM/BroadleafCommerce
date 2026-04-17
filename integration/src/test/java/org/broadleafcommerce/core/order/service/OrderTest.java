@@ -40,7 +40,9 @@ import org.broadleafcommerce.profile.core.domain.CustomerImpl;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -49,6 +51,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderTest extends OrderBaseTest {
 
     private Long orderId = null;
@@ -59,6 +62,9 @@ public class OrderTest extends OrderBaseTest {
     
     @Resource
     private SkuDao skuDao;
+    
+    @org.junit.jupiter.api.Order(1)
+
     
     @Test
     @Transactional
@@ -73,6 +79,9 @@ public class OrderTest extends OrderBaseTest {
         this.orderId = order.getId();
     }
 
+    @org.junit.jupiter.api.Order(2)
+
+
     @Test
     @Transactional
     @Rollback(false)
@@ -85,6 +94,9 @@ public class OrderTest extends OrderBaseTest {
         assert order.getId() != null;
         this.orderId = order.getId();
     }
+
+    @org.junit.jupiter.api.Order(3)
+
 
     @Test
     @Rollback(false)
@@ -123,6 +135,9 @@ public class OrderTest extends OrderBaseTest {
         assert fgItem.getOrderItem().equals(item);
         assert fgItem.getQuantity() == item.getQuantity();
     }
+    
+    @org.junit.jupiter.api.Order(4)
+
     
     @Test
     @Rollback(false)
@@ -198,6 +213,9 @@ public class OrderTest extends OrderBaseTest {
         });
     }
     
+    @org.junit.jupiter.api.Order(5)
+
+    
     @Test
     @Transactional
     public void testIllegalAddScenarios() throws AddToCartException {
@@ -271,6 +289,9 @@ public class OrderTest extends OrderBaseTest {
         }
         assert !addSuccessful;
     }
+    
+    @org.junit.jupiter.api.Order(6)
+
     
     @Test
     @Transactional
@@ -371,6 +392,9 @@ public class OrderTest extends OrderBaseTest {
         assert items.size() == startingSize - 1;
     }*/
     
+    @org.junit.jupiter.api.Order(7)
+
+    
     @Test
     @Transactional
     public void getItemsForOrder() {
@@ -379,6 +403,9 @@ public class OrderTest extends OrderBaseTest {
         assert orderItems != null;
         assert orderItems.size() == numOrderItems;
     }
+
+    @org.junit.jupiter.api.Order(8)
+
 
     @Test
     @Transactional
@@ -414,6 +441,9 @@ public class OrderTest extends OrderBaseTest {
         assert fgItem != null;
 
     }
+
+    @org.junit.jupiter.api.Order(9)
+
 
     @Test
     @Transactional
@@ -501,6 +531,9 @@ public class OrderTest extends OrderBaseTest {
         assert fgItemRemoved;*/
     }
 
+    @org.junit.jupiter.api.Order(10)
+
+
     @Test
     @Transactional
     public void removeItemFromOrder() throws RemoveFromCartException {
@@ -524,6 +557,9 @@ public class OrderTest extends OrderBaseTest {
         assert updatedItem == null;
     }
 
+    @org.junit.jupiter.api.Order(11)
+
+
     @Test
     @Transactional
     public void checkOrderItems() throws PricingException {
@@ -541,6 +577,10 @@ public class OrderTest extends OrderBaseTest {
     }
 
     
+    @org.junit.jupiter.api.Order(12)
+
+
+    
     @Test
     @Transactional
     public void getOrdersForCustomer() {
@@ -550,6 +590,9 @@ public class OrderTest extends OrderBaseTest {
         assert orders != null;
         assert orders.size() > 0;
     }
+
+    @org.junit.jupiter.api.Order(13)
+
 
     @Test
     public void findCartForAnonymousCustomer() {
@@ -562,6 +605,9 @@ public class OrderTest extends OrderBaseTest {
         assert newOrder != null;
         assert newOrder.getCustomer() != null;
     }
+
+    @org.junit.jupiter.api.Order(14)
+
 
     @Test
     @Transactional
@@ -582,6 +628,9 @@ public class OrderTest extends OrderBaseTest {
         assert nullOrder == null;
     }
 
+    @org.junit.jupiter.api.Order(15)
+
+
     @Test
     @Transactional
     public void findNamedOrderForCustomer() throws PricingException {
@@ -595,6 +644,9 @@ public class OrderTest extends OrderBaseTest {
         Order newOrder = orderService.findNamedOrderForCustomer("COOL ORDER", customer);
         assert newOrder.getId().equals(orderId);
     }
+
+    @org.junit.jupiter.api.Order(16)
+
 
     @Test
     @Transactional
@@ -619,6 +671,9 @@ public class OrderTest extends OrderBaseTest {
         assert containsOrder == true;
     }
 
+    @org.junit.jupiter.api.Order(17)
+
+
     @Test
     public void testOrderProperties() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -631,6 +686,9 @@ public class OrderTest extends OrderBaseTest {
         order.setSubmitDate(testCalendar.getTime());
         assert order.getSubmitDate().equals(testCalendar.getTime());
     }
+
+    @org.junit.jupiter.api.Order(18)
+
 
     @Test
     public void testNamedOrderForCustomer() throws PricingException {
@@ -646,6 +704,9 @@ public class OrderTest extends OrderBaseTest {
 
         assert orderService.findOrderById(orderId) == null;
     }
+
+    @org.junit.jupiter.api.Order(19)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
@@ -663,6 +724,9 @@ public class OrderTest extends OrderBaseTest {
         assert payment.getOrder() != null;
         assert payment.getOrder().equals(order);
     }
+
+    @org.junit.jupiter.api.Order(20)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
@@ -684,10 +748,16 @@ public class OrderTest extends OrderBaseTest {
         assert orderService.findPaymentsForOrder(order) != null;
     }
 
+    @org.junit.jupiter.api.Order(21)
+
+
     @Test
     public void findCartForNullCustomerId() {
         assert orderService.findCartForCustomer(new CustomerImpl()) == null;
     }
+
+    @org.junit.jupiter.api.Order(22)
+
 
     @Test
     public void testSubmitOrder() throws PricingException {

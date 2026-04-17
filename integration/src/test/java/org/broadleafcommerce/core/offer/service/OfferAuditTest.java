@@ -39,7 +39,9 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -52,6 +54,7 @@ import jakarta.annotation.Resource;
 /**
  * @author Chad Harchar (charchar)
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OfferAuditTest extends CommonSetupBaseTest {
 
     private CreateOfferUtility offerUtil;
@@ -82,6 +85,9 @@ public class OfferAuditTest extends CommonSetupBaseTest {
 
     private long sku;
 
+    @org.junit.jupiter.api.Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -96,6 +102,9 @@ public class OfferAuditTest extends CommonSetupBaseTest {
         assert sku.getId() != null;
         this.sku = sku.getId();
     }
+
+    @org.junit.jupiter.api.Order(2)
+
 
     @Test
     @Transactional

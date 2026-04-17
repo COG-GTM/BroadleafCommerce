@@ -35,7 +35,9 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -43,6 +45,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
 
     private FulfillmentGroup fulfillmentGroup;
@@ -73,6 +76,9 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private FulfillmentGroupService fulfillmentGroupService;
 
+    @org.junit.jupiter.api.Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Rollback(false)
@@ -96,6 +102,9 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         assert this.fulfillmentGroup.getId() != null;
     }
     
+    @org.junit.jupiter.api.Order(2)
+
+    
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicDiscreteSalesOrderItem")
     @Rollback(false)
@@ -118,6 +127,9 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         fulfillmentGroupItemId = fgi.getId();
     }
 
+    @org.junit.jupiter.api.Order(3)
+
+
     @Test
     @Transactional
     public void readFulfillmentGroupItemsForFulfillmentGroup() {
@@ -125,6 +137,9 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         assert fgis != null;
         assert fgis.size() > 0;
     }
+
+    @org.junit.jupiter.api.Order(4)
+
 
     @Test
     @Transactional

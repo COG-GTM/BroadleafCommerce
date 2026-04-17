@@ -26,12 +26,16 @@ import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
 
     private Long orderItemId;
@@ -42,6 +46,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
 
     @Resource
     private SkuDao skuDao;
+
+    @Order(1)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicDiscreteSalesOrderItem")
@@ -57,6 +64,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert orderItem.getId() != null;
         orderItemId = orderItem.getId();
     }
+
+    @Order(2)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicGiftWrapSalesOrderItem")
@@ -77,6 +87,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         giftWrapItemId = orderItem.getId();
     }
 
+    @Order(3)
+
+
     @Test
     @Transactional
     public void readGiftWrapOrderItemsById() {
@@ -87,6 +100,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert ((GiftWrapOrderItem) result).getWrappedItems().get(0).getId().equals(orderItemId);
     }
 
+    @Order(4)
+
+
     @Test
     @Rollback(false)
     public void deleteGiftWrapOrderItemsById() {
@@ -95,6 +111,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert orderItemDao.readOrderItemById(giftWrapItemId) == null;
     }
 
+    @Order(5)
+
+
     @Test
     public void readOrderItemsById() {
         assert orderItemId != null;
@@ -102,6 +121,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert result != null;
         assert result.getId().equals(orderItemId);
     }
+
+    @Order(6)
+
 
     @Test
     public void readOrderItemsByIdAfterGiftWrapDeletion() {

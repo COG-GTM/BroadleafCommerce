@@ -27,12 +27,15 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
 
     private Long defaultFulfillmentGroupOrderId;
@@ -50,6 +53,9 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
 
     @Resource
     private OrderDao orderDao;
+
+    @org.junit.jupiter.api.Order(1)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
@@ -75,6 +81,9 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         defaultFulfillmentGroupId = fulfillmentGroup.getId();
     }
 
+    @org.junit.jupiter.api.Order(2)
+
+
     @Test
     @Transactional
     public void readDefaultFulfillmentGroupForOrder() {
@@ -86,6 +95,9 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         assert fg.getId().equals(defaultFulfillmentGroupId);
     }
 
+    @org.junit.jupiter.api.Order(3)
+
+
     @Test
     @Transactional
     public void readDefaultFulfillmentGroupForId() {
@@ -94,6 +106,9 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         assert fg.getId() != null;
         assert fg.getId().equals(defaultFulfillmentGroupId);
     }
+
+    @org.junit.jupiter.api.Order(4)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
@@ -117,6 +132,9 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
         assert fulfillmentGroup.getId() != null;
         fulfillmentGroupId = fulfillmentGroup.getId();
     }
+
+    @org.junit.jupiter.api.Order(5)
+
 
     @Test
     @Transactional

@@ -44,7 +44,9 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -59,6 +61,7 @@ import jakarta.annotation.Resource;
  * here employs some deprecated APIs and should therefore not be
  * used as an example of programatically creating offers.
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OfferTest extends CommonSetupBaseTest {
 
     @Resource
@@ -93,6 +96,9 @@ public class OfferTest extends CommonSetupBaseTest {
     private CreateOfferUtility offerUtil;
     private CreateOrderEntityUtility orderUtil;
 
+    @org.junit.jupiter.api.Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -108,6 +114,9 @@ public class OfferTest extends CommonSetupBaseTest {
         sku1 = sku.getId();
     }
 
+    @org.junit.jupiter.api.Order(2)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -120,6 +129,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert sku.getId() != null;
         sku2 = sku.getId();
     }
+
+    @org.junit.jupiter.api.Order(3)
+
 
     @Test
     @Transactional
@@ -141,6 +153,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(6D) ));
     }
 
+    @org.junit.jupiter.api.Order(4)
+
+
     @Test
     @Transactional
     public void testTwoPercentOffOffers() throws Exception {
@@ -159,6 +174,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert ( order.getSubTotal().equals(new Money(985D) ));
     }
+
+    @org.junit.jupiter.api.Order(5)
+
 
     @Test
     @Transactional
@@ -179,6 +197,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(1070D) ));
     }
 
+    @org.junit.jupiter.api.Order(6)
+
+
     @Test
     @Transactional
     public void testBOGOAmountOffCombination() throws Exception {
@@ -197,6 +218,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert ( order.getSubTotal().equals(new Money(1070D) ));
     }
+    
+    @org.junit.jupiter.api.Order(7)
+
     
     @Test
     @Transactional
@@ -219,6 +243,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(238.50D) ));
     }
 
+    @org.junit.jupiter.api.Order(8)
+
+
     @Test
     @Transactional
     public void testPercentOffOfferWithItemMinPriceSecondEvaluation() throws Exception {
@@ -236,6 +263,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert ( order.getSubTotal().equals(new Money(2.50D) ));
     }
+
+    @org.junit.jupiter.api.Order(9)
+
 
     @Test
     @Transactional
@@ -256,6 +286,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert ( order.getSubTotal().equals(new Money(3.00D) ));
     }
 
+    @org.junit.jupiter.api.Order(10)
+
+
     @Test
     @Transactional
     public void testOfferUsedForPricing() throws Exception {
@@ -273,6 +306,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
+
+    @org.junit.jupiter.api.Order(11)
+
 
     @Test
     @Transactional
@@ -293,6 +329,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getSubTotal().equals(new Money(300D)));
     }
 
+    @org.junit.jupiter.api.Order(12)
+
+
     @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer() throws Exception {
@@ -309,6 +348,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert (order.getSubTotal().equals(new Money(180D)));
     }
+
+    @org.junit.jupiter.api.Order(13)
+
 
     @Test
     @Transactional
@@ -339,6 +381,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert(order.getAdditionalOfferInformation().get(offerCode1.getOffer()).equals(info1));
     }
 
+    @org.junit.jupiter.api.Order(14)
+
+
     @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer2() throws Exception {
@@ -363,6 +408,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getOrderAdjustmentsValue().equals(new Money("20"));
     }
 
+    @org.junit.jupiter.api.Order(15)
+
+
     @Test
     @Transactional
     public void testOfferNotStackableOrderOffers() throws Exception {
@@ -382,6 +430,9 @@ public class OfferTest extends CommonSetupBaseTest {
         //     assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(240D));
     }
 
+    @org.junit.jupiter.api.Order(16)
+
+
     @Test
     @Transactional
     public void testOfferNotCombinableOrderOffers() throws Exception {
@@ -399,6 +450,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(290D));
     }
+
+    @org.junit.jupiter.api.Order(17)
+
 
     @Test
     @Transactional
@@ -421,6 +475,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(210D));
     }
 
+    @org.junit.jupiter.api.Order(18)
+
+
     @Test
     @Transactional
     public void testGlobalOffers() throws Exception {
@@ -441,6 +498,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
+
+    @org.junit.jupiter.api.Order(19)
+
 
     @Test
     @Transactional
@@ -465,6 +525,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert order.getSubTotal().subtract(order.getOrderAdjustmentsValue()).equals(new Money(31.80D));
     }
+
+    @org.junit.jupiter.api.Order(20)
+
 
     @Test
     @Transactional
@@ -496,6 +559,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert (order.getSubTotal().equals(new Money(33D)));
     }
 
+    @org.junit.jupiter.api.Order(21)
+
+
     @Test
     @Transactional
     public void testFulfillmentGroupOffers() throws Exception {
@@ -518,6 +584,9 @@ public class OfferTest extends CommonSetupBaseTest {
 
         assert (order.getFulfillmentGroups().get(0).getShippingPrice().equals(new Money(1.6D)));
     }
+
+    @org.junit.jupiter.api.Order(22)
+
 
     @Test
     @Transactional
@@ -555,6 +624,9 @@ public class OfferTest extends CommonSetupBaseTest {
         assert customerOffer == null || ((OfferImpl) customerOffer).getArchived() == 'Y';
     }
 
+    @org.junit.jupiter.api.Order(23)
+
+
     @Test
     @Transactional
     public void testReadAllOffers() throws Exception {
@@ -563,6 +635,9 @@ public class OfferTest extends CommonSetupBaseTest {
         List<Offer> allOffers = offerService.findAllOffers();
         assert allOffers != null && allOffers.isEmpty() == false;
     }
+
+    @org.junit.jupiter.api.Order(24)
+
 
     @Test
     @Transactional
@@ -589,6 +664,9 @@ public class OfferTest extends CommonSetupBaseTest {
         OfferCode deletedOfferCode = offerCodeDao.readOfferCodeById(offerCodeId);
         assert deletedOfferCode == null;
     }
+
+    @org.junit.jupiter.api.Order(25)
+
 
     @Test
     @Transactional

@@ -26,7 +26,10 @@ import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Commit;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -37,6 +40,7 @@ import jakarta.annotation.Resource;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CustomerTest extends TestNGSiteIntegrationSetup {
     
     @Resource
@@ -48,6 +52,9 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
     List<Long> userIds = new ArrayList<>();
 
     List<String> userNames = new ArrayList<>();
+
+    @Order(1)
+
 
     @Test
     @Commit
@@ -62,6 +69,9 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
             em.persist(idGeneration);
         }
     }
+
+    @Order(2)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerDataProvider#createCustomers")
@@ -78,6 +88,9 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         userNames.add(customer.getUsername());
     }
 
+    @Order(3)
+
+
     @Test
     public void readCustomersById() {
         for (Long userId : userIds) {
@@ -85,6 +98,9 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
             assert customer.getId() == userId;
         }
     }
+
+    @Order(4)
+
 
     @Test
     @Transactional

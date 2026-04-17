@@ -24,7 +24,10 @@ import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -33,6 +36,7 @@ import java.util.Calendar;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class SkuDaoTest extends TestNGSiteIntegrationSetup {
 
     private Long skuId;
@@ -42,6 +46,9 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
     
     @Resource
     private CatalogService catalogService;
+
+    @Order(1)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
@@ -59,6 +66,9 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
         skuId = sku.getId();
     }
 
+    @Order(2)
+
+
     @Test
     @Transactional
     public void readFirstSku() {
@@ -66,6 +76,9 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
         assert si != null;
         assert si.getId() != null;
     }
+
+    @Order(3)
+
 
     @Test
     @Transactional

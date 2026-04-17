@@ -26,7 +26,10 @@ import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -35,6 +38,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ProductDaoTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -65,6 +69,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         return crossSaleProduct;
     }
 
+    @Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#createProducts")
     @Rollback(false)
@@ -74,6 +81,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert(product.getId() != null);
         savedProducts.add(product);
     }
+
+    @Order(2)
+
 
     @Test
     @Rollback(false)
@@ -97,6 +107,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert(prod2.getId() != null);
     }
 
+    @Order(3)
+
+
     @Test
     @Transactional
     public void testReadProductsWithUpSaleValues() {
@@ -111,6 +124,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
             assert(rp instanceof UpSaleProductImpl);
         }
     }
+
+    @Order(4)
+
 
     @Test
     @Rollback(false)
@@ -134,6 +150,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert(prod2.getId() != null);
     }
 
+    @Order(5)
+
+
     @Test
     @Transactional
     public void testReadProductsWithCrossSaleValues() {
@@ -149,6 +168,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         }
     }
 
+    @Order(6)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
@@ -157,6 +179,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         Product result = productDao.readProductById(product.getId());
         assert product.equals(result);
     }
+
+    @Order(7)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
@@ -167,6 +192,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         List<Product> result = productDao.readProductsByName(name);
         assert result.contains(product);
     }
+
+    @Order(8)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")

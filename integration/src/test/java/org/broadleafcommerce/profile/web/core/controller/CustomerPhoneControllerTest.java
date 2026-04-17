@@ -32,16 +32,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -56,9 +59,12 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     private static final String SUCCESS = "customerPhones";
 
     @BeforeEach
-    protected void setupCustomerId(Method testMethod) throws Exception {
+    protected void setupCustomerId() throws Exception {
         userId = customerService.readCustomerByUsername("customer1").getId();
     }
+    
+    @Order(1)
+
     
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.web.core.controller.dataprovider.CustomerPhoneControllerTestDataProvider#createCustomerPhone")
@@ -91,6 +97,9 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         createdCustomerPhoneIds.add(id);
     }
 
+    @Order(2)
+
+
     @Test
     @Transactional
     public void makePhoneDefaultOnCustomerPhoneController() {
@@ -120,6 +129,9 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         }
     }
 
+    @Order(3)
+
+
     @Test
     @Transactional
     public void readCustomerPhoneFromController() {
@@ -135,6 +147,9 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         assert ((phones_1_size - phones_2.size()) == 1);
     }
 
+    @Order(4)
+
+
     @Test
     public void viewCustomerPhoneFromController() {
         PhoneNameForm pnf = new PhoneNameForm();
@@ -147,6 +162,9 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         assert (view.indexOf(SUCCESS) >= 0);
         assert (request.getAttribute("customerPhoneId") == null);
     }
+
+    @Order(5)
+
 
     @Test
     @Transactional

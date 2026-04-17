@@ -31,7 +31,10 @@ import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -40,6 +43,7 @@ import com.icegreen.greenmail.util.ServerSetup;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -65,6 +69,9 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         greenMail.stop();
     }
 
+    @Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.web.core.controller.dataprovider.RegisterCustomerDataProvider#createCustomer")
     @Transactional
@@ -78,6 +85,9 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         Customer customerFromDb = customerService.readCustomerByUsername(registerCustomer.getCustomer().getUsername());
         assert(customerFromDb != null);
     }
+
+    @Order(2)
+
 
     @Test
     public void viewRegisterCustomerFromController() {

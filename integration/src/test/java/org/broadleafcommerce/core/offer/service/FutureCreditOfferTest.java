@@ -35,7 +35,9 @@ import org.broadleafcommerce.core.order.service.type.FulfillmentType;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -47,6 +49,7 @@ import jakarta.annotation.Resource;
 /**
  * @author Chad Harchar (charchar)
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class FutureCreditOfferTest extends CommonSetupBaseTest {
 
     private CreateOfferUtility offerUtil;
@@ -69,6 +72,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     private long sku1;
     private long sku2;
 
+    @org.junit.jupiter.api.Order(1)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -84,6 +90,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         sku1 = sku.getId();
     }
 
+    @org.junit.jupiter.api.Order(2)
+
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -96,6 +105,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert sku.getId() != null;
         sku2 = sku.getId();
     }
+
+    @org.junit.jupiter.api.Order(3)
+
 
     @Test
     @Transactional
@@ -125,6 +137,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(115D) ));
     }
 
+    @org.junit.jupiter.api.Order(4)
+
+
     @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountPercentOffOffers() throws Exception {
@@ -153,6 +168,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(100D) ));
     }
 
+    @org.junit.jupiter.api.Order(5)
+
+
     @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountOrderAndOrderItemOffers() throws Exception {
@@ -180,6 +198,9 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
         assert ( order.getAllFutureCreditAdjustments().size() == 1);
         assert ( order.getTotalFutureCreditAdjustmentsValue().equals(new Money(108.5D) ));
     }
+
+    @org.junit.jupiter.api.Order(6)
+
 
     @Test
     @Transactional

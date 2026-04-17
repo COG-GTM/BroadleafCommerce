@@ -23,7 +23,10 @@ import org.broadleafcommerce.profile.dataprovider.PhoneDataProvider;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -32,6 +35,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class PhoneTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -41,6 +45,9 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
     String userName = new String();
 
     private Long phoneId;
+
+    @Order(1)
+
 
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.PhoneDataProvider#createPhone")
@@ -53,6 +60,9 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
         assert phone.getId() != null;
         phoneId = phone.getId();
     }
+
+    @Order(2)
+
 
     @Test
     public void readPhoneById() {

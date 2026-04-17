@@ -28,7 +28,10 @@ import org.broadleafcommerce.profile.dataprovider.CustomerAddressDataProvider;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -36,6 +39,7 @@ import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CustomerAddressTest extends CommonSetupBaseTest {
 
     private String userName;
@@ -43,6 +47,9 @@ public class CustomerAddressTest extends CommonSetupBaseTest {
     
     @Resource
     private CustomerAddressService customerAddressService;
+
+    @Order(1)
+
 
     @Test
     @Transactional
@@ -53,6 +60,9 @@ public class CustomerAddressTest extends CommonSetupBaseTest {
             assert ca != null;
         }
     }
+    
+    @Order(2)
+
     
     @Test
     public void createNewDefaultAddress() {
@@ -85,6 +95,8 @@ public class CustomerAddressTest extends CommonSetupBaseTest {
      * @param customerAddress
      */
     @Deprecated
+    @Order(3)
+
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerAddressDataProvider#createCustomerAddress")
     @Transactional
@@ -107,6 +119,8 @@ public class CustomerAddressTest extends CommonSetupBaseTest {
      * TThis method only exists because so many other tests depend on it, but should be removed once tests are more isolated
      */
     @Deprecated
+    @Order(4)
+
     @Test
     @Transactional
     public void readCustomerAddressByUserId() {
