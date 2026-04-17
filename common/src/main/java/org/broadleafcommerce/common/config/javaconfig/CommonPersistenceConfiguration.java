@@ -162,13 +162,31 @@ public class CommonPersistenceConfiguration {
         return manager;
     }
 
+    @Bean
+    public JPAPropertiesPersistenceUnitPostProcessor blJPAPropertiesPostProcessor() {
+        return new JPAPropertiesPersistenceUnitPostProcessor();
+    }
+
+    @Bean
+    public ORMConfigPersistenceUnitPostProcessor blORMConfigPostProcessor() {
+        return new ORMConfigPersistenceUnitPostProcessor();
+    }
+
+    @Bean
+    public JCachePersistenceUnitPostProcessor blJCachePostProcessor() {
+        return new JCachePersistenceUnitPostProcessor();
+    }
+
     @Bean(name = "blPersistenceUnitPostProcessors")
-    public ListFactoryBean blPersistenceUnitPostProcessors() {
+    public ListFactoryBean blPersistenceUnitPostProcessors(
+            JPAPropertiesPersistenceUnitPostProcessor blJPAPropertiesPostProcessor,
+            ORMConfigPersistenceUnitPostProcessor blORMConfigPostProcessor,
+            JCachePersistenceUnitPostProcessor blJCachePostProcessor) {
         ListFactoryBean listFactoryBean = new ListFactoryBean();
         List<Object> sourceList = new ArrayList<>();
-        sourceList.add(new JPAPropertiesPersistenceUnitPostProcessor());
-        sourceList.add(new ORMConfigPersistenceUnitPostProcessor());
-        sourceList.add(new JCachePersistenceUnitPostProcessor());
+        sourceList.add(blJPAPropertiesPostProcessor);
+        sourceList.add(blORMConfigPostProcessor);
+        sourceList.add(blJCachePostProcessor);
         listFactoryBean.setSourceList(sourceList);
         return listFactoryBean;
     }
