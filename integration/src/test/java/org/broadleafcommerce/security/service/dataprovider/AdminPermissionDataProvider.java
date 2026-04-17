@@ -20,10 +20,8 @@ package org.broadleafcommerce.security.service.dataprovider;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermission;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermissionImpl;
 import org.broadleafcommerce.openadmin.server.security.service.type.PermissionType;
-import org.testng.annotations.DataProvider;
 
 public class AdminPermissionDataProvider {
-    @DataProvider(name = "setupAdminPermission")
     public static Object[][] createAdminUser() {
         AdminPermission adminPermission = new AdminPermissionImpl();
         adminPermission.setName("TestAdminPermissionName");

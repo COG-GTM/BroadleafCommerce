@@ -26,13 +26,19 @@ import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ProductDaoTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -63,7 +69,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         return crossSaleProduct;
     }
 
-    @Test(groups="createProducts", dataProvider="setupProducts", dataProviderClass=ProductDataProvider.class)
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#createProducts")
     @Rollback(false)
     @Transactional
     public void createProducts(Product product) {
@@ -72,7 +80,8 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         savedProducts.add(product);
     }
 
-    @Test(groups="createUpSaleValues", dependsOnGroups="createProducts")
+    @Order(2)
+    @Test
     @Rollback(false)
     @Transactional
     public void createUpSaleValues(){
@@ -94,7 +103,8 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert(prod2.getId() != null);
     }
 
-    @Test(groups="testReadProductsWithUpSaleValues", dependsOnGroups="createUpSaleValues")
+    @Order(3)
+    @Test
     @Transactional
     public void testReadProductsWithUpSaleValues() {
         Product result = productDao.readProductById(savedProducts.get(0).getId());
@@ -109,7 +119,8 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(groups="createCrossSaleValues", dependsOnGroups="testReadProductsWithUpSaleValues")
+    @Order(4)
+    @Test
     @Rollback(false)
     @Transactional
     public void createCrossSaleValues(){
@@ -131,7 +142,8 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert(prod2.getId() != null);
     }
 
-    @Test(groups="testReadProductsWithCrossSaleValues", dependsOnGroups="createCrossSaleValues")
+    @Order(5)
+    @Test
     @Transactional
     public void testReadProductsWithCrossSaleValues() {
         Product result = productDao.readProductById(savedProducts.get(1).getId());
@@ -146,7 +158,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(dataProvider="basicProduct", dataProviderClass=ProductDataProvider.class)
+    @Order(6)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
     public void testReadProductsById(Product product) {
         product = catalogService.saveProduct(product);
@@ -154,7 +168,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert product.equals(result);
     }
 
-    @Test(dataProvider="basicProduct", dataProviderClass=ProductDataProvider.class)
+    @Order(7)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
     public void testReadProductsByName(Product product) {
         String name = product.getName();
@@ -163,7 +179,9 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
         assert result.contains(product);
     }
 
-    @Test(dataProvider = "basicProduct", dataProviderClass = ProductDataProvider.class)
+    @Order(8)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
     public void testReadArchivedProductsByName(Product product) {
         String name = product.getName();

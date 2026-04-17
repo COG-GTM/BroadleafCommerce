@@ -26,7 +26,12 @@ import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Commit;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +40,7 @@ import jakarta.annotation.Resource;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CustomerTest extends TestNGSiteIntegrationSetup {
     
     @Resource
@@ -47,7 +53,8 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
 
     List<String> userNames = new ArrayList<>();
 
-    @Test(groups = { "createCustomerIdGeneration" })
+    @Order(1)
+    @Test
     @Commit
     @Transactional
     public void createCustomerIdGeneration() {
@@ -61,7 +68,9 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(groups = "createCustomers", dependsOnGroups="createCustomerIdGeneration", dataProvider = "setupCustomers", dataProviderClass = CustomerDataProvider.class)
+    @Order(2)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerDataProvider#createCustomers")
     @Rollback(false)
     public void createCustomer(Customer customerInfo) {
         Customer customer = customerService.createCustomerFromId(null);
@@ -75,7 +84,8 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         userNames.add(customer.getUsername());
     }
 
-    @Test(groups = { "readCustomer" }, dependsOnGroups = { "createCustomers", "createCustomerIdGeneration" })
+    @Order(3)
+    @Test
     public void readCustomersById() {
         for (Long userId : userIds) {
             Customer customer = customerService.readCustomerById(userId);
@@ -83,8 +93,8 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-
-    @Test(groups = { "changeCustomerPassword" }, dependsOnGroups = { "readCustomer" })
+    @Order(4)
+    @Test
     @Transactional
     @Commit
     public void changeCustomerPasswords() {

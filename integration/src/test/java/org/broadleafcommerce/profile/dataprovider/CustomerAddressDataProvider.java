@@ -21,11 +21,8 @@ import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.AddressImpl;
 import org.broadleafcommerce.profile.core.domain.CustomerAddress;
 import org.broadleafcommerce.profile.core.domain.CustomerAddressImpl;
-import org.testng.annotations.DataProvider;
 
 public class CustomerAddressDataProvider {
-
-    @DataProvider(name = "setupCustomerAddress")
     public static Object[][] createCustomerAddress() {
         CustomerAddress ca1 = new CustomerAddressImpl();
         Address address1 = new AddressImpl();

@@ -27,13 +27,19 @@ import org.broadleafcommerce.profile.dataprovider.CustomerPhoneDataProvider;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
 
     List<Long> customerPhoneIds = new ArrayList<>();
@@ -46,7 +52,9 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CustomerService customerService;
 
-    @Test(groups = "createCustomerPhone", dataProvider = "setupCustomerPhone", dataProviderClass = CustomerPhoneDataProvider.class, dependsOnGroups = "readCustomer")
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerPhoneDataProvider#createCustomerPhone")
     @Transactional
     @Rollback(false)
     public void createCustomerPhone(CustomerPhone customerPhone) {
@@ -62,7 +70,8 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
         userId = customerPhone.getCustomer().getId();
     }
 
-    @Test(groups = "readCustomerPhone", dependsOnGroups = "createCustomerPhone")
+    @Order(2)
+    @Test
     @Transactional
     public void readCustomerPhoneByUserId() {
         List<CustomerPhone> customerPhoneList = customerPhoneService.readActiveCustomerPhonesByCustomerId(userId);
@@ -71,7 +80,10 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
         }
     }
     
-    @Test(groups = "readCustomerPhone", dependsOnGroups = "createCustomerPhone")
+    @Order(3)
+
+    
+    @Test
     @Transactional
     public void readDeafultCustomerPhoneByUserId() {
         CustomerPhone customerPhone = customerPhoneService.findDefaultCustomerPhone(userId);

@@ -22,7 +22,6 @@ import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.domain.ProductImpl;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.domain.SkuImpl;
-import org.testng.annotations.DataProvider;
 
 import java.math.BigDecimal;
 import java.util.Calendar;
@@ -32,7 +31,6 @@ public class ProductDataProvider {
     /**
      * A basic product is actually a Product and a Sku
      */
-    @DataProvider(name="basicProduct")
     public static Object[][] provideBasicProduct() {
         Product ci = new ProductImpl();
         
@@ -43,8 +41,6 @@ public class ProductDataProvider {
 
         return new Object[][]{{ci}};
     }
-
-    @DataProvider(name="setupProducts")
     public static Object[][] createProducts() {
         Product p1 = getProduct(null);
         Product p2 = getProduct(null);

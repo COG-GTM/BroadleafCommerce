@@ -23,12 +23,16 @@ import org.broadleafcommerce.test.config.BroadleafAdminIntegrationTest;
 import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.jdbc.SqlScriptsTestExecutionListener;
 import org.springframework.test.context.support.DependencyInjectionTestExecutionListener;
-import org.springframework.test.context.testng.AbstractTestNGSpringContextTests;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
-import org.testng.annotations.BeforeClass;
 
 /**
- * Base TestNG support class used for Broadleaf Admin tests. This is slightly different than the normal {@link AbstractTestNGSpringContextTests}
+ * Base TestNG support class used for Broadleaf Admin tests. This is slightly different than a basic Spring test setup
  * in that this also includes the other default {@link TestExecutionListeners} in order to use {@literal @}Transactional in test methods,
  * while not marking the entire test as {@literal @}Transactional (like in {@link TestNGTransactionalAdminIntegrationSetup}.
  * 
@@ -41,7 +45,12 @@ import org.testng.annotations.BeforeClass;
 //because of defined listeners explicitly it doesn't have it, and so test classes are missing injected beans
 // and also spring context is not started early enough, so some other code triggers loading of entities before we register our transformers
 @TestExecutionListeners({TransactionalTestExecutionListener.class, SqlScriptsTestExecutionListener.class, DependencyInjectionTestExecutionListener.class})
-public abstract class TestNGAdminIntegrationSetup extends AbstractTestNGSpringContextTests {
+@ExtendWith(SpringExtension.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+public abstract class TestNGAdminIntegrationSetup {
+
+    @Autowired
+    protected ApplicationContext applicationContext;
 
     /**
      * This was added as a result of update to 7.0 with new spring, hdsqldb, testng, surefire and maybe something else
@@ -72,7 +81,7 @@ public abstract class TestNGAdminIntegrationSetup extends AbstractTestNGSpringCo
      * as in real application there is only 1 context that is created on a startup.
      *
      */
-    @BeforeClass(alwaysRun = true, dependsOnMethods = "springTestContextPrepareTestInstance")
+    @BeforeAll
     public void reSetApplicationContext(){
         DefaultPostLoaderDao.resetApplicationContext(this.applicationContext);
         ApplicationContextHolder.resetApplicationContext(applicationContext);

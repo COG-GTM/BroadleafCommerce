@@ -22,7 +22,9 @@ import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityServ
 import org.broadleafcommerce.security.service.dataprovider.AdminPermissionDataProvider;
 import org.broadleafcommerce.test.TestNGAdminIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
@@ -30,7 +32,8 @@ public class AdminPermissionTest extends TestNGAdminIntegrationSetup {
     @Resource
     AdminSecurityService adminSecurityService;
 
-    @Test(groups =  {"testAdminPermissionSave"}, dataProvider = "setupAdminPermission", dataProviderClass = AdminPermissionDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.security.service.dataprovider.AdminPermissionDataProvider#createAdminUser")
     @Rollback(true)
     public void testAdminPermissionSave(AdminPermission permission) throws Exception {
         AdminPermission newPermission = adminSecurityService.saveAdminPermission(permission);

@@ -40,13 +40,18 @@ import org.broadleafcommerce.profile.core.domain.CustomerImpl;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.Calendar;
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderTest extends OrderBaseTest {
 
     private Long orderId = null;
@@ -58,7 +63,10 @@ public class OrderTest extends OrderBaseTest {
     @Resource
     private SkuDao skuDao;
     
-    @Test(groups = { "createCartForCustomer" }, dependsOnGroups = { "readCustomer", "createPhone" })
+    @org.junit.jupiter.api.Order(1)
+
+    
+    @Test
     @Transactional
     @Rollback(false)
     public void createCartForCustomer() {
@@ -71,7 +79,8 @@ public class OrderTest extends OrderBaseTest {
         this.orderId = order.getId();
     }
 
-    @Test(groups = { "findCurrentCartForCustomer" }, dependsOnGroups = { "readCustomer", "createPhone", "createCartForCustomer" })
+    @org.junit.jupiter.api.Order(2)
+    @Test
     @Transactional
     @Rollback(false)
     public void findCurrentCartForCustomer() {
@@ -84,7 +93,8 @@ public class OrderTest extends OrderBaseTest {
         this.orderId = order.getId();
     }
 
-    @Test(groups = { "addItemToOrder" }, dependsOnGroups = { "findCurrentCartForCustomer", "createSku", "testCatalog" })
+    @org.junit.jupiter.api.Order(3)
+    @Test
     @Rollback(false)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addItemToOrder() throws AddToCartException {
@@ -122,7 +132,10 @@ public class OrderTest extends OrderBaseTest {
         assert fgItem.getQuantity() == item.getQuantity();
     }
     
-    @Test(groups = { "addAnotherItemToOrder" }, dependsOnGroups = { "addItemToOrder" })
+    @org.junit.jupiter.api.Order(4)
+
+    
+    @Test
     @Rollback(false)
     @Transactional
     public void addAnotherItemToOrder() throws AddToCartException, PricingException, RemoveFromCartException {
@@ -196,7 +209,10 @@ public class OrderTest extends OrderBaseTest {
         });
     }
     
-    @Test(groups = { "testIllegalAddScenarios" }, dependsOnGroups = { "addItemToOrder" })
+    @org.junit.jupiter.api.Order(5)
+
+    
+    @Test
     @Transactional
     public void testIllegalAddScenarios() throws AddToCartException {
         Order order = orderService.findOrderById(orderId);
@@ -270,7 +286,10 @@ public class OrderTest extends OrderBaseTest {
         assert !addSuccessful;
     }
     
-    @Test(groups = { "testIllegalUpdateScenarios" }, dependsOnGroups = { "addItemToOrder" })
+    @org.junit.jupiter.api.Order(6)
+
+    
+    @Test
     @Transactional
     public void testIllegalUpdateScenarios() throws UpdateCartException, AddToCartException, RemoveFromCartException {
         Order order = orderService.findOrderById(orderId);
@@ -328,7 +347,7 @@ public class OrderTest extends OrderBaseTest {
 
    /*
    old bundles are not working with hibernate 6
-   @Test(groups = { "addBundleToOrder" }, dependsOnGroups = { "addAnotherItemToOrder" })
+   @Test
     @Rollback(false)
     public void addBundleToOrder() throws AddToCartException {
         numOrderItems++;
@@ -351,7 +370,7 @@ public class OrderTest extends OrderBaseTest {
         assert item.getDiscreteOrderItems().size() == 1;
     }
     
-    @Test(groups = { "removeBundleFromOrder" }, dependsOnGroups = { "addBundleToOrder" })
+    @Test
     @Rollback(false)
     @Transactional
     public void removeBundleFromOrder() throws RemoveFromCartException {
@@ -369,7 +388,10 @@ public class OrderTest extends OrderBaseTest {
         assert items.size() == startingSize - 1;
     }*/
     
-    @Test(groups = { "getItemsForOrder" }, dependsOnGroups = { "addAnotherItemToOrder" })
+    @org.junit.jupiter.api.Order(7)
+
+    
+    @Test
     @Transactional
     public void getItemsForOrder() {
         Order order = orderService.findOrderById(orderId);
@@ -378,7 +400,8 @@ public class OrderTest extends OrderBaseTest {
         assert orderItems.size() == numOrderItems;
     }
 
-    @Test(groups = { "testManyToOneFGItemToOrderItem" }, dependsOnGroups = { "getItemsForOrder" })
+    @org.junit.jupiter.api.Order(8)
+    @Test
     @Transactional
     public void testManyToOneFGItemToOrderItem() throws UpdateCartException, RemoveFromCartException, PricingException {
         // Grab the order and the first OrderItem
@@ -413,7 +436,8 @@ public class OrderTest extends OrderBaseTest {
 
     }
 
-    @Test(groups = { "updateItemsInOrder" }, dependsOnGroups = { "getItemsForOrder" })
+    @org.junit.jupiter.api.Order(9)
+    @Test
     @Transactional
     public void updateItemsInOrder() throws UpdateCartException, RemoveFromCartException {
         // Grab the order and the first OrderItem
@@ -499,7 +523,8 @@ public class OrderTest extends OrderBaseTest {
         assert fgItemRemoved;*/
     }
 
-    @Test(groups = { "removeItemFromOrder" }, dependsOnGroups = { "getItemsForOrder" })
+    @org.junit.jupiter.api.Order(10)
+    @Test
     @Transactional
     public void removeItemFromOrder() throws RemoveFromCartException {
         // Grab the order and the first OrderItem
@@ -522,7 +547,8 @@ public class OrderTest extends OrderBaseTest {
         assert updatedItem == null;
     }
 
-    @Test(groups = { "checkOrderItems" }, dependsOnGroups = { "removeItemFromOrder" })
+    @org.junit.jupiter.api.Order(11)
+    @Test
     @Transactional
     public void checkOrderItems() throws PricingException {
         Order order = orderService.findOrderById(orderId);
@@ -539,7 +565,9 @@ public class OrderTest extends OrderBaseTest {
     }
 
     
-    @Test(groups = { "getOrdersForCustomer" }, dependsOnGroups = { "readCustomer", "findCurrentCartForCustomer" })
+    @org.junit.jupiter.api.Order(12)
+    
+    @Test
     @Transactional
     public void getOrdersForCustomer() {
         String username = "customer1";
@@ -549,7 +577,8 @@ public class OrderTest extends OrderBaseTest {
         assert orders.size() > 0;
     }
 
-    @Test(groups = { "findCartForAnonymousCustomer" }, dependsOnGroups = { "getOrdersForCustomer" })
+    @org.junit.jupiter.api.Order(13)
+    @Test
     public void findCartForAnonymousCustomer() {
         Customer customer = customerService.createCustomerFromId(null);
         Order order = orderService.findCartForCustomer(customer);
@@ -561,7 +590,8 @@ public class OrderTest extends OrderBaseTest {
         assert newOrder.getCustomer() != null;
     }
 
-    @Test(groups = { "findOrderByOrderNumber" }, dependsOnGroups = { "findCartForAnonymousCustomer" })
+    @org.junit.jupiter.api.Order(14)
+    @Test
     @Transactional
     public void findOrderByOrderNumber() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -580,7 +610,8 @@ public class OrderTest extends OrderBaseTest {
         assert nullOrder == null;
     }
 
-    @Test(groups = { "findNamedOrderForCustomer" }, dependsOnGroups = { "findOrderByOrderNumber" })
+    @org.junit.jupiter.api.Order(15)
+    @Test
     @Transactional
     public void findNamedOrderForCustomer() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -594,7 +625,8 @@ public class OrderTest extends OrderBaseTest {
         assert newOrder.getId().equals(orderId);
     }
 
-    @Test(groups = { "testReadOrdersForCustomer" }, dependsOnGroups = { "findNamedOrderForCustomer" })
+    @org.junit.jupiter.api.Order(16)
+    @Test
     @Transactional
     public void testReadOrdersForCustomer() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -617,7 +649,8 @@ public class OrderTest extends OrderBaseTest {
         assert containsOrder == true;
     }
 
-    @Test(groups = { "testOrderProperties" }, dependsOnGroups = { "testReadOrdersForCustomer" })
+    @org.junit.jupiter.api.Order(17)
+    @Test
     public void testOrderProperties() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
         Order order = orderService.createNewCartForCustomer(customer);
@@ -630,7 +663,8 @@ public class OrderTest extends OrderBaseTest {
         assert order.getSubmitDate().equals(testCalendar.getTime());
     }
 
-    @Test(groups = { "testNamedOrderForCustomer" }, dependsOnGroups = { "testOrderProperties" })
+    @org.junit.jupiter.api.Order(18)
+    @Test
     public void testNamedOrderForCustomer() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
         customer = customerService.saveCustomer(customer);
@@ -645,7 +679,9 @@ public class OrderTest extends OrderBaseTest {
         assert orderService.findOrderById(orderId) == null;
     }
 
-    @Test(groups = { "addPaymentToOrder" }, dataProvider = "basicPaymentInfo", dataProviderClass = PaymentInfoDataProvider.class, dependsOnGroups = { "checkOrderItems" })
+    @org.junit.jupiter.api.Order(19)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Rollback(false)
     @Transactional
     public void addPaymentToOrder(OrderPayment paymentInfo) {
@@ -661,7 +697,9 @@ public class OrderTest extends OrderBaseTest {
         assert payment.getOrder().equals(order);
     }
 
-    @Test(groups = { "testOrderPaymentInfos" }, dataProvider = "basicPaymentInfo", dataProviderClass = PaymentInfoDataProvider.class)
+    @org.junit.jupiter.api.Order(20)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Transactional
     public void testOrderPaymentInfos(OrderPayment info) throws PricingException {
         Customer customer = customerService.saveCustomer(createNamedCustomer());
@@ -680,12 +718,14 @@ public class OrderTest extends OrderBaseTest {
         assert orderService.findPaymentsForOrder(order) != null;
     }
 
+    @org.junit.jupiter.api.Order(21)
     @Test
     public void findCartForNullCustomerId() {
         assert orderService.findCartForCustomer(new CustomerImpl()) == null;
     }
 
-    @Test(groups = { "testSubmitOrder" }, dependsOnGroups = { "findNamedOrderForCustomer" })
+    @org.junit.jupiter.api.Order(22)
+    @Test
     public void testSubmitOrder() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
         Order order = orderService.createNewCartForCustomer(customer);

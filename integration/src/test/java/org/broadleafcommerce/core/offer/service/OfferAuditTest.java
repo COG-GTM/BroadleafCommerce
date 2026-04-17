@@ -39,7 +39,11 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.test.CommonSetupBaseTest;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.Calendar;
@@ -50,6 +54,7 @@ import jakarta.annotation.Resource;
 /**
  * @author Chad Harchar (charchar)
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OfferAuditTest extends CommonSetupBaseTest {
 
     private CreateOfferUtility offerUtil;
@@ -78,10 +83,11 @@ public class OfferAuditTest extends CommonSetupBaseTest {
 
     protected final OfferDataItemProvider dataProvider = new OfferDataItemProvider();
 
-
     private long sku;
 
-    @Test(groups = { "offerCreateSku1" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class)
+    @org.junit.jupiter.api.Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku(Sku sku) {
         offerUtil = new CreateOfferUtility(offerDao, offerCodeDao, offerService);
@@ -95,8 +101,8 @@ public class OfferAuditTest extends CommonSetupBaseTest {
         this.sku = sku.getId();
     }
 
-
-    @Test(groups =  {"testPercentageOffOffer"}, dependsOnGroups = { "offerCreateSku1" })
+    @org.junit.jupiter.api.Order(2)
+    @Test
     @Transactional
     public void testMinimumDaysPerUsageAudit() throws Exception {
 
@@ -108,7 +114,6 @@ public class OfferAuditTest extends CommonSetupBaseTest {
         offer.setMinimumDaysPerUsage(1L);
 
         OfferCode offerCode = offerUtil.createOfferCode("10 Percent Off All Item Offer Code", offer);
-
 
         Calendar currentDate = Calendar.getInstance();
         currentDate.add(Calendar.MINUTE, -5);
@@ -134,7 +139,6 @@ public class OfferAuditTest extends CommonSetupBaseTest {
         offerAudit2.setRedeemedDate(currentDate.getTime());
 
         offerAuditService.save(offerAudit2);
-
 
         Order order = orderService.createNewCartForCustomer(customer);
         FixedPriceFulfillmentOption option = new FixedPriceFulfillmentOptionImpl();

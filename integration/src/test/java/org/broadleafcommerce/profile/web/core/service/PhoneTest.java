@@ -23,13 +23,19 @@ import org.broadleafcommerce.profile.dataprovider.PhoneDataProvider;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class PhoneTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -40,7 +46,9 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
 
     private Long phoneId;
 
-    @Test(groups = { "createPhone" }, dataProvider = "setupPhone", dataProviderClass = PhoneDataProvider.class, dependsOnGroups = { "readCustomer" })
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.dataprovider.PhoneDataProvider#createPhone")
     @Transactional
     @Rollback(false)
     public void createPhone(Phone phone) {
@@ -51,7 +59,8 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
         phoneId = phone.getId();
     }
 
-    @Test(groups = { "readPhoneById" }, dependsOnGroups = { "createPhone" })
+    @Order(2)
+    @Test
     public void readPhoneById() {
         Phone phone = phoneService.readPhoneById(phoneId);
         assert phone != null;

@@ -20,7 +20,10 @@ package org.broadleafcommerce.test;
 import org.broadleafcommerce.common.util.TransactionUtils;
 import org.broadleafcommerce.test.config.BroadleafAdminIntegrationTest;
 import org.broadleafcommerce.test.config.BroadleafSiteIntegrationTest;
-import org.springframework.test.context.testng.AbstractTransactionalTestNGSpringContextTests;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
 
 /**
@@ -32,12 +35,15 @@ import org.springframework.test.context.transaction.TransactionalTestExecutionLi
  * You can get finer-grained control over which classes are {@code @Transactional} and which ones aren't by instead subclassing
  * {@link TestNGSiteIntegrationSetup} instead and annotating individual {@code @Test} methods.
  * 
- * @see AbstractTransactionalTestNGSpringContextTests
+ * @see SpringExtension
  * @see TransactionalTestExecutionListener
  * @see BroadleafSiteIntegrationTest
  * @author Phillip Verheyden (phillipuniverse)
  */
 @BroadleafAdminIntegrationTest
-public abstract class TestNGTransactionalAdminIntegrationSetup extends AbstractTransactionalTestNGSpringContextTests {
+@ExtendWith(SpringExtension.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Transactional
+public abstract class TestNGTransactionalAdminIntegrationSetup {
     
 }

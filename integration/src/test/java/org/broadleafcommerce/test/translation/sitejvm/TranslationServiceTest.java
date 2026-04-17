@@ -26,8 +26,8 @@ import org.broadleafcommerce.core.catalog.domain.CategoryImpl;
 import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.Assert;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.Locale;
 
@@ -49,7 +49,7 @@ public class TranslationServiceTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CatalogService catalogService;
 
-    @Test(groups = {"testTranslation"})
+    @Test
     @Transactional
     public void testTranslation() throws Exception {
         Category category = new CategoryImpl();
@@ -68,17 +68,17 @@ public class TranslationServiceTest extends TestNGSiteIntegrationSetup {
         translationService.save(TranslatedEntity.CATEGORY.getType(), String.valueOf(category.getId()), "name", "es", "es");
 
         String specificTranslation = translationService.getTranslatedValue(category, "name", new Locale("es", "MX"));
-        Assert.assertEquals(specificTranslation, "es_MX");
+        Assertions.assertEquals(specificTranslation, "es_MX");
 
         String generalTranslation = translationService.getTranslatedValue(category, "name", Locale.forLanguageTag("es"));
-        Assert.assertEquals(generalTranslation, "es");
+        Assertions.assertEquals(generalTranslation, "es");
 
         //test a second time to go through cache
 
         specificTranslation = translationService.getTranslatedValue(category, "name", new Locale("es", "MX"));
-        Assert.assertEquals(specificTranslation, "es_MX");
+        Assertions.assertEquals(specificTranslation, "es_MX");
 
         generalTranslation = translationService.getTranslatedValue(category, "name", Locale.forLanguageTag("es"));
-        Assert.assertEquals(generalTranslation, "es");
+        Assertions.assertEquals(generalTranslation, "es");
     }
 }

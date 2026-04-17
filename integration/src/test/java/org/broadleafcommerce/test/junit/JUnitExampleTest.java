@@ -22,7 +22,7 @@ import org.broadleafcommerce.test.config.BroadleafSiteIntegrationTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.junit.jupiter.api.Test;
-import org.testng.Assert;
+import org.junit.jupiter.api.Assertions;
 
 import jakarta.annotation.Resource;
 
@@ -41,6 +41,6 @@ public class JUnitExampleTest {
     
     @Test
     public void testInjectionWorks() {
-        Assert.assertNotEquals(catalogService, null);
+        Assertions.assertNotEquals(catalogService, null);
     }
 }

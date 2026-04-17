@@ -31,13 +31,12 @@ import org.springframework.context.annotation.ImportResource;
 import org.springframework.core.Ordered;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.ContextHierarchy;
-import org.testng.Assert;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import jakarta.annotation.Resource;
-
 
 /**
  * 
@@ -64,29 +63,29 @@ public class WorkflowTest extends TestNGSiteIntegrationSetup {
     
     @Test
     public void testMergedOrderedActivities() {
-        Assert.assertEquals(activities.get(0).getClass(), PassThroughActivity.class);
-        Assert.assertEquals(activities.get(0).getOrder(), 100);
+        Assertions.assertEquals(PassThroughActivity.class, activities.get(0).getClass());
+        Assertions.assertEquals(100, activities.get(0).getOrder());
         
-        Assert.assertEquals(activities.get(6).getClass(), PassThroughActivity.class);
-        Assert.assertEquals(activities.get(5).getOrder(), 3000);
+        Assertions.assertEquals(PassThroughActivity.class, activities.get(6).getClass());
+        Assertions.assertEquals(3000, activities.get(5).getOrder());
     }
     
     @Test
     public void testFrameworkOrderingChanged() {
-        Assert.assertEquals(totalActivity.getOrder(), 8080);
+        Assertions.assertEquals(8080, totalActivity.getOrder());
     }
     
     @Test
     public void testDetectedModuleActivity() {
         List<ModuleActivity> moduleActivities = checkoutWorkflow.getModuleActivities();
-        Assert.assertEquals(moduleActivities.size(), 1);
-        Assert.assertEquals(moduleActivities.get(0).getModuleName(), "integration");
+        Assertions.assertEquals(1, moduleActivities.size());
+        Assertions.assertEquals("integration", moduleActivities.get(0).getModuleName());
     }
     
     @Test
     public void testNonExplicitOrdering() {
-        Assert.assertEquals(activities.get(activities.size() - 1).getClass(), TestExampleModuleActivity.class);
-        Assert.assertEquals(activities.get(activities.size() - 1).getOrder(), Ordered.LOWEST_PRECEDENCE);
+        Assertions.assertEquals(TestExampleModuleActivity.class, activities.get(activities.size() - 1).getClass());
+        Assertions.assertEquals(Ordered.LOWEST_PRECEDENCE, activities.get(activities.size() - 1).getOrder());
     }
     
     /**
@@ -94,12 +93,12 @@ public class WorkflowTest extends TestNGSiteIntegrationSetup {
      */
     @Test
     public void testSameOrderingConfiguredActivity() {
-        Assert.assertEquals(activities.get(9).getClass(), TestRollbackActivity.class);
+        Assertions.assertEquals(TestRollbackActivity.class, activities.get(9).getClass());
     }
     
     @Test
     public void testInBetweenActivity() {
-        Assert.assertEquals(activities.get(6).getClass(), PassThroughActivity.class);
+        Assertions.assertEquals(PassThroughActivity.class, activities.get(6).getClass());
     }
     
 }

@@ -29,15 +29,22 @@ import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
-import org.testng.annotations.AfterClass;
-import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetup;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -48,7 +55,7 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
 
     private GreenMail greenMail;
 
-    @BeforeClass
+    @BeforeAll
     protected void setupControllerTest() {
         greenMail = new GreenMail(
                 new ServerSetup[] {
@@ -58,12 +65,15 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         greenMail.start();
     }
 
-    @AfterClass
+    @AfterAll
     protected void tearDownControllerTest() {
         greenMail.stop();
     }
 
-    @Test(groups = "createCustomerFromController", dataProvider = "setupCustomerControllerData", dataProviderClass = RegisterCustomerDataProvider.class, enabled=false)
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.profile.web.core.controller.dataprovider.RegisterCustomerDataProvider#createCustomer")
+    @Disabled
     @Transactional
     @Rollback(false)
     public void createCustomerFromController(RegisterCustomerForm registerCustomer) {
@@ -76,7 +86,8 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
         assert(customerFromDb != null);
     }
 
-    @Test(groups = "viewRegisterCustomerFromController")
+    @Order(2)
+    @Test
     public void viewRegisterCustomerFromController() {
         String view = registerCustomerController.registerCustomer();
         assert (view.equals("/account/registration/registerCustomer"));

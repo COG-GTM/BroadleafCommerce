@@ -19,11 +19,8 @@ package org.broadleafcommerce.profile.dataprovider;
 
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerImpl;
-import org.testng.annotations.DataProvider;
 
 public class CustomerDataProvider {
-
-    @DataProvider(name = "setupCustomers")
     public static Object[][] createCustomers() {
         Customer customer1 = new CustomerImpl();
         customer1.setPassword("customer1Password");

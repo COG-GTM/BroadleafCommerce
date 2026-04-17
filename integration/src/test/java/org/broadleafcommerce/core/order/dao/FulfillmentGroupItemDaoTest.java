@@ -35,12 +35,17 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
 
     private FulfillmentGroup fulfillmentGroup;
@@ -71,7 +76,9 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private FulfillmentGroupService fulfillmentGroupService;
 
-    @Test(groups = "createItemFulfillmentGroup", dataProvider = "basicFulfillmentGroup", dataProviderClass = FulfillmentGroupDataProvider.class, dependsOnGroups = { "createOrder", "createCustomerAddress" })
+    @org.junit.jupiter.api.Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Rollback(false)
     @Transactional
     public void createDefaultFulfillmentGroup(FulfillmentGroup fulfillmentGroup) {
@@ -93,7 +100,11 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         assert this.fulfillmentGroup.getId() != null;
     }
     
-    @Test(groups = { "createFulfillmentGroupItem" }, dataProvider = "basicDiscreteOrderItem", dataProviderClass = OrderItemDataProvider.class, dependsOnGroups = { "createOrder", "createSku", "createItemFulfillmentGroup" })
+    @org.junit.jupiter.api.Order(2)
+
+    
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicDiscreteSalesOrderItem")
     @Rollback(false)
     @Transactional
     public void createFulfillmentGroupItem(DiscreteOrderItem orderItem) throws PricingException {        
@@ -114,7 +125,8 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         fulfillmentGroupItemId = fgi.getId();
     }
 
-    @Test(groups = { "readFulfillmentGroupItemsForFulfillmentGroup" }, dependsOnGroups = { "createFulfillmentGroupItem" })
+    @org.junit.jupiter.api.Order(3)
+    @Test
     @Transactional
     public void readFulfillmentGroupItemsForFulfillmentGroup() {
         List<FulfillmentGroupItem> fgis = fulfillmentGroupItemDao.readFulfillmentGroupItemsForFulfillmentGroup(fulfillmentGroup);
@@ -122,7 +134,8 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
         assert fgis.size() > 0;
     }
 
-    @Test(groups = { "readFulfillmentGroupItemsById" }, dependsOnGroups = { "createFulfillmentGroupItem" })
+    @org.junit.jupiter.api.Order(4)
+    @Test
     @Transactional
     public void readFulfillmentGroupItemsById() {
         FulfillmentGroupItem fgi = fulfillmentGroupItemDao.readFulfillmentGroupItemById(fulfillmentGroupItemId);

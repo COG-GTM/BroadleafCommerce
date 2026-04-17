@@ -24,12 +24,17 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderDaoTest extends TestNGSiteIntegrationSetup {
 
     String userName = new String();
@@ -41,7 +46,9 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CustomerService customerService;
 
-    @Test(groups = { "createOrder" }, dataProvider = "basicOrder", dataProviderClass = OrderDataProvider.class, dependsOnGroups = { "readCustomer", "createPhone" })
+    @org.junit.jupiter.api.Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.OrderDataProvider#provideBasicSalesOrder")
     @Rollback(false)
     @Transactional
     public void createOrder(Order order) {
@@ -54,13 +61,15 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
         orderId = order.getId();
     }
 
-    @Test(groups = { "readOrder" }, dependsOnGroups = { "createOrder" })
+    @org.junit.jupiter.api.Order(2)
+    @Test
     public void readOrderById() {
         Order result = orderDao.readOrderById(orderId);
         assert result != null;
     }
 
-    @Test(groups = { "readOrdersForCustomer" }, dependsOnGroups = { "readCustomer", "createOrder" })
+    @org.junit.jupiter.api.Order(3)
+    @Test
     @Transactional
     public void readOrdersForCustomer() {
         userName = "customer1";

@@ -29,7 +29,9 @@ import org.broadleafcommerce.core.catalog.domain.SkuImpl;
 import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -44,7 +46,8 @@ public class CategoryDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CatalogService catalogService;
 
-    @Test(groups =  {"testSetFeaturedProducts"}, dataProvider="basicCategory", dataProviderClass=CategoryDaoDataProvider.class)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.CategoryDaoDataProvider#provideBasicCategory")
     @Transactional
     public void testSetFeaturedProducts(Category category) {
         category = catalogService.saveCategory(category);

@@ -21,13 +21,10 @@ import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.common.payment.PaymentType;
 import org.broadleafcommerce.core.payment.domain.OrderPayment;
 import org.broadleafcommerce.core.payment.domain.OrderPaymentImpl;
-import org.testng.annotations.DataProvider;
 
 import java.math.BigDecimal;
 
 public class PaymentInfoDataProvider {
-
-    @DataProvider(name = "basicPaymentInfo")
     public static Object[][] provideBasicSalesPaymentInfo() {
         OrderPayment sop = new OrderPaymentImpl();
         sop.setAmount(new Money(BigDecimal.valueOf(10.99)));

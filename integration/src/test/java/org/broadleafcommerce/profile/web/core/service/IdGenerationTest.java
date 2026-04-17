@@ -23,7 +23,10 @@ import org.broadleafcommerce.common.id.service.IdGenerationService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,7 @@ import jakarta.annotation.Resource;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class IdGenerationTest extends TestNGSiteIntegrationSetup {
 
     @Resource
@@ -44,7 +48,8 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
 
     List<String> userNames = new ArrayList<>();
 
-    @Test(groups = "createId")
+    @Order(1)
+    @Test
     @Rollback(false)
     @Transactional
     public void createId() {
@@ -55,7 +60,8 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         em.persist(idGeneration);
     }
 
-    @Test(groups = "findIds", dependsOnGroups = "createId")
+    @Order(2)
+    @Test
     @Rollback(true)
     public void findIds() {
         for (int i = 1; i < 101; i++) {
@@ -64,7 +70,8 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         }
     }
 
-    @Test(groups = "createIdForBeginEndSequence")
+    @Order(3)
+    @Test
     @Rollback(false)
     @Transactional
     public void createIdForBeginEndSequence() {
@@ -77,7 +84,8 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
         em.persist(idGeneration);
     }
 
-    @Test(groups = "findIdsForBeginEndSequence", dependsOnGroups = "createIdForBeginEndSequence")
+    @Order(4)
+    @Test
     @Rollback(true)
     public void findIdsForBeginEndSequence() {
         for (int i = 1; i < 101; i++) {

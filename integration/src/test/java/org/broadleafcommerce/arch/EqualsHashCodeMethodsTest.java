@@ -17,7 +17,7 @@
  */
 package org.broadleafcommerce.arch;
 
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
 
 import com.tngtech.archunit.base.Optional;
 import com.tngtech.archunit.core.domain.JavaClass;

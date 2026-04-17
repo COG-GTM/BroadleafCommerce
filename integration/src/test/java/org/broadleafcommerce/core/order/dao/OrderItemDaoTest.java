@@ -26,10 +26,16 @@ import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
 
     private Long orderItemId;
@@ -41,7 +47,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private SkuDao skuDao;
 
-    @Test(groups = { "createDiscreteOrderItem" }, dataProvider = "basicDiscreteOrderItem", dataProviderClass = OrderItemDataProvider.class, dependsOnGroups = { "createOrder", "createSku" })
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicDiscreteSalesOrderItem")
     @Rollback(false)
     @Transactional
     public void createDiscreteOrderItem(DiscreteOrderItem orderItem) {
@@ -55,7 +63,9 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         orderItemId = orderItem.getId();
     }
 
-    @Test(groups = { "createGiftWrapOrderItem" }, dataProvider = "basicGiftWrapOrderItem", dataProviderClass = OrderItemDataProvider.class, dependsOnGroups = { "readOrderItemsById" })
+    @Order(2)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicGiftWrapSalesOrderItem")
     @Rollback(false)
     @Transactional
     public void createGiftWrapOrderItem(GiftWrapOrderItem orderItem) {
@@ -73,7 +83,8 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         giftWrapItemId = orderItem.getId();
     }
 
-    @Test(groups = { "readGiftWrapOrderItemsById" }, dependsOnGroups = { "createGiftWrapOrderItem" })
+    @Order(3)
+    @Test
     @Transactional
     public void readGiftWrapOrderItemsById() {
         assert giftWrapItemId != null;
@@ -83,7 +94,8 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert ((GiftWrapOrderItem) result).getWrappedItems().get(0).getId().equals(orderItemId);
     }
 
-    @Test(groups = { "deleteGiftWrapOrderItemsById" }, dependsOnGroups = { "readGiftWrapOrderItemsById" })
+    @Order(4)
+    @Test
     @Rollback(false)
     public void deleteGiftWrapOrderItemsById() {
         OrderItem result = orderItemDao.readOrderItemById(giftWrapItemId);
@@ -91,7 +103,8 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert orderItemDao.readOrderItemById(giftWrapItemId) == null;
     }
 
-    @Test(groups = { "readOrderItemsById" }, dependsOnGroups = { "createDiscreteOrderItem" })
+    @Order(5)
+    @Test
     public void readOrderItemsById() {
         assert orderItemId != null;
         OrderItem result = orderItemDao.readOrderItemById(orderItemId);
@@ -99,7 +112,8 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
         assert result.getId().equals(orderItemId);
     }
 
-    @Test(groups = { "readOrderItemsByIdAfterGiftWrapDeletion" }, dependsOnGroups = { "deleteGiftWrapOrderItemsById" })
+    @Order(6)
+    @Test
     public void readOrderItemsByIdAfterGiftWrapDeletion() {
         assert orderItemId != null;
         OrderItem result = orderItemDao.readOrderItemById(orderItemId);

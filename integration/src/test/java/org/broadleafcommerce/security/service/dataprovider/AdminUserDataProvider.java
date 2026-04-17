@@ -19,10 +19,8 @@ package org.broadleafcommerce.security.service.dataprovider;
 
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUserImpl;
-import org.testng.annotations.DataProvider;
 
 public class AdminUserDataProvider {
-    @DataProvider(name = "setupAdminUser")
     public static Object[][] createAdminUser() {
         AdminUser adminUser = new AdminUserImpl();
         adminUser.setName("TestAdminUserName");

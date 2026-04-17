@@ -24,13 +24,19 @@ import org.broadleafcommerce.core.catalog.service.CatalogService;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.Calendar;
 
 import jakarta.annotation.Resource;
 
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class SkuDaoTest extends TestNGSiteIntegrationSetup {
 
     private Long skuId;
@@ -41,7 +47,9 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
     @Resource
     private CatalogService catalogService;
 
-    @Test(groups = { "createSku" }, dataProvider = "basicSku", dataProviderClass = SkuDaoDataProvider.class, dependsOnGroups = { "readCustomer", "createOrder", "createProducts" })
+    @Order(1)
+    @ParameterizedTest
+    @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
     public void createSku(Sku sku) {
         Calendar activeStartCal = Calendar.getInstance();
@@ -56,7 +64,8 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
         skuId = sku.getId();
     }
 
-    @Test(groups = { "readFirstSku" }, dependsOnGroups = { "createSku" })
+    @Order(2)
+    @Test
     @Transactional
     public void readFirstSku() {
         Sku si = skuDao.readFirstSku();
@@ -64,7 +73,8 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
         assert si.getId() != null;
     }
 
-    @Test(groups = { "readSkuById" }, dependsOnGroups = { "createSku" })
+    @Order(3)
+    @Test
     @Transactional
     public void readSkuById() {
         Sku item = skuDao.readSkuById(skuId);
