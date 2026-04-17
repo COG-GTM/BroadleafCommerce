@@ -52,10 +52,10 @@
         <logback.version>1.5.32</logback.version>
         <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
         <geb.version>7.0</geb.version>
-        <spock.core.version>2.4-M4-groovy-4.0</spock.core.version>
-        <spock.spring.version>2.4-M4-groovy-4.0</spock.spring.version>
+        <spock.core.version>2.3-groovy-4.0</spock.core.version>
+        <spock.spring.version>2.3-groovy-4.0</spock.spring.version>
         <project.uri>${project.baseUri}</project.uri>
-        <groovy.version>4.0.20</groovy.version>
+        <groovy.version>4.0.24</groovy.version>
         <gpg.plugin.version>3.1.0</gpg.plugin.version>
         <broadleaf-presentation.version>2.0.2-GA</broadleaf-presentation.version>
         <hsqldb.database.starter.version>3.0.3-GA</hsqldb.database.starter.version>
