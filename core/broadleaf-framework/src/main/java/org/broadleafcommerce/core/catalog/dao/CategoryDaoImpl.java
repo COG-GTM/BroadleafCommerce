@@ -145,7 +145,8 @@ public class CategoryDaoImpl implements CategoryDao {
     @Override
     public List<Category> readCategoriesByNames(List<String> names) {
         TypedQuery<Category> query = em.createQuery(
-                "select category from org.broadleafcommerce.core.catalog.domain.Category category "
+                // Hibernate 6: changed interface name to Impl entity class
+                "select category from org.broadleafcommerce.core.catalog.domain.CategoryImpl category "
                         + "where category.name in :names",
                 Category.class);
         query.setParameter("names", names);

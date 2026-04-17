@@ -27,8 +27,9 @@
         </query>
     </named-query>
 
+    <!-- Hibernate 6: changed interface name to Impl entity class -->
     <named-query name="BC_READ_ALL_SKUS">
-        <query>SELECT sku FROM org.broadleafcommerce.core.catalog.domain.Sku sku</query>
+        <query>SELECT sku FROM org.broadleafcommerce.core.catalog.domain.SkuImpl sku</query>
     </named-query>
 
     <named-query name="BC_READ_SKU_BY_OUTGOING_URL" >

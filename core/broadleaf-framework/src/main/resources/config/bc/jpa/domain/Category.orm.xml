@@ -33,8 +33,10 @@
         ORDER BY category.id</query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for subCategory -->
     <named-query name="BC_READ_ALL_SUBCATEGORIES">
-        <query>SELECT xref.subCategory FROM org.broadleafcommerce.core.catalog.domain.CategoryXrefImpl xref
+        <query>SELECT subCategory FROM org.broadleafcommerce.core.catalog.domain.CategoryXrefImpl xref
+                JOIN xref.subCategory subCategory
                 WHERE xref.category.id IN :parentCategoryId
                 ORDER BY COALESCE (xref.displayOrder,999999)
         </query>
@@ -49,12 +51,14 @@
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for subCategory to replace implicit multi-level path navigation -->
     <named-query name="BC_READ_ACTIVE_SUBCATEGORIES_BY_CATEGORY" >
-        <query>SELECT xref.subCategory FROM org.broadleafcommerce.core.catalog.domain.CategoryXrefImpl xref
+        <query>SELECT subCategory FROM org.broadleafcommerce.core.catalog.domain.CategoryXrefImpl xref
+                JOIN xref.subCategory subCategory
                 WHERE xref.category.id IN :parentCategoryId
-                AND (xref.subCategory.archiveStatus.archived IS NULL OR xref.subCategory.archiveStatus.archived = 'N')
-                AND (xref.subCategory.activeStartDate &lt; :currentDate)
-                AND (xref.subCategory.activeEndDate IS NULL OR xref.subCategory.activeEndDate &gt; :currentDate)
+                AND (subCategory.archiveStatus.archived IS NULL OR subCategory.archiveStatus.archived = 'N')
+                AND (subCategory.activeStartDate &lt; :currentDate)
+                AND (subCategory.activeEndDate IS NULL OR subCategory.activeEndDate &gt; :currentDate)
                 ORDER BY COALESCE (xref.displayOrder,999999)
         </query>
     </named-query>

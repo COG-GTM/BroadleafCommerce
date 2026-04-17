@@ -245,7 +245,8 @@ public class AdminTestHelper {
     }
 
     private SandBox findSandBox(String sandBoxName, EntityManager em) {
-        String queryString = "select root from " + SandBoxManagementImpl.class.getName() + " root where root.sandBox.name = '"+sandBoxName+"' and root.sandBox.sandboxType = 'USER'";
+        // Hibernate 6: added explicit JOIN for root.sandBox to replace implicit multi-level path navigation
+        String queryString = "select root from " + SandBoxManagementImpl.class.getName() + " root JOIN root.sandBox sb where sb.name = '"+sandBoxName+"' and sb.sandboxType = 'USER'";
         TypedQuery<SandBoxManagement> query = em.createQuery(queryString, SandBoxManagement.class);
         return query.getSingleResult().getSandBox();
     }

@@ -229,13 +229,15 @@ public class SandBoxDaoImpl implements SandBoxDao {
 
     @Override
     public Map<Long, String> retrieveAuthorNamesForSandBoxes(Set<Long> sandBoxIds) {
+        // Hibernate 6: added explicit JOIN for sb.sandBox to replace implicit multi-level path navigation
         Query query = sandBoxEntityManager.createQuery(
-                "SELECT sb.sandBox.id, au.name " +
-                        "FROM org.broadleafcommerce.common.sandbox.domain.SandBoxManagementImpl sb, " +
+                "SELECT sandBox.id, au.name " +
+                        "FROM org.broadleafcommerce.common.sandbox.domain.SandBoxManagementImpl sb " +
+                        "JOIN sb.sandBox sandBox, " +
                         "org.broadleafcommerce.openadmin.server.security.domain.AdminUserImpl au " +
-                        "WHERE sb.sandBox.author = au.id " +
-                        "AND sb.sandBox.id IN :sandBoxIds " +
-                        "AND (sb.sandBox.archiveStatus.archived IS NULL OR sb.sandBox.archiveStatus.archived = 'N')");
+                        "WHERE sandBox.author = au.id " +
+                        "AND sandBox.id IN :sandBoxIds " +
+                        "AND (sandBox.archiveStatus.archived IS NULL OR sandBox.archiveStatus.archived = 'N')");
         query.setParameter("sandBoxIds", sandBoxIds);
         List<Object[]> results = query.getResultList();
 

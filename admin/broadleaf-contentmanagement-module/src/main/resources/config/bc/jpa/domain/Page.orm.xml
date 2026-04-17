@@ -22,21 +22,25 @@
                  xsi:schemaLocation="http://java.sun.com/xml/ns/persistence/orm http://java.sun.com/xml/ns/persistence/orm_2_0.xsd"
                  version="2.0">
 
+    <!-- Hibernate 6: added explicit JOIN for locale to replace implicit path navigation -->
     <named-query name="BC_READ_PAGE_TEMPLATES_FOR_DEFAULT_LOCALE">
         <query>SELECT pageTemplate
             FROM org.broadleafcommerce.cms.page.domain.PageTemplateImpl pageTemplate
+            JOIN pageTemplate.locale ptLocale
             WHERE
-            pageTemplate.locale.defaultFlag = true
+            ptLocale.defaultFlag = true
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for pageTemplate to replace implicit multi-level path navigation -->
     <named-query name="BC_READ_PAGE_BY_URI">
         <query>SELECT page
             FROM org.broadleafcommerce.cms.page.domain.PageImpl page
+            LEFT JOIN page.pageTemplate pageTemplate
             WHERE
             page.fullUrl = :uri AND
-            (page.pageTemplate.locale is null OR page.pageTemplate.locale = :fullLocale OR
-            page.pageTemplate.locale = :languageOnlyLocale) AND
+            (pageTemplate.locale is null OR pageTemplate.locale = :fullLocale OR
+            pageTemplate.locale = :languageOnlyLocale) AND
             (page.offlineFlag is null OR page.offlineFlag = false)
         </query>
     </named-query>

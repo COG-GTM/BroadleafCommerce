@@ -34,41 +34,47 @@
         </query>
     </named-query>
     
+    <!-- Hibernate 6: added explicit JOIN for fg.order to replace implicit multi-level path navigation -->
          <named-query name="BC_READ_FULFILLMENT_GROUP_BY_STATUS_ASC">
         <query>
             SELECT fg FROM org.broadleafcommerce.core.order.domain.FulfillmentGroupImpl fg
-            WHERE fg.status = :status ORDER BY fg.order.auditable.dateCreated ASC
+            JOIN fg.order fgOrder
+            WHERE fg.status = :status ORDER BY fgOrder.auditable.dateCreated ASC
         </query>
     </named-query>
     
     <named-query name="BC_READ_FULFILLMENT_GROUP_BY_STATUS_DESC">
         <query>
             SELECT fg FROM org.broadleafcommerce.core.order.domain.FulfillmentGroupImpl fg
-            WHERE fg.status = :status ORDER BY fg.order.auditable.dateCreated DESC
+            JOIN fg.order fgOrder
+            WHERE fg.status = :status ORDER BY fgOrder.auditable.dateCreated DESC
         </query>
     </named-query>
     
     <named-query name="BC_READ_UNFULFILLED_FULFILLMENT_GROUP_ASC">
         <query>
             SELECT fg FROM org.broadleafcommerce.core.order.domain.FulfillmentGroupImpl fg
+            JOIN fg.order fgOrder
             WHERE (fg.status &lt;&gt; 'FULFILLED' AND fg.status &lt;&gt; 'DELIVERED') 
-            ORDER BY fg.order.auditable.dateCreated ASC
+            ORDER BY fgOrder.auditable.dateCreated ASC
         </query>
     </named-query>
     
     <named-query name="BC_READ_PARTIALLY_FULFILLED_FULFILLMENT_GROUP_ASC">
         <query>
             SELECT fg FROM org.broadleafcommerce.core.order.domain.FulfillmentGroupImpl fg
+            JOIN fg.order fgOrder
             WHERE (fg.status = 'PARTIALLY_FULFILLED' OR fg.status = 'PARTIALLY_DELIVERED') 
-            ORDER BY fg.order.auditable.dateCreated ASC
+            ORDER BY fgOrder.auditable.dateCreated ASC
         </query>
     </named-query>
     
     <named-query name="BC_READ_UNPROCESSED_FULFILLMENT_GROUP_ASC">
         <query>
             SELECT fg FROM org.broadleafcommerce.core.order.domain.FulfillmentGroupImpl fg
+            JOIN fg.order fgOrder
             WHERE (fg.status IS NULL) 
-            ORDER BY fg.order.auditable.dateCreated ASC
+            ORDER BY fgOrder.auditable.dateCreated ASC
         </query>
     </named-query>
     

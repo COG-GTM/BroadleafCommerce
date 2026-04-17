@@ -26,43 +26,54 @@
             ORDER BY product.id</query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for defaultSku to replace implicit multi-level path navigation -->
     <named-query name="BC_READ_PRODUCTS_BY_NAME" >
         <query>SELECT product FROM org.broadleafcommerce.core.catalog.domain.ProductImpl product
-            WHERE product.defaultSku.name LIKE :name
+            JOIN product.defaultSku defaultSku
+            WHERE defaultSku.name LIKE :name
             AND (product.archiveStatus.archived IS NULL OR product.archiveStatus.archived = 'N')
             ORDER BY product.id</query>
     </named-query>
     
+    <!-- Hibernate 6: added explicit JOIN for defaultSku -->
     <named-query name="BC_READ_AUTOMATIC_PRODUCT_BUNDLES" >
         <query>SELECT productBundle FROM org.broadleafcommerce.core.catalog.domain.ProductBundleImpl productBundle
+        JOIN productBundle.defaultSku defaultSku
         WHERE productBundle.autoBundle = :autoBundle
-        AND productBundle.defaultSku.activeStartDate &lt;= :currentDate
-        AND (productBundle.defaultSku.activeEndDate &gt; :currentDate OR productBundle.defaultSku.activeEndDate IS NULL)
+        AND defaultSku.activeStartDate &lt;= :currentDate
+        AND (defaultSku.activeEndDate &gt; :currentDate OR defaultSku.activeEndDate IS NULL)
                 AND (productBundle.archiveStatus.archived IS NULL OR productBundle.archiveStatus.archived = 'N')</query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOINs for product and defaultSku to replace multi-level implicit path navigation -->
     <named-query name="BC_READ_ACTIVE_PRODUCTS_BY_CATEGORY" >
-        <query>SELECT categoryProduct.product FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+        <query>SELECT product FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+        JOIN categoryProduct.product product
+        JOIN product.defaultSku defaultSku
         WHERE categoryProduct.category.id IN (:categoryInList)
-        AND categoryProduct.product.defaultSku.activeStartDate &lt;= :currentDate
-        AND (categoryProduct.product.defaultSku.activeEndDate &gt; :currentDate OR categoryProduct.product.defaultSku.activeEndDate IS NULL)
-                AND (categoryProduct.product.archiveStatus.archived IS NULL OR categoryProduct.product.archiveStatus.archived = 'N')
+        AND defaultSku.activeStartDate &lt;= :currentDate
+        AND (defaultSku.activeEndDate &gt; :currentDate OR defaultSku.activeEndDate IS NULL)
+                AND (product.archiveStatus.archived IS NULL OR product.archiveStatus.archived = 'N')
         ORDER BY COALESCE (categoryProduct.displayOrder,999999)
         </query>
     </named-query>
     
+    <!-- Hibernate 6: added explicit JOIN for product -->
     <named-query name="BC_READ_PRODUCTS_BY_CATEGORY" >
-        <query>SELECT categoryProduct.product FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+        <query>SELECT product FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+        JOIN categoryProduct.product product
         WHERE categoryProduct.category.id IN (:categoryInList)
         ORDER BY COALESCE (categoryProduct.displayOrder,999999)
         </query>
     </named-query>
     
+    <!-- Hibernate 6: added explicit JOIN for defaultSku -->
     <named-query name="BC_READ_PRODUCTS_BY_OUTGOING_URL" >
         <query>SELECT product
                FROM org.broadleafcommerce.core.catalog.domain.ProductImpl product
+               JOIN product.defaultSku defaultSku
                WHERE (product.url = :url OR product.urlKey = :urlKey)
-               AND (product.defaultSku.activeEndDate &gt; :currentDate OR product.defaultSku.activeEndDate IS NULL)
+               AND (defaultSku.activeEndDate &gt; :currentDate OR defaultSku.activeEndDate IS NULL)
                AND (product.archiveStatus.archived IS NULL OR product.archiveStatus.archived = 'N')
         </query>
     </named-query>

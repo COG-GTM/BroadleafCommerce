@@ -33,9 +33,11 @@
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for address to replace implicit path navigation to non-ID property -->
     <named-query name="BC_FIND_ALL_STORES_BY_STATE" >
         <query>SELECT store FROM org.broadleafcommerce.core.store.domain.StoreImpl store
-            WHERE store.address.isoCountrySubdivision = :state
+            JOIN store.address addr
+            WHERE addr.isoCountrySubdivision = :state
             AND (store.archiveStatus.archived IS NULL OR store.archiveStatus.archived = :archived)
         </query>
     </named-query>
