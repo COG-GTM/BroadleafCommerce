@@ -35,6 +35,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.orm.jpa.JpaVendorAdapter;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.support.SharedEntityManagerBean;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import java.util.ArrayList;
@@ -45,6 +46,7 @@ import java.util.Map;
 
 import javax.cache.CacheManager;
 
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 
 /**
@@ -92,8 +94,8 @@ public class CommonPersistenceConfiguration {
 
     @Bean(name = "blDefaultTargetModeMap")
     public MapFactoryBean blDefaultTargetModeMap(
-            @Qualifier("prodEntityManager") SharedEntityManagerBean prodEntityManager,
-            @Qualifier("blTransactionManager") LifecycleAwareJpaTransactionManager blTransactionManager) {
+            @Qualifier("prodEntityManager") EntityManager prodEntityManager,
+            @Qualifier("blTransactionManager") PlatformTransactionManager blTransactionManager) {
         Map<String, Map<String, Object>> sourceMap = new HashMap<>();
 
         Map<String, Object> sandboxMap = new HashMap<>();
