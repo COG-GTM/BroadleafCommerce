@@ -33,7 +33,7 @@ import java.util.Properties;
  * Persistence unit post processor for dynamically modifying the persistence unit.
  * <p>
  * jcache.disable.cache - default: false, disables hibernate L2 and query cache if true
- * hibernate.javax.cache.provider - default: null, overrides the cache provider defined in the persistence.xml
+ * hibernate.jakarta.cache.provider - default: null, overrides the cache provider defined in the persistence.xml
  * hibernate.cache.region.factory_class - default: null, overrides the cache region factory defined in the persistence.xml
  * <p>
  * uriProvider - A configurable provider class that returns the URI to be used for caching
@@ -46,7 +46,7 @@ public class JCachePersistenceUnitPostProcessor implements PersistenceUnitPostPr
     @Value("${jcache.disable.cache:false}")
     protected Boolean disableCache;
 
-    @Value("${hibernate.javax.cache.provider:#{null}}")
+    @Value("${hibernate.jakarta.cache.provider:#{null}}")
     protected String cacheProvider;
 
     @Value("${hibernate.cache.region.factory_class:#{null}}")
@@ -68,14 +68,14 @@ public class JCachePersistenceUnitPostProcessor implements PersistenceUnitPostPr
         }
 
         URI cacheUri = uriProvider.getJCacheUri();
-        properties.setProperty("hibernate.javax.cache.uri", cacheUri != null ? uriProvider.getJCacheUri().toString() : "");
+        properties.setProperty("hibernate.jakarta.cache.uri", cacheUri != null ? uriProvider.getJCacheUri().toString() : "");
 
         if (cacheRegionFactory != null) {
             properties.setProperty("hibernate.cache.region.factory_class", cacheRegionFactory);
         }
 
         if (cacheProvider != null) {
-            properties.setProperty("hibernate.javax.cache.provider", cacheProvider);
+            properties.setProperty("hibernate.jakarta.cache.provider", cacheProvider);
         }
 
         properties.putAll(overrideCacheProperties);

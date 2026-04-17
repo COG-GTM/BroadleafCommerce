@@ -34,10 +34,10 @@ public class DefaultJCacheUriProvider implements JCacheUriProvider {
 
     private static final Log LOG = LogFactory.getLog(DefaultJCacheUriProvider.class);
 
-    @Value("${hibernate.javax.cache.uri:#{null}}")
+    @Value("${hibernate.jakarta.cache.uri:#{null}}")
     protected String configLocation;
 
-    @Value("${hibernate.javax.cache.uri.relative:true}")
+    @Value("${hibernate.jakarta.cache.uri.relative:true}")
     protected boolean isLocationRelative;
 
     @Override
@@ -51,11 +51,11 @@ public class DefaultJCacheUriProvider implements JCacheUriProvider {
                 if (url != null) {
                     return url.toURI();
                 }
-                LOG.warn("The property hibernate.javax.cache.uri.relative was set to true however there was no resource found for " + configLocation + ". Falling back on creating a URI from the provided config location set by the property hibernate.javax.cache.uri");
+                LOG.warn("The property hibernate.jakarta.cache.uri.relative was set to true however there was no resource found for " + configLocation + ". Falling back on creating a URI from the provided config location set by the property hibernate.jakarta.cache.uri");
             }
             return new URI(configLocation);
         } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("Incorrect URI syntax set for property hibernate.javax.cache.uri", e);
+            throw new IllegalArgumentException("Incorrect URI syntax set for property hibernate.jakarta.cache.uri", e);
         }
     }
 
