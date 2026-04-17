@@ -22,7 +22,7 @@ import org.broadleafcommerce.cms.url.dao.URLHandlerDao;
 import org.broadleafcommerce.cms.url.domain.URLHandler;
 import org.broadleafcommerce.cms.url.domain.URLHandlerImpl;
 import org.broadleafcommerce.cms.url.type.URLRedirectType;
-import org.easymock.EasyMock;
+import org.mockito.Mockito;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -67,11 +67,10 @@ public class URLHandlerServiceTest extends TestCase {
     public void setUp() throws Exception {
         handlerService = new URLHandlerServiceImpl();
 
-        URLHandlerDao handlerDao = EasyMock.createMock(URLHandlerDao.class);
+        URLHandlerDao handlerDao = Mockito.mock(URLHandlerDao.class);
         handlerService.urlHandlerDao = handlerDao;
-        EasyMock.expect(handlerDao.findAllURLHandlers()).andReturn(buildAllUrlHandlerList());
-        EasyMock.expect(handlerDao.findAllRegexURLHandlers()).andReturn(buildRegExUrlHandlerList());
-        EasyMock.replay(handlerDao);
+        Mockito.when(handlerDao.findAllURLHandlers()).thenReturn(buildAllUrlHandlerList());
+        Mockito.when(handlerDao.findAllRegexURLHandlers()).thenReturn(buildRegExUrlHandlerList());
     }
 
     //checkForMatches is the RegEx test.  A non-regex URLHandler should not be found

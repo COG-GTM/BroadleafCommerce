@@ -18,7 +18,7 @@
 package org.broadleafcommerce.profile.util.dao;
 
 import org.broadleafcommerce.common.util.dao.BatchRetrieveDao;
-import org.easymock.classextension.EasyMock;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,15 +40,14 @@ public class BatchRetrieveDaoTest extends TestCase {
     @Override
     protected void setUp() throws Exception {
         dao = new BatchRetrieveDao();
-        queryMock = EasyMock.createMock(Query.class);
+        queryMock = Mockito.mock(Query.class);
         List<String> response = new ArrayList<String>();
         response.add("test");
-        EasyMock.expect(queryMock.getResultList()).andReturn(response).times(2);
-        EasyMock.expect(queryMock.setParameter(EasyMock.eq("test"), EasyMock.isA(List.class))).andReturn(queryMock).times(2);
+        Mockito.when(queryMock.getResultList()).thenReturn(response);
+        Mockito.when(queryMock.setParameter(Mockito.eq("test"), Mockito.isA(List.class))).thenReturn(queryMock);
     }
 
     public void testFilter() throws Exception {
-        EasyMock.replay(queryMock);
         dao.setInClauseBatchSize(BATCHSIZE);
         List<Integer> keys = new ArrayList<Integer>();
         for (int j = 0; j < 10; j++) {
@@ -56,7 +55,8 @@ public class BatchRetrieveDaoTest extends TestCase {
         }
         List<Object> response = dao.batchExecuteReadQuery(queryMock, keys, "test");
         assertTrue(response.size() == 2);
-        EasyMock.verify(queryMock);
+        Mockito.verify(queryMock, Mockito.times(2)).getResultList();
+        Mockito.verify(queryMock, Mockito.times(2)).setParameter(Mockito.eq("test"), Mockito.isA(List.class));
     }
 
 }

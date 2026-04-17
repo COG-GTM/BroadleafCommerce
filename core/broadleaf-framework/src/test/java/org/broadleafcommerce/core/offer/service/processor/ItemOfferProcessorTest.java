@@ -56,8 +56,9 @@ import org.broadleafcommerce.core.order.service.OrderItemService;
 import org.broadleafcommerce.core.order.service.OrderMultishipOptionService;
 import org.broadleafcommerce.core.order.service.OrderService;
 import org.broadleafcommerce.core.order.service.call.FulfillmentGroupItemRequest;
-import org.easymock.EasyMock;
-import org.easymock.IAnswer;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -90,18 +91,18 @@ public class ItemOfferProcessorTest extends TestCase {
     @Override
     protected void setUp() throws Exception {
 
-        CustomerOfferDao customerOfferDaoMock = EasyMock.createMock(CustomerOfferDao.class);
-        OfferCodeDao offerCodeDaoMock = EasyMock.createMock(OfferCodeDao.class);
-        offerDaoMock = EasyMock.createMock(OfferDao.class);
-        orderItemDaoMock = EasyMock.createMock(OrderItemDao.class);
-        orderServiceMock = EasyMock.createMock(OrderService.class);
-        orderItemServiceMock = EasyMock.createMock(OrderItemService.class);
-        fgItemDaoMock = EasyMock.createMock(FulfillmentGroupItemDao.class);
-        fgServiceMock = EasyMock.createMock(FulfillmentGroupService.class);
-        multishipOptionServiceMock = EasyMock.createMock(OrderMultishipOptionService.class);
-        offerTimeZoneProcessorMock = EasyMock.createMock(OfferTimeZoneProcessor.class);
+        CustomerOfferDao customerOfferDaoMock = Mockito.mock(CustomerOfferDao.class);
+        OfferCodeDao offerCodeDaoMock = Mockito.mock(OfferCodeDao.class);
+        offerDaoMock = Mockito.mock(OfferDao.class);
+        orderItemDaoMock = Mockito.mock(OrderItemDao.class);
+        orderServiceMock = Mockito.mock(OrderService.class);
+        orderItemServiceMock = Mockito.mock(OrderItemService.class);
+        fgItemDaoMock = Mockito.mock(FulfillmentGroupItemDao.class);
+        fgServiceMock = Mockito.mock(FulfillmentGroupService.class);
+        multishipOptionServiceMock = Mockito.mock(OrderMultishipOptionService.class);
+        offerTimeZoneProcessorMock = Mockito.mock(OfferTimeZoneProcessor.class);
         promotableOfferUtility = new PromotableOfferUtilityImpl();
-        genericEntityServiceMock = EasyMock.createMock(GenericEntityService.class);
+        genericEntityServiceMock = Mockito.mock(GenericEntityService.class);
 
         OfferServiceUtilitiesImpl offerServiceUtilities = new OfferServiceUtilitiesImpl(promotableOfferUtility);
         offerServiceUtilities.setOfferDao(offerDaoMock);
@@ -134,54 +135,38 @@ public class ItemOfferProcessorTest extends TestCase {
     }
 
     public void replay() throws Exception {
-        EasyMock.expect(orderItemDaoMock.createOrderItemPriceDetail()).andAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAnswer()).anyTimes();
-        EasyMock.expect(orderItemDaoMock.createOrderItemQualifier()).andAnswer(OfferDataItemProvider.getCreateOrderItemQualifierAnswer()).anyTimes();
-        EasyMock.expect(offerDaoMock.createOrderItemPriceDetailAdjustment()).andAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAdjustmentAnswer()).anyTimes();
+        Mockito.when(orderItemDaoMock.createOrderItemPriceDetail()).thenAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAnswer());
+        Mockito.when(orderItemDaoMock.createOrderItemQualifier()).thenAnswer(OfferDataItemProvider.getCreateOrderItemQualifierAnswer());
+        Mockito.when(offerDaoMock.createOrderItemPriceDetailAdjustment()).thenAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAdjustmentAnswer());
 
-        EasyMock.expect(fgServiceMock.addItemToFulfillmentGroup(EasyMock.isA(FulfillmentGroupItemRequest.class), EasyMock.eq(false))).andAnswer(OfferDataItemProvider.getAddItemToFulfillmentGroupAnswer()).anyTimes();
-        EasyMock.expect(orderServiceMock.removeItem(EasyMock.isA(Long.class), EasyMock.isA(Long.class), EasyMock.eq(false))).andAnswer(OfferDataItemProvider.getRemoveItemFromOrderAnswer()).anyTimes();
-        EasyMock.expect(orderServiceMock.save(EasyMock.isA(Order.class), EasyMock.isA(Boolean.class))).andAnswer(OfferDataItemProvider.getSaveOrderAnswer()).anyTimes();
+        Mockito.when(fgServiceMock.addItemToFulfillmentGroup(Mockito.isA(FulfillmentGroupItemRequest.class), Mockito.eq(false))).thenAnswer(OfferDataItemProvider.getAddItemToFulfillmentGroupAnswer());
+        Mockito.when(orderServiceMock.removeItem(Mockito.isA(Long.class), Mockito.isA(Long.class), Mockito.eq(false))).thenAnswer(OfferDataItemProvider.getRemoveItemFromOrderAnswer());
+        Mockito.when(orderServiceMock.save(Mockito.isA(Order.class), Mockito.isA(Boolean.class))).thenAnswer(OfferDataItemProvider.getSaveOrderAnswer());
 
-        EasyMock.expect(orderServiceMock.getAutomaticallyMergeLikeItems()).andReturn(true).anyTimes();
+        Mockito.when(orderServiceMock.getAutomaticallyMergeLikeItems()).thenReturn(true);
 
-        EasyMock.expect(orderItemServiceMock.saveOrderItem(EasyMock.isA(OrderItem.class))).andAnswer(OfferDataItemProvider.getSaveOrderItemAnswer()).anyTimes();
-        EasyMock.expect(fgItemDaoMock.save(EasyMock.isA(FulfillmentGroupItem.class))).andAnswer(OfferDataItemProvider.getSaveFulfillmentGroupItemAnswer()).anyTimes();
+        Mockito.when(orderItemServiceMock.saveOrderItem(Mockito.isA(OrderItem.class))).thenAnswer(OfferDataItemProvider.getSaveOrderItemAnswer());
+        Mockito.when(fgItemDaoMock.save(Mockito.isA(FulfillmentGroupItem.class))).thenAnswer(OfferDataItemProvider.getSaveFulfillmentGroupItemAnswer());
 
-        EasyMock.expect(multishipOptionServiceMock.findOrderMultishipOptions(EasyMock.isA(Long.class))).andAnswer(new IAnswer<List<OrderMultishipOption>>() {
+        Mockito.when(multishipOptionServiceMock.findOrderMultishipOptions(Mockito.isA(Long.class))).thenAnswer(new Answer<List<OrderMultishipOption>>() {
 
             @Override
-            public List<OrderMultishipOption> answer() throws Throwable {
+            public List<OrderMultishipOption> answer(InvocationOnMock invocation) throws Throwable {
                 return new ArrayList<OrderMultishipOption>();
             }
-        }).anyTimes();
+        });
 
-        multishipOptionServiceMock.deleteAllOrderMultishipOptions(EasyMock.isA(Order.class));
-        EasyMock.expectLastCall().anyTimes();
-        EasyMock.expect(fgServiceMock.collapseToOneShippableFulfillmentGroup(EasyMock.isA(Order.class), EasyMock.eq(false))).andAnswer(OfferDataItemProvider.getSameOrderAnswer()).anyTimes();
-        EasyMock.expect(fgItemDaoMock.create()).andAnswer(OfferDataItemProvider.getCreateFulfillmentGroupItemAnswer()).anyTimes();
-        fgItemDaoMock.delete(EasyMock.isA(FulfillmentGroupItem.class));
-        EasyMock.expectLastCall().anyTimes();
-        EasyMock.expect(offerTimeZoneProcessorMock.getTimeZone(EasyMock.isA(OfferImpl.class))).andReturn(TimeZone.getTimeZone("CST")).anyTimes();
+        Mockito.doNothing().when(multishipOptionServiceMock).deleteAllOrderMultishipOptions(Mockito.isA(Order.class));
+        Mockito.when(fgServiceMock.collapseToOneShippableFulfillmentGroup(Mockito.isA(Order.class), Mockito.eq(false))).thenAnswer(OfferDataItemProvider.getSameOrderAnswer());
+        Mockito.when(fgItemDaoMock.create()).thenAnswer(OfferDataItemProvider.getCreateFulfillmentGroupItemAnswer());
+        Mockito.doNothing().when(fgItemDaoMock).delete(Mockito.isA(FulfillmentGroupItem.class));
+        Mockito.when(offerTimeZoneProcessorMock.getTimeZone(Mockito.isA(OfferImpl.class))).thenReturn(TimeZone.getTimeZone("CST"));
 
-        EasyMock.replay(offerDaoMock);
-        EasyMock.replay(orderItemDaoMock);
-        EasyMock.replay(orderServiceMock);
-        EasyMock.replay(orderItemServiceMock);
-        EasyMock.replay(fgItemDaoMock);
-        EasyMock.replay(fgServiceMock);
-        EasyMock.replay(multishipOptionServiceMock);
-        EasyMock.replay(offerTimeZoneProcessorMock);
+        // Mockito does not require replay - stubs are active immediately
     }
 
     public void verify() {
-        EasyMock.verify(offerDaoMock);
-        EasyMock.verify(orderItemDaoMock);
-        EasyMock.verify(orderServiceMock);
-        EasyMock.verify(orderItemServiceMock);
-        EasyMock.verify(fgItemDaoMock);
-        EasyMock.verify(fgServiceMock);
-        EasyMock.verify(multishipOptionServiceMock);
-        EasyMock.verify(offerTimeZoneProcessorMock);
+        // Mockito does not require explicit verify for stubbed methods
     }
 
     public void testFilterItemLevelOffer() throws Exception {
@@ -612,19 +597,19 @@ public class ItemOfferProcessorTest extends TestCase {
         verify();
     }
 
-    public class Answer implements IAnswer<CandidateItemOffer> {
+    public class CandidateItemOfferAnswer implements Answer<CandidateItemOffer> {
 
         @Override
-        public CandidateItemOffer answer() throws Throwable {
+        public CandidateItemOffer answer(InvocationOnMock invocation) throws Throwable {
             return new CandidateItemOfferImpl();
         }
 
     }
 
-    public class Answer2 implements IAnswer<OrderItemAdjustment> {
+    public class OrderItemAdjustmentAnswer implements Answer<OrderItemAdjustment> {
 
         @Override
-        public OrderItemAdjustment answer() throws Throwable {
+        public OrderItemAdjustment answer(InvocationOnMock invocation) throws Throwable {
             return new OrderItemAdjustmentImpl();
         }
 

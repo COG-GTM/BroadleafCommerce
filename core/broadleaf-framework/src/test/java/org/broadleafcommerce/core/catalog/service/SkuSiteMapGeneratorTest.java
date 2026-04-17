@@ -29,7 +29,7 @@ import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.domain.ProductImpl;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.domain.SkuImpl;
-import org.easymock.EasyMock;
+import org.mockito.Mockito;
 import org.junit.Test;
 
 import java.io.File;
@@ -70,9 +70,8 @@ public class SkuSiteMapGeneratorTest extends SiteMapGeneratorTest {
         skus.add(s3);
         skus.add(s4);
         
-        SkuDao skuDao = EasyMock.createMock(SkuDao.class);
-        EasyMock.expect(skuDao.readAllActiveSkus(EasyMock.eq(0), EasyMock.eq(5))).andReturn(skus);
-        EasyMock.replay(skuDao);
+        SkuDao skuDao = Mockito.mock(SkuDao.class);
+        Mockito.when(skuDao.readAllActiveSkus(Mockito.eq(0), Mockito.eq(5))).thenReturn(skus);
 
         SkuSiteMapGenerator ssmg = new SkuSiteMapGenerator();
         ssmg.setSkuDao(skuDao);

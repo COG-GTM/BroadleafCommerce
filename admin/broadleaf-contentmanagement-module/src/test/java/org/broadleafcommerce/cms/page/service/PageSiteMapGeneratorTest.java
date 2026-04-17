@@ -27,7 +27,7 @@ import org.broadleafcommerce.common.sitemap.service.SiteMapGeneratorTest;
 import org.broadleafcommerce.common.sitemap.service.type.SiteMapChangeFreqType;
 import org.broadleafcommerce.common.sitemap.service.type.SiteMapGeneratorType;
 import org.broadleafcommerce.common.sitemap.service.type.SiteMapPriorityType;
-import org.easymock.EasyMock;
+import org.mockito.Mockito;
 import org.junit.Test;
 
 import java.io.File;
@@ -57,9 +57,8 @@ public class PageSiteMapGeneratorTest extends SiteMapGeneratorTest {
         pages.add(p2);
         pages.add(p3);
 
-        PageDao pageDao = EasyMock.createMock(PageDao.class);
-        EasyMock.expect(pageDao.readOnlineAndIncludedPages(5, 0, "fullUrl")).andReturn(pages);
-        EasyMock.replay(pageDao);
+        PageDao pageDao = Mockito.mock(PageDao.class);
+        Mockito.when(pageDao.readOnlineAndIncludedPages(5, 0, "fullUrl")).thenReturn(pages);
 
         PageSiteMapGenerator psmg = new PageSiteMapGenerator();
         psmg.setPageDao(pageDao);
