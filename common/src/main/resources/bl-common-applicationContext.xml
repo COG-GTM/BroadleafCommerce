@@ -344,7 +344,7 @@
          This is critical for Hibernate 6 compatibility verification. -->
     <bean id="blDirectCopyTransformHibernate6CompatibilityValidator"
           class="org.broadleafcommerce.common.extensibility.jpa.hibernate.DirectCopyTransformHibernate6CompatibilityValidator"
-          lazy-init="true" />
+          lazy-init="false" />
 
     <bean id="blEntityExtensionManagers" class="org.springframework.beans.factory.config.MapFactoryBean">
         <property name="sourceMap">
