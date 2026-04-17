@@ -74,7 +74,8 @@ import javax.cache.CacheManager;
         @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.web\\.controller\\..*"),
         @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.web\\.site\\..*"),
         @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.web\\.api\\..*"),
-        @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.web\\.config\\..*")
+        @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.web\\.config\\..*"),
+        @ComponentScan.Filter(type = FilterType.REGEX, pattern = "org\\.broadleafcommerce\\.common\\.config\\.javaconfig\\..*")
     }
 )
 public class CommonConfiguration {
