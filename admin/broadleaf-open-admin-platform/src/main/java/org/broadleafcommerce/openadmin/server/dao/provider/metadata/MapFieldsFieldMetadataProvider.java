@@ -36,9 +36,8 @@ import org.broadleafcommerce.openadmin.server.dao.provider.metadata.request.Over
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldManager;
 import org.broadleafcommerce.openadmin.server.service.type.MetadataProviderResponse;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.metamodel.MappingMetamodel;
-import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.type.BasicType;
+import org.hibernate.type.ManyToOneType;
 import org.hibernate.type.Type;
 import org.hibernate.type.spi.TypeConfiguration;
 import org.springframework.context.annotation.Scope;
@@ -130,24 +129,17 @@ public class MapFieldsFieldMetadataProvider extends DefaultFieldMetadataProvider
                 SessionFactoryImplementor sfi = addMetadataFromFieldTypeRequest.getDynamicEntityDao()
                         .getStandardEntityManager().unwrap(SessionFactoryImplementor.class);
                 TypeConfiguration typeConfiguration = sfi.getTypeConfiguration();
-                MappingMetamodel mappingMetamodel = sfi.getMappingMetamodel();
 
                 Type myType = null;
                 //first, check if an explicit type was declared
                 String valueClass = ((BasicFieldMetadata) entry.getValue()).getMapFieldValueClass();
                 if (valueClass != null) {
-                    // Try entity type resolution first
+                    // Try entity type resolution first via ManyToOneType (H6 equivalent of typeLocator.entity())
+                    // ManyToOneType.getReturnedClass() returns the entity class, preserving old semantics
                     try {
-                        EntityPersister entityPersister = mappingMetamodel.getEntityDescriptor(valueClass);
-                        if (entityPersister != null) {
-                            myType = entityPersister.getEntityMappingType().getJavaType() != null
-                                    ? typeConfiguration.getBasicTypeForJavaType(entityPersister.getMappedClass())
-                                    : null;
-                            // If basic type resolution failed, use the entity persister's identifier type as a fallback
-                            if (myType == null) {
-                                myType = entityPersister.getIdentifierType();
-                            }
-                        }
+                        sfi.getMappingMetamodel().getEntityDescriptor(valueClass);
+                        // Entity exists - create ManyToOneType which returns the entity class from getReturnedClass()
+                        myType = new ManyToOneType(typeConfiguration, valueClass);
                     } catch (Exception ex) {
                         // Not an entity - try as basic type
                     }
@@ -180,12 +172,12 @@ public class MapFieldsFieldMetadataProvider extends DefaultFieldMetadataProvider
                         Class<?> clazz = (Class<?>) pType.getActualTypeArguments()[1];
                         Class<?>[] entities = addMetadataFromFieldTypeRequest.getDynamicEntityDao().getAllPolymorphicEntitiesFromCeiling(clazz);
                         if (!ArrayUtils.isEmpty(entities)) {
-                            // Try entity type resolution for polymorphic entities
+                            // Try entity type resolution for polymorphic entities via ManyToOneType
+                            String entityName = entities[entities.length-1].getName();
                             try {
-                                EntityPersister entityPersister = mappingMetamodel.getEntityDescriptor(entities[entities.length-1].getName());
-                                if (entityPersister != null) {
-                                    myType = entityPersister.getIdentifierType();
-                                }
+                                sfi.getMappingMetamodel().getEntityDescriptor(entityName);
+                                // Entity exists - create ManyToOneType which returns the entity class from getReturnedClass()
+                                myType = new ManyToOneType(typeConfiguration, entityName);
                             } catch (Exception ex) {
                                 // Not an entity - try basic type
                                 BasicType<?> resolved = typeConfiguration.getBasicTypeForJavaType(entities[entities.length-1]);
