@@ -35,7 +35,7 @@
         <properties>
             <!-- Other properties inherited from persistence-common.xml -->
             <property name="hibernate.show_sql" value="false"/>
-            <property name="hibernate.ejb.session_factory_observer" value="org.broadleafcommerce.openadmin.server.dao.SessionFactoryChangeListener"/>
+            <property name="hibernate.session_factory_observer" value="org.broadleafcommerce.openadmin.server.dao.SessionFactoryChangeListener"/>
         </properties>
     </persistence-unit>
     
