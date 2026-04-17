@@ -25,10 +25,9 @@ import java.util.GregorianCalendar;
 
 import junit.framework.TestCase;
 
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 public class SystemTimeTest extends TestCase {
     private TimeSource mockTimeSource;
@@ -36,7 +35,7 @@ public class SystemTimeTest extends TestCase {
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        mockTimeSource = createMock(TimeSource.class);
+        mockTimeSource = mock(TimeSource.class);
     }
 
     @Override
@@ -49,110 +48,92 @@ public class SystemTimeTest extends TestCase {
      * Test method for {@link SystemTime#setGlobalTimeSource(TimeSource)}.
      */
     public void testSetGlobalTimeSource() {
-        expect(mockTimeSource.timeInMillis()).andReturn(100L).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(100L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         assertEquals(100L, SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#resetGlobalTimeSource()}.
      */
     public void testResetGlobalTimeSource() {
-        expect(mockTimeSource.timeInMillis()).andReturn(200L).anyTimes();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(200L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         SystemTime.resetGlobalTimeSource();
         assertTrue(200L != SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#setLocalTimeSource(TimeSource)}.
      */
     public void testSetLocalTimeSource() {
-        expect(mockTimeSource.timeInMillis()).andReturn(300L).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(300L);
         SystemTime.setLocalTimeSource(mockTimeSource);
         assertEquals(300L, SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#resetLocalTimeSource()}.
      */
     public void testResetLocalTimeSource() {
-        expect(mockTimeSource.timeInMillis()).andReturn(400L).anyTimes();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(400L);
         SystemTime.setLocalTimeSource(mockTimeSource);
         SystemTime.resetLocalTimeSource();
         assertTrue(400L != SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#resetLocalTimeSource()}.
      */
     public void testLocalOverridesGlobal() {
-        TimeSource mockLocalTimeSource = createMock(TimeSource.class);
-        expect(mockTimeSource.timeInMillis()).andReturn(500L).anyTimes();
-        expect(mockLocalTimeSource.timeInMillis()).andReturn(600L).atLeastOnce();
-        replay(mockTimeSource, mockLocalTimeSource);
+        TimeSource mockLocalTimeSource = mock(TimeSource.class);
+        when(mockTimeSource.timeInMillis()).thenReturn(500L);
+        when(mockLocalTimeSource.timeInMillis()).thenReturn(600L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         SystemTime.setLocalTimeSource(mockLocalTimeSource);
         assertEquals(600L, SystemTime.asMillis());
         SystemTime.resetLocalTimeSource();
         assertEquals(500L, SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#reset()}.
      */
     public void testReset() {
-        TimeSource mockLocalTimeSource = createMock(TimeSource.class);
-        expect(mockTimeSource.timeInMillis()).andReturn(700L).anyTimes();
-        expect(mockLocalTimeSource.timeInMillis()).andReturn(800L).anyTimes();
-        replay(mockTimeSource, mockLocalTimeSource);
+        TimeSource mockLocalTimeSource = mock(TimeSource.class);
+        when(mockTimeSource.timeInMillis()).thenReturn(700L);
+        when(mockLocalTimeSource.timeInMillis()).thenReturn(800L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         SystemTime.setLocalTimeSource(mockLocalTimeSource);
         SystemTime.reset();
         assertTrue(SystemTime.asMillis() > 800L);
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#asMillis()}.
      */
     public void testAsMillis() {
-        expect(mockTimeSource.timeInMillis()).andReturn(1000L).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(1000L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         assertEquals(1000L, SystemTime.asMillis());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#asDate()}.
      */
     public void testAsDate() {
-        expect(mockTimeSource.timeInMillis()).andReturn(1100L).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(1100L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         assertEquals(1100L, SystemTime.asDate().getTime());
-        verify();
     }
 
     /**
      * Test method for {@link SystemTime#asCalendar()}.
      */
     public void testAsCalendar() {
-        expect(mockTimeSource.timeInMillis()).andReturn(1200L).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(1200L);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         assertEquals(1200L, SystemTime.asCalendar().getTimeInMillis());
-        verify();
     }
 
     /**
@@ -161,14 +142,12 @@ public class SystemTimeTest extends TestCase {
     public void testAsMillisBoolean() {
         Calendar cal = new GregorianCalendar(2010, 1, 2, 3, 4, 5);
         long timeInMillis = cal.getTimeInMillis() + 3; // Add a few milliseconds for good measure
-        expect(mockTimeSource.timeInMillis()).andReturn(timeInMillis).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(timeInMillis);
         SystemTime.setGlobalTimeSource(mockTimeSource);
         Calendar calMidnight = new GregorianCalendar(2010, 1, 2, 0, 0, 0);
         calMidnight.set(Calendar.MILLISECOND, 0);
         assertEquals(calMidnight.getTimeInMillis(), SystemTime.asMillis(false));
         assertEquals(timeInMillis, SystemTime.asMillis(true));
-        verify();
     }
 
 
@@ -178,14 +157,12 @@ public class SystemTimeTest extends TestCase {
     public void testAsCalendarBoolean() {
         Calendar cal = new GregorianCalendar(2010, 1, 2, 3, 4, 5);
         cal.set(Calendar.MILLISECOND, 3); // Add a few milliseconds for good measure
-        expect(mockTimeSource.timeInMillis()).andReturn(cal.getTimeInMillis()).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(cal.getTimeInMillis());
         SystemTime.setGlobalTimeSource(mockTimeSource);
         Calendar calMidnight = new GregorianCalendar(2010, 1, 2, 0, 0, 0);
         calMidnight.set(Calendar.MILLISECOND, 0);
         assertEquals(calMidnight, SystemTime.asCalendar(false));
         assertEquals(cal, SystemTime.asCalendar(true));
-        verify();
     }
 
     /**
@@ -194,13 +171,11 @@ public class SystemTimeTest extends TestCase {
     public void testAsDateBoolean() {
         Calendar cal = new GregorianCalendar(2010, 1, 2, 3, 4, 5);
         cal.set(Calendar.MILLISECOND, 3); // Add a few milliseconds for good measure
-        expect(mockTimeSource.timeInMillis()).andReturn(cal.getTimeInMillis()).atLeastOnce();
-        replay(mockTimeSource);
+        when(mockTimeSource.timeInMillis()).thenReturn(cal.getTimeInMillis());
         SystemTime.setGlobalTimeSource(mockTimeSource);
         Calendar calMidnight = new GregorianCalendar(2010, 1, 2, 0, 0, 0);
         calMidnight.set(Calendar.MILLISECOND, 0);
         assertEquals(calMidnight.getTimeInMillis(), SystemTime.asDate(false).getTime());
         assertEquals(cal.getTimeInMillis(), SystemTime.asDate(true).getTime());
-        verify();
     }
 }
