@@ -35,6 +35,9 @@ import org.broadleafcommerce.openadmin.server.dao.provider.metadata.request.Over
 import org.broadleafcommerce.openadmin.server.dao.provider.metadata.request.OverrideViaXmlRequest;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldManager;
 import org.broadleafcommerce.openadmin.server.service.type.MetadataProviderResponse;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.metamodel.MappingMetamodel;
+import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.type.BasicType;
 import org.hibernate.type.Type;
 import org.hibernate.type.spi.TypeConfiguration;
@@ -123,20 +126,41 @@ public class MapFieldsFieldMetadataProvider extends DefaultFieldMetadataProvider
         //look for any map field metadata that was previously added for the requested field
         for (Map.Entry<String, FieldMetadata> entry : addMetadataFromFieldTypeRequest.getPresentationAttributes().entrySet()) {
             if (entry.getKey().startsWith(addMetadataFromFieldTypeRequest.getRequestedPropertyName() + FieldManager.MAPFIELDSEPARATOR)) {
-                TypeConfiguration typeConfiguration = new TypeConfiguration();
+                // Use the session-factory-bound TypeConfiguration so both basic and entity types can be resolved
+                SessionFactoryImplementor sfi = addMetadataFromFieldTypeRequest.getDynamicEntityDao()
+                        .getStandardEntityManager().unwrap(SessionFactoryImplementor.class);
+                TypeConfiguration typeConfiguration = sfi.getTypeConfiguration();
+                MappingMetamodel mappingMetamodel = sfi.getMappingMetamodel();
 
                 Type myType = null;
                 //first, check if an explicit type was declared
                 String valueClass = ((BasicFieldMetadata) entry.getValue()).getMapFieldValueClass();
                 if (valueClass != null) {
+                    // Try entity type resolution first
                     try {
-                        Class<?> valueJavaType = Class.forName(valueClass);
-                        BasicType<?> resolved = typeConfiguration.getBasicTypeForJavaType(valueJavaType);
-                        if (resolved != null) {
-                            myType = resolved;
+                        EntityPersister entityPersister = mappingMetamodel.getEntityDescriptor(valueClass);
+                        if (entityPersister != null) {
+                            myType = entityPersister.getEntityMappingType().getJavaType() != null
+                                    ? typeConfiguration.getBasicTypeForJavaType(entityPersister.getMappedClass())
+                                    : null;
+                            // If basic type resolution failed, use the entity persister's identifier type as a fallback
+                            if (myType == null) {
+                                myType = entityPersister.getIdentifierType();
+                            }
                         }
-                    } catch (ClassNotFoundException ex) {
-                        // Not a basic type - try as entity below
+                    } catch (Exception ex) {
+                        // Not an entity - try as basic type
+                    }
+                    if (myType == null) {
+                        try {
+                            Class<?> valueJavaType = Class.forName(valueClass);
+                            BasicType<?> resolved = typeConfiguration.getBasicTypeForJavaType(valueJavaType);
+                            if (resolved != null) {
+                                myType = resolved;
+                            }
+                        } catch (ClassNotFoundException ex) {
+                            // Not a basic type either
+                        }
                     }
                 }
                 if (myType == null) {
@@ -156,9 +180,18 @@ public class MapFieldsFieldMetadataProvider extends DefaultFieldMetadataProvider
                         Class<?> clazz = (Class<?>) pType.getActualTypeArguments()[1];
                         Class<?>[] entities = addMetadataFromFieldTypeRequest.getDynamicEntityDao().getAllPolymorphicEntitiesFromCeiling(clazz);
                         if (!ArrayUtils.isEmpty(entities)) {
-                            BasicType<?> resolved = typeConfiguration.getBasicTypeForJavaType(entities[entities.length-1]);
-                            if (resolved != null) {
-                                myType = resolved;
+                            // Try entity type resolution for polymorphic entities
+                            try {
+                                EntityPersister entityPersister = mappingMetamodel.getEntityDescriptor(entities[entities.length-1].getName());
+                                if (entityPersister != null) {
+                                    myType = entityPersister.getIdentifierType();
+                                }
+                            } catch (Exception ex) {
+                                // Not an entity - try basic type
+                                BasicType<?> resolved = typeConfiguration.getBasicTypeForJavaType(entities[entities.length-1]);
+                                if (resolved != null) {
+                                    myType = resolved;
+                                }
                             }
                         }
                     }
