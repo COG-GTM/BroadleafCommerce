@@ -78,7 +78,8 @@ public class OfferCodeDaoImpl implements OfferCodeDao {
 
     @Override
     public List<OfferCode> readOfferCodesByIds(Collection<Long> offerCodeIds) {
-        TypedQuery<OfferCode> query = em.createQuery("SELECT code FROM " + OfferCode.class.getName() + " code WHERE code.id in :offerCodeIds", OfferCode.class);
+        // Hibernate 6: changed interface to Impl entity class
+        TypedQuery<OfferCode> query = em.createQuery("SELECT code FROM " + OfferCodeImpl.class.getName() + " code WHERE code.id in :offerCodeIds", OfferCode.class);
         query.setParameter("offerCodeIds", offerCodeIds);
         return query.getResultList();
     }

@@ -20,34 +20,43 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://java.sun.com/xml/ns/persistence/orm http://java.sun.com/xml/ns/persistence/orm_2_0.xsd" version="2.0">
 
+    <!-- Hibernate 6: added explicit JOIN for product to replace implicit path navigation -->
     <named-query name="BC_READ_PRODUCT_IDS_BY_CATEGORY" >
-        <query>SELECT categoryProduct.product.id FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+        <query>SELECT product.id FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+            JOIN categoryProduct.product product
             WHERE categoryProduct.category.id IN :categoryIds
             ORDER BY COALESCE (categoryProduct.displayOrder,999999)
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for product -->
     <named-query name="BC_READ_PRODUCT_IDS_BY_CATEGORY_WITH_ORDER" >
-        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ProductsByCategoryWithOrder(categoryProduct.product.id, categoryProduct.displayOrder) 
+        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ProductsByCategoryWithOrder(product.id, categoryProduct.displayOrder) 
             FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
+            JOIN categoryProduct.product product
             WHERE categoryProduct.category.id IN :categoryIds
             ORDER BY COALESCE (categoryProduct.displayOrder,999999)
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOINs for product and category -->
     <named-query name="BC_READ_PARENT_CATEGORY_IDS_BY_PRODUCTS" >
-        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ParentCategoryByProduct(categoryProduct.category.id, categoryProduct.product.id, categoryProduct.displayOrder)
+        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ParentCategoryByProduct(categoryProduct.category.id, product.id, categoryProduct.displayOrder)
             FROM org.broadleafcommerce.core.catalog.domain.CategoryProductXrefImpl categoryProduct
-            WHERE categoryProduct.product.id IN :productIds
-            ORDER BY categoryProduct.product.id
+            JOIN categoryProduct.product product
+            WHERE product.id IN :productIds
+            ORDER BY product.id
         </query>
     </named-query>
 
+    <!-- Hibernate 6: added explicit JOIN for subCategory and defaultParentCategory to replace multi-level implicit path -->
     <named-query name="BC_READ_PARENT_CATEGORY_IDS_BY_CATEGORIES" >
-        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ParentCategoryByCategory(categoryXref.category.id, categoryXref.subCategory.defaultParentCategory.id, categoryXref.subCategory.id)
+        <query>SELECT NEW org.broadleafcommerce.core.search.dao.ParentCategoryByCategory(categoryXref.category.id, defaultParent.id, subCat.id)
             FROM org.broadleafcommerce.core.catalog.domain.CategoryXrefImpl categoryXref
-            WHERE categoryXref.subCategory.id IN :categoryIds
-            ORDER BY categoryXref.subCategory.id
+            JOIN categoryXref.subCategory subCat
+            LEFT JOIN subCat.defaultParentCategory defaultParent
+            WHERE subCat.id IN :categoryIds
+            ORDER BY subCat.id
         </query>
     </named-query>
 

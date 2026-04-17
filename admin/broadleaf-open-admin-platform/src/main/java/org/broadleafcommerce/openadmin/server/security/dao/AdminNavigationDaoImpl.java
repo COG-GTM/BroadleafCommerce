@@ -132,8 +132,9 @@ public class AdminNavigationDaoImpl implements AdminNavigationDao {
     }
 
     public List<AdminSection> readAdminSectionForClassName(String className) {
+        // Hibernate 6: changed interface to Impl entity class
         TypedQuery<AdminSection> q = em.createQuery(
-                "select s from " + AdminSection.class.getName() + " s where s.ceilingEntity = :className", AdminSection.class);
+                "select s from org.broadleafcommerce.openadmin.server.security.domain.AdminSectionImpl s where s.ceilingEntity = :className", AdminSection.class);
         q.setParameter("className", className);
         q.setHint(org.hibernate.jpa.QueryHints.HINT_CACHEABLE, true);
         List<AdminSection> result = q.getResultList();

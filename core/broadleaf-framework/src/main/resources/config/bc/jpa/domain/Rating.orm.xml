@@ -53,12 +53,14 @@
         </query>
     </named-query>
     
+    <!-- Hibernate 6: added explicit JOIN for ratingSummary to replace implicit multi-level path navigation -->
     <named-query name="BC_READ_REVIEW_DETAIL_BY_CUSTOMER_ID_AND_ITEM_ID">
         <query>
             SELECT reviewDetail
             FROM org.broadleafcommerce.core.rating.domain.ReviewDetailImpl reviewDetail
+            JOIN reviewDetail.ratingSummary ratingSummary
             WHERE reviewDetail.customer.id = :customerId
-                AND reviewDetail.ratingSummary.itemId = :itemId
+                AND ratingSummary.itemId = :itemId
         </query>
     </named-query>
     

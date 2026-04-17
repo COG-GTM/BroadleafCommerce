@@ -219,18 +219,20 @@ public class OfferAuditDaoImpl implements OfferAuditDao {
 
     @Override
     public Long countOfferCodeUses(Order order, Long offerCodeId) {
+        // Hibernate 6: added explicit JOINs for embeddedOmsOrder.parentOrder to replace implicit multi-level path navigation
         StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("SELECT count(oa.id) AS countOfferCodeUses ")
                 .append("FROM OrderImpl o ");
         if (ModulePresentUtil.isPresent(BroadleafModuleRegistration.BroadleafModuleEnum.OMS)) {
-            sqlBuilder.append("LEFT JOIN OrderImpl o2 ON o.embeddedOmsOrder.parentOrder.id = o2.id ");
+            sqlBuilder.append("LEFT JOIN o.embeddedOmsOrder embOms ")
+                    .append("LEFT JOIN embOms.parentOrder o2 ");
         }
         sqlBuilder.append("LEFT JOIN OfferAuditImpl oa ON oa.orderId = o.id ")
                 .append("WHERE (oa.orderId IS NULL OR oa.orderId <> :orderId ) ")
                 .append("AND oa.offerCodeId = :offerCodeId ")
                 .append("AND (oa.orderId IS NULL OR o.status <> :orderStatus) ");
         if (ModulePresentUtil.isPresent(BroadleafModuleRegistration.BroadleafModuleEnum.OMS)) {
-            sqlBuilder.append("AND (o.embeddedOmsOrder.parentOrder.id IS NULL OR o2.status <> :orderStatus) ");
+            sqlBuilder.append("AND (o2.id IS NULL OR o2.status <> :orderStatus) ");
         }
         try {
             return (Long) em.createQuery(sqlBuilder.toString())
