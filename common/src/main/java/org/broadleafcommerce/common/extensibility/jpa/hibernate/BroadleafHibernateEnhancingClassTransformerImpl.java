@@ -88,11 +88,19 @@ public class BroadleafHibernateEnhancingClassTransformerImpl extends EnhancingCl
         if (isValidPattern) {
             try {
                 return super.transform(loader, className, classBeingRedefined, protectionDomain, classfileBuffer);
-            } catch (Exception e) {
-                // In Hibernate 6, the enhancer may encounter classes that were transformed by Javassist
-                // with bytecode that the enhancer cannot fully process. Log and skip rather than fail.
-                LOG.warn("Hibernate bytecode enhancement skipped for class [" + convertedClassName
-                        + "] due to: " + e.getMessage());
+            } catch (IllegalClassFormatException e) {
+                // Re-throw checked exceptions — these indicate a genuine class format problem
+                // that the caller should handle (e.g., abort class loading)
+                throw e;
+            } catch (RuntimeException e) {
+                // In Hibernate 6, the bytecode enhancer may fail on classes that were already
+                // transformed by Javassist (e.g., ASM version incompatibilities, unexpected bytecode
+                // structures). Log with full stack trace at WARN so operators can diagnose, but allow
+                // the class to load without enhancement rather than crashing the application.
+                // Note: the class will lack Hibernate's dirty tracking and lazy-loading interception.
+                LOG.warn("Hibernate bytecode enhancement failed for class [" + convertedClassName
+                        + "]. The class will load without enhancement, which may affect lazy loading "
+                        + "and dirty checking. Cause: " + e.getMessage(), e);
                 return null;
             }
         }
