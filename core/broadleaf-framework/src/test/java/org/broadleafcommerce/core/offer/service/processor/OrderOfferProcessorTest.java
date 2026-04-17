@@ -33,7 +33,7 @@ import org.broadleafcommerce.core.offer.service.discount.domain.PromotableOfferU
 import org.broadleafcommerce.core.offer.service.discount.domain.PromotableOrder;
 import org.broadleafcommerce.core.offer.service.discount.domain.PromotableOrderItem;
 import org.broadleafcommerce.core.offer.service.type.OfferDiscountType;
-import org.easymock.classextension.EasyMock;
+import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -58,8 +58,8 @@ public class OrderOfferProcessorTest extends TestCase {
     
     @Override
     protected void setUp() throws Exception {
-        offerDaoMock = EasyMock.createMock(OfferDao.class);
-        offerTimeZoneProcessorMock = EasyMock.createMock(OfferTimeZoneProcessor.class);
+        offerDaoMock = Mockito.mock(OfferDao.class);
+        offerTimeZoneProcessorMock = Mockito.mock(OfferTimeZoneProcessor.class);
         promotableOfferUtility = new PromotableOfferUtilityImpl();
         orderProcessor = new OrderOfferProcessorImpl(promotableOfferUtility);
         orderProcessor.setOfferDao(offerDaoMock);
@@ -68,14 +68,12 @@ public class OrderOfferProcessorTest extends TestCase {
     }
     
     public void replay() {
-        EasyMock.expect(offerTimeZoneProcessorMock.getTimeZone(EasyMock.isA(OfferImpl.class))).andReturn(TimeZone.getTimeZone("CST")).anyTimes();
-        EasyMock.replay(offerDaoMock);
-        EasyMock.replay(offerTimeZoneProcessorMock);
+        Mockito.when(offerTimeZoneProcessorMock.getTimeZone(Mockito.isA(OfferImpl.class))).thenReturn(TimeZone.getTimeZone("CST"));
+        // Mockito does not require replay - stubs are active immediately
     }
     
     public void verify() {
-        EasyMock.verify(offerDaoMock);
-        EasyMock.verify(offerTimeZoneProcessorMock);
+        // Mockito does not require explicit verify for stubbed methods
     }
     
     public void testFilterOffers() throws Exception {

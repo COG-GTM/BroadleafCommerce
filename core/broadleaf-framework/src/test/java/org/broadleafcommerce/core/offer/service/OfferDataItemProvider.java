@@ -81,8 +81,9 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerImpl;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.domain.PhoneImpl;
-import org.easymock.IAnswer;
-import org.easymock.classextension.EasyMock;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -120,11 +121,11 @@ public class OfferDataItemProvider {
     
     protected static Map<Long, Order> orders = new HashMap<Long, Order>();
     
-    public static IAnswer<FulfillmentGroup> getAddItemToFulfillmentGroupAnswer() {
-        return new IAnswer<FulfillmentGroup>() {
+    public static Answer<FulfillmentGroup> getAddItemToFulfillmentGroupAnswer() {
+        return new Answer<FulfillmentGroup>() {
             @Override
-            public FulfillmentGroup answer() throws Throwable {
-                FulfillmentGroupItemRequest fgItemRequest = (FulfillmentGroupItemRequest) EasyMock.getCurrentArguments()[0];
+            public FulfillmentGroup answer(InvocationOnMock invocation) throws Throwable {
+                FulfillmentGroupItemRequest fgItemRequest = (FulfillmentGroupItemRequest) invocation.getArguments()[0];
                 FulfillmentGroup fg = fgItemRequest.getFulfillmentGroup();
                 FulfillmentGroupItem fgItem = new FulfillmentGroupItemImpl();
                 fgItem.setOrderItem(fgItemRequest.getOrderItem());
@@ -136,40 +137,40 @@ public class OfferDataItemProvider {
         };
     }
 
-    public static IAnswer<FulfillmentGroupItem> getCreateFulfillmentGroupItemAnswer() {
-        return new IAnswer<FulfillmentGroupItem>() {
+    public static Answer<FulfillmentGroupItem> getCreateFulfillmentGroupItemAnswer() {
+        return new Answer<FulfillmentGroupItem>() {
             @Override
-            public FulfillmentGroupItem answer() throws Throwable {
+            public FulfillmentGroupItem answer(InvocationOnMock invocation) throws Throwable {
                 return new FulfillmentGroupItemImpl();
             }
         };
     }
     
-    public static IAnswer<OrderItemPriceDetailAdjustment> getCreateOrderItemPriceDetailAdjustmentAnswer() {
-        return new IAnswer<OrderItemPriceDetailAdjustment>() {
+    public static Answer<OrderItemPriceDetailAdjustment> getCreateOrderItemPriceDetailAdjustmentAnswer() {
+        return new Answer<OrderItemPriceDetailAdjustment>() {
 
             @Override
-            public OrderItemPriceDetailAdjustment answer() throws Throwable {
+            public OrderItemPriceDetailAdjustment answer(InvocationOnMock invocation) throws Throwable {
                 return new OrderItemPriceDetailAdjustmentImpl();
             }
         };
     }
 
-    public static IAnswer<OrderItemPriceDetail> getCreateOrderItemPriceDetailAnswer() {
-        return new IAnswer<OrderItemPriceDetail>() {
+    public static Answer<OrderItemPriceDetail> getCreateOrderItemPriceDetailAnswer() {
+        return new Answer<OrderItemPriceDetail>() {
 
             @Override
-            public OrderItemPriceDetail answer() throws Throwable {
+            public OrderItemPriceDetail answer(InvocationOnMock invocation) throws Throwable {
                 return new OrderItemPriceDetailImpl();
             }
         };
     }
 
-    public static IAnswer<OrderItemQualifier> getCreateOrderItemQualifierAnswer() {
-        return new IAnswer<OrderItemQualifier>() {
+    public static Answer<OrderItemQualifier> getCreateOrderItemQualifierAnswer() {
+        return new Answer<OrderItemQualifier>() {
 
             @Override
-            public OrderItemQualifier answer() throws Throwable {
+            public OrderItemQualifier answer(InvocationOnMock invocation) throws Throwable {
                 return new OrderItemQualifierImpl();
             }
         };
@@ -177,35 +178,35 @@ public class OfferDataItemProvider {
 
     
     
-    public static IAnswer<FulfillmentGroupAdjustment> getCreateFulfillmentGroupAdjustmentAnswer() {
-        return new IAnswer<FulfillmentGroupAdjustment>() {
+    public static Answer<FulfillmentGroupAdjustment> getCreateFulfillmentGroupAdjustmentAnswer() {
+        return new Answer<FulfillmentGroupAdjustment>() {
 
             @Override
-            public FulfillmentGroupAdjustment answer() throws Throwable {
+            public FulfillmentGroupAdjustment answer(InvocationOnMock invocation) throws Throwable {
                 return new FulfillmentGroupAdjustmentImpl();
             }
         };
     }
 
-    public static IAnswer<OrderItem> getAddOrderItemToOrderAnswer() {
-        return new IAnswer<OrderItem>() {
+    public static Answer<OrderItem> getAddOrderItemToOrderAnswer() {
+        return new Answer<OrderItem>() {
             @Override
-            public OrderItem answer() throws Throwable {
-                Order order = (Order) EasyMock.getCurrentArguments()[0];
-                order.getOrderItems().add((OrderItem) EasyMock.getCurrentArguments()[1]);
-                if (((OrderItem) EasyMock.getCurrentArguments()[1]).getId() == null) {
-                    ((OrderItem) EasyMock.getCurrentArguments()[1]).setId(OfferDataItemProvider.getOrderItemId());
+            public OrderItem answer(InvocationOnMock invocation) throws Throwable {
+                Order order = (Order) invocation.getArguments()[0];
+                order.getOrderItems().add((OrderItem) invocation.getArguments()[1]);
+                if (((OrderItem) invocation.getArguments()[1]).getId() == null) {
+                    ((OrderItem) invocation.getArguments()[1]).setId(OfferDataItemProvider.getOrderItemId());
                 }
-                return (OrderItem) EasyMock.getCurrentArguments()[1];
+                return (OrderItem) invocation.getArguments()[1];
             }
         };
     }
     
-    public static IAnswer<OrderItem> getSaveOrderItemAnswer() {
-        return new IAnswer<OrderItem>() {
+    public static Answer<OrderItem> getSaveOrderItemAnswer() {
+        return new Answer<OrderItem>() {
             @Override
-            public OrderItem answer() throws Throwable {
-                OrderItem orderItem = (OrderItem) EasyMock.getCurrentArguments()[0];
+            public OrderItem answer(InvocationOnMock invocation) throws Throwable {
+                OrderItem orderItem = (OrderItem) invocation.getArguments()[0];
                 if (orderItem.getId() == null) {
                     orderItem.setId(getOrderItemId());
                 }
@@ -214,11 +215,11 @@ public class OfferDataItemProvider {
         };
     }
     
-    public static IAnswer<Order> getSaveOrderAnswer() {
-        return new IAnswer<Order>() {
+    public static Answer<Order> getSaveOrderAnswer() {
+        return new Answer<Order>() {
             @Override
-            public Order answer() throws Throwable {
-                Order order = (Order) EasyMock.getCurrentArguments()[0];
+            public Order answer(InvocationOnMock invocation) throws Throwable {
+                Order order = (Order) invocation.getArguments()[0];
                 order.setId(getOrderId());
                 orders.put(order.getId(), order);
                 return order;
@@ -226,37 +227,37 @@ public class OfferDataItemProvider {
         };
     }
 
-    public static IAnswer<Order> getSameOrderAnswer() {
-        return new IAnswer<Order>() {
+    public static Answer<Order> getSameOrderAnswer() {
+        return new Answer<Order>() {
             @Override
-            public Order answer() throws Throwable {
-                return (Order) EasyMock.getCurrentArguments()[0];
+            public Order answer(InvocationOnMock invocation) throws Throwable {
+                return (Order) invocation.getArguments()[0];
             }
         };
     }
 
     
-    public static IAnswer<FulfillmentGroupItem> getSaveFulfillmentGroupItemAnswer() {
-        return new IAnswer<FulfillmentGroupItem>() {
+    public static Answer<FulfillmentGroupItem> getSaveFulfillmentGroupItemAnswer() {
+        return new Answer<FulfillmentGroupItem>() {
             @Override
-            public FulfillmentGroupItem answer() throws Throwable {
-                return (FulfillmentGroupItem) EasyMock.getCurrentArguments()[0];
+            public FulfillmentGroupItem answer(InvocationOnMock invocation) throws Throwable {
+                return (FulfillmentGroupItem) invocation.getArguments()[0];
             }
         };
     }
     
 
-    public static IAnswer<Order> getRemoveItemFromOrderAnswer() {
-        return new IAnswer<Order>() {
+    public static Answer<Order> getRemoveItemFromOrderAnswer() {
+        return new Answer<Order>() {
             @Override
-            public Order answer() throws Throwable {
-                Long orderId = (Long) EasyMock.getCurrentArguments()[0];
+            public Order answer(InvocationOnMock invocation) throws Throwable {
+                Long orderId = (Long) invocation.getArguments()[0];
                 Order order = orders.get(orderId);
                 
                 Iterator<OrderItem> orderItemItr = order.getOrderItems().listIterator();
                 while (orderItemItr.hasNext()) {
                     OrderItem item = orderItemItr.next();
-                    if (item.getId().equals(EasyMock.getCurrentArguments()[1])) {
+                    if (item.getId().equals(invocation.getArguments()[1])) {
                         orderItemItr.remove();
                     }
                 }
@@ -264,7 +265,7 @@ public class OfferDataItemProvider {
                 for (FulfillmentGroup fg : order.getFulfillmentGroups()) {
                     Iterator<FulfillmentGroupItem> itr = fg.getFulfillmentGroupItems().iterator();
                     while (itr.hasNext()) {
-                        if (itr.next().getOrderItem().getId().equals(EasyMock.getCurrentArguments()[1])) {
+                        if (itr.next().getOrderItem().getId().equals(invocation.getArguments()[1])) {
                             itr.remove();
                         }
                     }

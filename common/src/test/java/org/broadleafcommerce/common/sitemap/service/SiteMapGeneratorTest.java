@@ -30,7 +30,7 @@ import org.broadleafcommerce.common.sitemap.domain.SiteMapConfigurationImpl;
 import org.broadleafcommerce.common.sitemap.domain.SiteMapGeneratorConfiguration;
 import org.broadleafcommerce.common.sitemap.exception.SiteMapException;
 import org.broadleafcommerce.common.web.BaseUrlResolver;
-import org.easymock.EasyMock;
+import org.mockito.Mockito;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -114,9 +114,8 @@ public class SiteMapGeneratorTest {
             List<ModuleConfiguration> mcList = new ArrayList<>();
             mcList.add(smc);
 
-            ModuleConfigurationService mcs = EasyMock.createMock(ModuleConfigurationService.class);
-            EasyMock.expect(mcs.findActiveConfigurationsByType(ModuleConfigurationType.SITE_MAP)).andReturn(mcList);
-            EasyMock.replay(mcs);
+            ModuleConfigurationService mcs = Mockito.mock(ModuleConfigurationService.class);
+            Mockito.when(mcs.findActiveConfigurationsByType(ModuleConfigurationType.SITE_MAP)).thenReturn(mcList);
 
             List<SiteMapGenerator> smgList = new ArrayList<>();
             smgList.add(smg);

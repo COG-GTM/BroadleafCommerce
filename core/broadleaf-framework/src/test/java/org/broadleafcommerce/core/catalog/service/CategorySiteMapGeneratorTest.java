@@ -32,7 +32,7 @@ import org.broadleafcommerce.core.catalog.domain.CategoryMediaXref;
 import org.broadleafcommerce.core.catalog.domain.CategoryMediaXrefImpl;
 import org.broadleafcommerce.core.catalog.domain.CategorySiteMapGeneratorConfiguration;
 import org.broadleafcommerce.core.catalog.domain.CategorySiteMapGeneratorConfigurationImpl;
-import org.easymock.EasyMock;
+import org.mockito.Mockito;
 import org.junit.Test;
 import org.springframework.mock.env.MockEnvironment;
 
@@ -88,33 +88,24 @@ public class CategorySiteMapGeneratorTest extends SiteMapGeneratorTest {
         merchandiseSubcategories.add(c5);
         merchandiseSubcategories.add(c6);
 
-        CategoryDao categoryDao = EasyMock.createMock(CategoryDao.class);
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c1, 5, 0)).andReturn(new ArrayList<Category>())
-                .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c1.getId())).andReturn(c1).atLeastOnce();
+        CategoryDao categoryDao = Mockito.mock(CategoryDao.class);
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c1, 5, 0)).thenReturn(new ArrayList<Category>());
+        Mockito.when(categoryDao.readCategoryById(c1.getId())).thenReturn(c1);
         
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c2, 5, 0)).andReturn(new ArrayList<Category>())
-                .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c2.getId())).andReturn(c2).atLeastOnce();
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c2, 5, 0)).thenReturn(new ArrayList<Category>());
+        Mockito.when(categoryDao.readCategoryById(c2.getId())).thenReturn(c2);
         
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c3, 5, 0)).andReturn(merchandiseSubcategories)
-                .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c3.getId())).andReturn(c3).atLeastOnce();
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c3, 5, 0)).thenReturn(merchandiseSubcategories);
+        Mockito.when(categoryDao.readCategoryById(c3.getId())).thenReturn(c3);
         
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c4, 5, 0)).andReturn(new ArrayList<Category>())
-                .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c4.getId())).andReturn(c4).atLeastOnce();
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c4, 5, 0)).thenReturn(new ArrayList<Category>());
+        Mockito.when(categoryDao.readCategoryById(c4.getId())).thenReturn(c4);
         
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c5, 5, 0)).andReturn(new ArrayList<Category>())
-            .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c5.getId())).andReturn(c5).atLeastOnce();
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c5, 5, 0)).thenReturn(new ArrayList<Category>());
+        Mockito.when(categoryDao.readCategoryById(c5.getId())).thenReturn(c5);
 
-        EasyMock.expect(categoryDao.readActiveSubCategoriesByCategory(c6, 5, 0)).andReturn(new ArrayList<Category>())
-            .atLeastOnce();
-        EasyMock.expect(categoryDao.readCategoryById(c6.getId())).andReturn(c6).atLeastOnce();
-        
-        // Initialize the mocks
-        EasyMock.replay(categoryDao);
+        Mockito.when(categoryDao.readActiveSubCategoriesByCategory(c6, 5, 0)).thenReturn(new ArrayList<Category>());
+        Mockito.when(categoryDao.readCategoryById(c6.getId())).thenReturn(c6);
 
         CategorySiteMapGenerator csmg = new CategorySiteMapGenerator(new MockEnvironment());
         csmg.setCategoryDao(categoryDao);

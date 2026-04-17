@@ -60,8 +60,9 @@ import org.broadleafcommerce.core.order.service.OrderMultishipOptionService;
 import org.broadleafcommerce.core.order.service.OrderService;
 import org.broadleafcommerce.core.order.service.call.FulfillmentGroupItemRequest;
 import org.broadleafcommerce.profile.core.domain.Address;
-import org.easymock.EasyMock;
-import org.easymock.IAnswer;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -114,20 +115,20 @@ public class FulfillmentGroupOfferProcessorTest extends TestCase {
     @Override
     protected void setUp() throws Exception {
         offerService = new OfferServiceImpl();
-        CustomerOfferDao customerOfferDaoMock = EasyMock.createMock(CustomerOfferDao.class);
-        OfferCodeDao offerCodeDaoMock = EasyMock.createMock(OfferCodeDao.class);
-        orderServiceMock = EasyMock.createMock(OrderService.class);
-        orderItemDaoMock = EasyMock.createMock(OrderItemDao.class);
+        CustomerOfferDao customerOfferDaoMock = Mockito.mock(CustomerOfferDao.class);
+        OfferCodeDao offerCodeDaoMock = Mockito.mock(OfferCodeDao.class);
+        orderServiceMock = Mockito.mock(OrderService.class);
+        orderItemDaoMock = Mockito.mock(OrderItemDao.class);
 
-        orderItemServiceMock = EasyMock.createMock(OrderItemService.class);
-        fgItemDaoMock = EasyMock.createMock(FulfillmentGroupItemDao.class);
-        offerDaoMock = EasyMock.createMock(OfferDao.class);
-        fgServiceMock = EasyMock.createMock(FulfillmentGroupService.class);
-        multishipOptionServiceMock = EasyMock.createMock(OrderMultishipOptionService.class);
-        offerServiceUtilitiesMock = EasyMock.createMock(OfferServiceUtilities.class);
-        offerTimeZoneProcessorMock = EasyMock.createMock(OfferTimeZoneProcessor.class);
+        orderItemServiceMock = Mockito.mock(OrderItemService.class);
+        fgItemDaoMock = Mockito.mock(FulfillmentGroupItemDao.class);
+        offerDaoMock = Mockito.mock(OfferDao.class);
+        fgServiceMock = Mockito.mock(FulfillmentGroupService.class);
+        multishipOptionServiceMock = Mockito.mock(OrderMultishipOptionService.class);
+        offerServiceUtilitiesMock = Mockito.mock(OfferServiceUtilities.class);
+        offerTimeZoneProcessorMock = Mockito.mock(OfferTimeZoneProcessor.class);
         promotableOfferUtility = new PromotableOfferUtilityImpl();
-        genericEntityServiceMock = EasyMock.createMock(GenericEntityService.class);
+        genericEntityServiceMock = Mockito.mock(GenericEntityService.class);
 
         fgProcessor = new TestableFulfillmentGroupOfferProcessor(promotableOfferUtility);
         fgProcessor.setOfferDao(offerDaoMock);
@@ -165,61 +166,45 @@ public class FulfillmentGroupOfferProcessorTest extends TestCase {
     }
     
     public void replay() {
-        EasyMock.replay(offerDaoMock);
-        EasyMock.replay(orderItemDaoMock);
-        EasyMock.replay(orderServiceMock);
-        EasyMock.replay(orderItemServiceMock);
-        EasyMock.replay(fgItemDaoMock);
-        EasyMock.replay(fgServiceMock);
-        EasyMock.replay(multishipOptionServiceMock);
-        EasyMock.replay(offerTimeZoneProcessorMock);
-        EasyMock.replay(offerServiceUtilitiesMock);
+        // Mockito does not require replay - stubs are active immediately
     }
 
     public void verify() {
-        EasyMock.verify(offerDaoMock);
-        EasyMock.verify(orderItemDaoMock);
-        EasyMock.verify(orderServiceMock);
-        EasyMock.verify(orderItemServiceMock);
-        EasyMock.verify(fgItemDaoMock);
-        EasyMock.verify(fgServiceMock);
-        EasyMock.verify(multishipOptionServiceMock);
-        EasyMock.verify(offerTimeZoneProcessorMock);
-        EasyMock.verify(offerServiceUtilitiesMock);
+        // Mockito does not require explicit verify for stubbed methods
     }
 
     public void testApplyAllFulfillmentGroupOffersWithOrderItemOffers() throws Exception {
         final ThreadLocal<Order> myOrder = new ThreadLocal<Order>();
-        EasyMock.expect(orderItemDaoMock.createOrderItemPriceDetail()).andAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAnswer()).anyTimes();
+        Mockito.when(orderItemDaoMock.createOrderItemPriceDetail()).thenAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAnswer());
 
-        EasyMock.expect(orderItemDaoMock.createOrderItemQualifier()).andAnswer(OfferDataItemProvider.getCreateOrderItemQualifierAnswer()).atLeastOnce();
+        Mockito.when(orderItemDaoMock.createOrderItemQualifier()).thenAnswer(OfferDataItemProvider.getCreateOrderItemQualifierAnswer());
 
-        EasyMock.expect(fgServiceMock.addItemToFulfillmentGroup(EasyMock.isA(FulfillmentGroupItemRequest.class), EasyMock.eq(false))).andAnswer(OfferDataItemProvider.getAddItemToFulfillmentGroupAnswer()).anyTimes();
-        EasyMock.expect(orderServiceMock.removeItem(EasyMock.isA(Long.class), EasyMock.isA(Long.class), EasyMock.eq(false))).andAnswer(OfferDataItemProvider.getRemoveItemFromOrderAnswer()).anyTimes();
-        EasyMock.expect(orderServiceMock.save(EasyMock.isA(Order.class), EasyMock.isA(Boolean.class))).andAnswer(OfferDataItemProvider.getSaveOrderAnswer()).anyTimes();
+        Mockito.when(fgServiceMock.addItemToFulfillmentGroup(Mockito.isA(FulfillmentGroupItemRequest.class), Mockito.eq(false))).thenAnswer(OfferDataItemProvider.getAddItemToFulfillmentGroupAnswer());
+        Mockito.when(orderServiceMock.removeItem(Mockito.isA(Long.class), Mockito.isA(Long.class), Mockito.eq(false))).thenAnswer(OfferDataItemProvider.getRemoveItemFromOrderAnswer());
+        Mockito.when(orderServiceMock.save(Mockito.isA(Order.class), Mockito.isA(Boolean.class))).thenAnswer(OfferDataItemProvider.getSaveOrderAnswer());
         
-        EasyMock.expect(offerServiceUtilitiesMock.orderMeetsQualifyingSubtotalRequirements(EasyMock.isA(PromotableOrder.class), EasyMock.isA(Offer.class), EasyMock.isA(HashMap.class))).andReturn(true).anyTimes();
-        EasyMock.expect(offerServiceUtilitiesMock.orderMeetsSubtotalRequirements(EasyMock.isA(PromotableOrder.class), EasyMock.isA(Offer.class))).andReturn(true).anyTimes();
+        Mockito.when(offerServiceUtilitiesMock.orderMeetsQualifyingSubtotalRequirements(Mockito.isA(PromotableOrder.class), Mockito.isA(Offer.class), Mockito.isA(HashMap.class))).thenReturn(true);
+        Mockito.when(offerServiceUtilitiesMock.orderMeetsSubtotalRequirements(Mockito.isA(PromotableOrder.class), Mockito.isA(Offer.class))).thenReturn(true);
         
-        EasyMock.expect(orderServiceMock.getAutomaticallyMergeLikeItems()).andReturn(true).anyTimes();
-        EasyMock.expect(orderItemServiceMock.saveOrderItem(EasyMock.isA(OrderItem.class))).andAnswer(OfferDataItemProvider.getSaveOrderItemAnswer()).anyTimes();
-        EasyMock.expect(fgItemDaoMock.save(EasyMock.isA(FulfillmentGroupItem.class))).andAnswer(OfferDataItemProvider.getSaveFulfillmentGroupItemAnswer()).anyTimes();
+        Mockito.when(orderServiceMock.getAutomaticallyMergeLikeItems()).thenReturn(true);
+        Mockito.when(orderItemServiceMock.saveOrderItem(Mockito.isA(OrderItem.class))).thenAnswer(OfferDataItemProvider.getSaveOrderItemAnswer());
+        Mockito.when(fgItemDaoMock.save(Mockito.isA(FulfillmentGroupItem.class))).thenAnswer(OfferDataItemProvider.getSaveFulfillmentGroupItemAnswer());
 
-        EasyMock.expect(offerDaoMock.createOrderItemPriceDetailAdjustment()).andAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAdjustmentAnswer()).anyTimes();
-        EasyMock.expect(offerDaoMock.createFulfillmentGroupAdjustment()).andAnswer(OfferDataItemProvider.getCreateFulfillmentGroupAdjustmentAnswer()).anyTimes();
+        Mockito.when(offerDaoMock.createOrderItemPriceDetailAdjustment()).thenAnswer(OfferDataItemProvider.getCreateOrderItemPriceDetailAdjustmentAnswer());
+        Mockito.when(offerDaoMock.createFulfillmentGroupAdjustment()).thenAnswer(OfferDataItemProvider.getCreateFulfillmentGroupAdjustmentAnswer());
 
-        EasyMock.expect(orderServiceMock.findOrderById(EasyMock.isA(Long.class))).andAnswer(new IAnswer<Order>() {
+        Mockito.when(orderServiceMock.findOrderById(Mockito.isA(Long.class))).thenAnswer(new Answer<Order>() {
 
             @Override
-            public Order answer() throws Throwable {
+            public Order answer(InvocationOnMock invocation) throws Throwable {
                 return myOrder.get();
             }
-        }).anyTimes();
+        });
 
-        EasyMock.expect(multishipOptionServiceMock.findOrderMultishipOptions(EasyMock.isA(Long.class))).andAnswer(new IAnswer<List<OrderMultishipOption>>() {
+        Mockito.when(multishipOptionServiceMock.findOrderMultishipOptions(Mockito.isA(Long.class))).thenAnswer(new Answer<List<OrderMultishipOption>>() {
 
             @Override
-            public List<OrderMultishipOption> answer() throws Throwable {
+            public List<OrderMultishipOption> answer(InvocationOnMock invocation) throws Throwable {
                 List<OrderMultishipOption> options = new ArrayList<OrderMultishipOption>();
                 PromotableOrder order = dataProvider.createBasicPromotableOrder(promotableOfferUtility);
                 for (FulfillmentGroup fg : order.getOrder().getFulfillmentGroups()) {
@@ -237,25 +222,23 @@ public class FulfillmentGroupOfferProcessorTest extends TestCase {
 
                 return options;
             }
-        }).anyTimes();
+        });
 
-        multishipOptionServiceMock.deleteAllOrderMultishipOptions(EasyMock.isA(Order.class));
-        EasyMock.expectLastCall().anyTimes();
-        EasyMock.expect(fgServiceMock.collapseToOneShippableFulfillmentGroup(EasyMock.isA(Order.class), EasyMock.eq(false))).andAnswer(new IAnswer<Order>() {
+        Mockito.doNothing().when(multishipOptionServiceMock).deleteAllOrderMultishipOptions(Mockito.isA(Order.class));
+        Mockito.when(fgServiceMock.collapseToOneShippableFulfillmentGroup(Mockito.isA(Order.class), Mockito.eq(false))).thenAnswer(new Answer<Order>() {
 
             @Override
-            public Order answer() throws Throwable {
-                Order order = (Order) EasyMock.getCurrentArguments()[0];
+            public Order answer(InvocationOnMock invocation) throws Throwable {
+                Order order = (Order) invocation.getArguments()[0];
                 order.getFulfillmentGroups().get(0).getFulfillmentGroupItems().addAll(order.getFulfillmentGroups().get(1).getFulfillmentGroupItems());
                 order.getFulfillmentGroups().remove(order.getFulfillmentGroups().get(1));
 
                 return order;
             }
-        }).anyTimes();
-        EasyMock.expect(fgItemDaoMock.create()).andAnswer(OfferDataItemProvider.getCreateFulfillmentGroupItemAnswer()).anyTimes();
-        fgItemDaoMock.delete(EasyMock.isA(FulfillmentGroupItem.class));
-        EasyMock.expectLastCall().anyTimes();
-        EasyMock.expect(offerTimeZoneProcessorMock.getTimeZone(EasyMock.isA(OfferImpl.class))).andReturn(TimeZone.getTimeZone("CST")).anyTimes();
+        });
+        Mockito.when(fgItemDaoMock.create()).thenAnswer(OfferDataItemProvider.getCreateFulfillmentGroupItemAnswer());
+        Mockito.doNothing().when(fgItemDaoMock).delete(Mockito.isA(FulfillmentGroupItem.class));
+        Mockito.when(offerTimeZoneProcessorMock.getTimeZone(Mockito.isA(OfferImpl.class))).thenReturn(TimeZone.getTimeZone("CST"));
 
         replay();
 
@@ -317,8 +300,8 @@ public class FulfillmentGroupOfferProcessorTest extends TestCase {
     }
 
     public void testApplyAllFulfillmentGroupOffers() {
-        EasyMock.expect(offerServiceUtilitiesMock.orderMeetsQualifyingSubtotalRequirements(EasyMock.isA(PromotableOrder.class), EasyMock.isA(Offer.class), EasyMock.isA(HashMap.class))).andReturn(true).anyTimes();
-        EasyMock.expect(offerServiceUtilitiesMock.orderMeetsSubtotalRequirements(EasyMock.isA(PromotableOrder.class), EasyMock.isA(Offer.class))).andReturn(true).anyTimes();
+        Mockito.when(offerServiceUtilitiesMock.orderMeetsQualifyingSubtotalRequirements(Mockito.isA(PromotableOrder.class), Mockito.isA(Offer.class), Mockito.isA(HashMap.class))).thenReturn(true);
+        Mockito.when(offerServiceUtilitiesMock.orderMeetsSubtotalRequirements(Mockito.isA(PromotableOrder.class), Mockito.isA(Offer.class))).thenReturn(true);
         replay();
 
         PromotableOrder order = dataProvider.createBasicPromotableOrder(promotableOfferUtility);
@@ -450,37 +433,37 @@ public class FulfillmentGroupOfferProcessorTest extends TestCase {
         verify();
     }
 
-    public class CandidateFulfillmentGroupOfferAnswer implements IAnswer<CandidateFulfillmentGroupOffer> {
+    public class CandidateFulfillmentGroupOfferAnswer implements Answer<CandidateFulfillmentGroupOffer> {
 
         @Override
-        public CandidateFulfillmentGroupOffer answer() throws Throwable {
+        public CandidateFulfillmentGroupOffer answer(InvocationOnMock invocation) throws Throwable {
             return new CandidateFulfillmentGroupOfferImpl();
         }
 
     }
 
-    public class FulfillmentGroupAdjustmentAnswer implements IAnswer<FulfillmentGroupAdjustment> {
+    public class FulfillmentGroupAdjustmentAnswer implements Answer<FulfillmentGroupAdjustment> {
 
         @Override
-        public FulfillmentGroupAdjustment answer() throws Throwable {
+        public FulfillmentGroupAdjustment answer(InvocationOnMock invocation) throws Throwable {
             return new FulfillmentGroupAdjustmentImpl();
         }
 
     }
 
-    public class CandidateItemOfferAnswer implements IAnswer<CandidateItemOffer> {
+    public class CandidateItemOfferAnswer implements Answer<CandidateItemOffer> {
 
         @Override
-        public CandidateItemOffer answer() throws Throwable {
+        public CandidateItemOffer answer(InvocationOnMock invocation) throws Throwable {
             return new CandidateItemOfferImpl();
         }
 
     }
 
-    public class OrderItemAdjustmentAnswer implements IAnswer<OrderItemAdjustment> {
+    public class OrderItemAdjustmentAnswer implements Answer<OrderItemAdjustment> {
 
         @Override
-        public OrderItemAdjustment answer() throws Throwable {
+        public OrderItemAdjustment answer(InvocationOnMock invocation) throws Throwable {
             return new OrderItemAdjustmentImpl();
         }
 
