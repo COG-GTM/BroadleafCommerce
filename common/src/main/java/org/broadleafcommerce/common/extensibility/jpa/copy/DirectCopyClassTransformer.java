@@ -68,6 +68,17 @@ import javassist.bytecode.annotation.StringMemberValue;
 /**
  * This class transformer will copy fields, methods, and interface definitions from a source class to a target class,
  * based on the xformTemplates map. It will fail if it encounters any duplicate definitions.
+ * <p>
+ * <b>Hibernate 6 Compatibility:</b> This transformer operates as a JPA {@link jakarta.persistence.spi.ClassTransformer}
+ * registered via {@link jakarta.persistence.spi.PersistenceUnitInfo#addTransformer}. Transformation occurs at class
+ * load time, which is guaranteed to happen before Hibernate builds its metamodel (the
+ * {@link org.broadleafcommerce.common.extensibility.jpa.MergePersistenceUnitManager} force-loads all managed classes
+ * before the EntityManagerFactory is created). Therefore, woven fields and their JPA annotations ({@code @Column},
+ * {@code @Embedded}, {@code @ManyToOne}, etc.) are visible to Hibernate 6's
+ * {@code org.hibernate.boot.model.internal.AnnotationBinder} during metamodel construction.
+ * <p>
+ * Hibernate 6's bytecode enhancement runs after Broadleaf's Javassist-based weaving, so the enhancer operates on
+ * already-transformed bytecode that includes all woven fields and methods.
  *
  * @author Andre Azzolini (apazzolini)
  * @author Jeff Fischer
@@ -189,7 +200,10 @@ public class DirectCopyClassTransformer extends AbstractClassTransformer impleme
                 String[] xformVals = buildXFormVals.toArray(new String[buildXFormVals.size()]);
                 logger.debug(String.format("[%s] - Transform - Copying into [%s] from [%s]", LifeCycleEvent.END,
                         xformKey, StringUtils.join(xformVals, ",")));
-                // Load the destination class and defrost it so it is eligible for modifications
+                // Load the destination class and defrost it so it is eligible for modifications.
+                // Note: This transformation runs as a JPA ClassTransformer during class loading,
+                // which occurs before Hibernate 6 builds its metamodel. The woven fields and their
+                // JPA annotations will be visible to Hibernate's AnnotationBinder.
                 clazz.defrost();
 
                 int index = 0;
@@ -885,6 +899,17 @@ public class DirectCopyClassTransformer extends AbstractClassTransformer impleme
         }
     }
 
+    /**
+     * Creates a new Hibernate-specific {@code @org.hibernate.annotations.Cache} annotation from the
+     * template's cache annotation.
+     * <p>
+     * <b>Hibernate 6 Note:</b> In Hibernate 6.2+, {@code @org.hibernate.annotations.Cache} is deprecated
+     * in favor of JPA-standard {@code @jakarta.persistence.Cacheable}. However, Hibernate 6 still fully
+     * processes the Hibernate-specific annotation, so no change is needed here for backward compatibility.
+     * If templates are migrated to use {@code @Cacheable} in the future, both {@code buildClassCacheAnnotation}
+     * and this method will need to be updated to handle the different annotation structure (a single
+     * {@code boolean value()} attribute rather than usage/region/include).
+     */
     protected Annotation getNewCacheAnnotation(ConstPool constantPool, Annotation annotation) {
         Annotation newAnnotation = new Annotation(org.hibernate.annotations.Cache.class.getName(), constantPool);
         if (annotation.getMemberValue("usage") != null) {
