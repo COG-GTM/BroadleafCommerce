@@ -81,6 +81,11 @@ The Broadleaf Commerce admin UI is a server-rendered, metadata-driven applicatio
 
 ### Architecture at a Glance
 
+![Admin UI Architecture Diagram](admin-ui-architecture-diagram.png)
+
+<details>
+<summary>Text version of the architecture diagram</summary>
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Browser (Client)                          │
@@ -132,6 +137,8 @@ The Broadleaf Commerce admin UI is a server-rendered, metadata-driven applicatio
 │  └──────────────────────────────────────────────────────────────┘│
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 
