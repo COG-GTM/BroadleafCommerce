@@ -33,11 +33,12 @@ import org.broadleafcommerce.common.presentation.override.AdminPresentationMerge
 import org.broadleafcommerce.common.presentation.override.PropertyType;
 import org.broadleafcommerce.common.time.domain.TemporalTimestampListener;
 import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.MapKeyType;
 import org.hibernate.annotations.Parameter;
-import org.hibernate.annotations.Type;
 
 import java.io.Serial;
 import java.util.HashMap;
@@ -148,9 +149,8 @@ public class CustomerPaymentImpl implements CustomerPayment, CustomerPaymentAdmi
     protected boolean isDefault = false;
 
     @ElementCollection()
-    @MapKeyType(@Type(type = "java.lang.String"))
     @Lob
-    @Type(type = "org.hibernate.type.MaterializedClobType")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @CollectionTable(name = "BLC_CUSTOMER_PAYMENT_FIELDS", joinColumns = @JoinColumn(name = "CUSTOMER_PAYMENT_ID"))
     @MapKeyColumn(name = "FIELD_NAME", nullable = false)
     @Column(name = "FIELD_VALUE", length = Integer.MAX_VALUE - 1)

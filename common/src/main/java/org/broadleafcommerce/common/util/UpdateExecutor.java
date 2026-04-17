@@ -19,18 +19,10 @@ package org.broadleafcommerce.common.util;
 
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.broadleafcommerce.common.util.dao.HibernateMappingProvider;
 import org.hibernate.FlushMode;
 import org.hibernate.Session;
-import org.hibernate.cache.spi.UpdateTimestampsCache;
-import org.hibernate.engine.spi.CacheImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
-import org.hibernate.mapping.PersistentClass;
 import org.hibernate.query.NativeQuery;
-import org.hibernate.type.LongType;
-import org.hibernate.type.Type;
-
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -72,30 +64,30 @@ public class UpdateExecutor {
      * @param em The entity manager to use for the persistence operation
      * @param template the overall update sql template. The IN clause parameter should be written using 'IN (%s)'.
      * @param params any other params that are present in the sql template, other than the IN clause. Should be written using '?'. Should be in order. Can be null.
-     * @param types the {@link org.hibernate.type.Type} instances that identify the types for the params. Should be in order and match the length of params. Can be null.
+     * @param types the types are no longer used in Hibernate 6 - parameter types are inferred. This parameter is retained for API compatibility.
      * @param ids the ids to include in the IN clause.
      * @return the total number of records updated in the database
      */
     @Deprecated
-    public static int executeUpdateQuery(EntityManager em, String template, Object[] params, Type[] types, List<Long> ids) {
+    public static int executeUpdateQuery(EntityManager em, String template, Object[] params, Object[] types, List<Long> ids) {
         int response = 0;
         List<Long[]> runs = buildRuns(ids);
         for (Long[] run : runs) {
             String queryString = String.format(template, buildInClauseTemplate(run.length));
-            NativeQuery<?> query = em.unwrap(Session.class).createSQLQuery(queryString);
+            NativeQuery<?> query = em.unwrap(Session.class).createNativeQuery(queryString);
             int counter = 1;
             if (!ArrayUtils.isEmpty(params)) {
                 for (Object param : params) {
-                    query.setParameter(counter, param, types[counter - 1]);
+                    query.setParameter(counter, param);
                     counter++;
                 }
             }
             for (Long id : run) {
-                query.setParameter(counter, id, LongType.INSTANCE);
+                query.setParameter(counter, id);
                 counter++;
             }
             FlushMode mode = em.unwrap(Session.class).getHibernateFlushMode();
-            em.unwrap(Session.class).setFlushMode(FlushMode.MANUAL);
+            em.unwrap(Session.class).setHibernateFlushMode(FlushMode.MANUAL);
             try {
                 response += query.executeUpdate();
             } finally {
@@ -116,16 +108,16 @@ public class UpdateExecutor {
      * @param template the overall update sql template. The IN clause parameter should be written using 'IN (%s)'.
      * @param tableSpace optionally provide the table being impacted by this query. This value allows Hibernate to limit the scope of cache region invalidation. Otherwise, if left null, Hibernate will invalidate every cache region, which is generally not desirable. An empty String can be used to signify that no region should be invalidated.
      * @param params any other params that are present in the sql template, other than the IN clause. Should be written using '?'. Should be in order. Can be null.
-     * @param types the {@link org.hibernate.type.Type} instances that identify the types for the params. Should be in order and match the length of params. Can be null.
+     * @param types the types are no longer used in Hibernate 6 - parameter types are inferred. This parameter is retained for API compatibility.
      * @param ids the ids to include in the IN clause.
      * @return the total number of records updated in the database
      */
-    public static int executeUpdateQuery(EntityManager em, String template, String tableSpace, Object[] params, Type[] types, List<Long> ids) {
+    public static int executeUpdateQuery(EntityManager em, String template, String tableSpace, Object[] params, Object[] types, List<Long> ids) {
         int response = 0;
         List<Long[]> runs = buildRuns(ids);
         for (Long[] run : runs) {
             String queryString = String.format(template, buildInClauseTemplate(run.length));
-            NativeQuery<?> query = em.unwrap(Session.class).createSQLQuery(queryString);
+            NativeQuery<?> query = em.unwrap(Session.class).createNativeQuery(queryString);
             //only check for null - an empty string is a valid value for tableSpace
             if (tableSpace != null) {
                 query.addSynchronizedQuerySpace(tableSpace);
@@ -133,20 +125,20 @@ public class UpdateExecutor {
             int counter = 1;
             if (!ArrayUtils.isEmpty(params)) {
                 for (Object param : params) {
-                    query.setParameter(counter, param, types[counter - 1]);
+                    query.setParameter(counter, param);
                     counter++;
                 }
             }
             for (Long id : run) {
-                query.setParameter(counter, id, LongType.INSTANCE);
+                query.setParameter(counter, id);
                 counter++;
             }
             FlushMode mode = em.unwrap(Session.class).getHibernateFlushMode();
-            em.unwrap(Session.class).setFlushMode(FlushMode.MANUAL);
+            em.unwrap(Session.class).setHibernateFlushMode(FlushMode.MANUAL);
             try {
                 response += query.executeUpdate();
             } finally {
-                em.unwrap(Session.class).setFlushMode(mode);
+                em.unwrap(Session.class).setHibernateFlushMode(mode);
             }
         }
         return response;
@@ -160,17 +152,12 @@ public class UpdateExecutor {
      */
     public static void executeTargetedCacheInvalidation(EntityManager em, Class<?> entityType, List<Long> ids) {
         SharedSessionContractImplementor session = em.unwrap(SharedSessionContractImplementor.class);
-        CacheImplementor hibernateCache = session.getFactory().getCache();
+        org.hibernate.Cache hibernateCache = session.getFactory().getCache();
         for (Long id : ids) {
-            hibernateCache.evictEntity(entityType, id);
+            hibernateCache.evictEntityData(entityType, id);
         }
         //update the timestamp cache for the table so that queries will be refreshed
-        PersistentClass metadata = HibernateMappingProvider.getMapping(entityType.getName());
-        String tableName = metadata.getTable().getName();
-        UpdateTimestampsCache timestampsCache = hibernateCache.getUpdateTimestampsCache();
-        if (timestampsCache != null) {
-            timestampsCache.invalidate(new Serializable[]{tableName}, session);
-        }
+        hibernateCache.evictQueryRegions();
     }
 
     /**

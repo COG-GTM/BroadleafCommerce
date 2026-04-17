@@ -37,11 +37,12 @@ import org.broadleafcommerce.core.catalog.service.type.ProductOptionType;
 import org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationStrategyType;
 import org.broadleafcommerce.core.catalog.service.type.ProductOptionValidationType;
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.Parameter;
-import org.hibernate.annotations.Type;
 
 import java.io.Serial;
 import java.util.ArrayList;
@@ -150,7 +151,7 @@ public class ProductOptionImpl implements ProductOption, AdminMainEntity, Produc
             addType = AddMethodType.PERSIST)
     protected List<ProductOptionValue> allowedValues = new ArrayList<>();
     @Lob
-    @Type(type = "org.hibernate.type.MaterializedClobType")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "LONG_DESCRIPTION", length = Integer.MAX_VALUE - 1)
     @AdminPresentation(friendlyName = "productOption_description",
             group = GroupName.General,

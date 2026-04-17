@@ -59,12 +59,13 @@ import org.broadleafcommerce.core.order.domain.FulfillmentOptionImpl;
 import org.broadleafcommerce.core.order.service.type.FulfillmentType;
 import org.broadleafcommerce.core.search.domain.FieldEntity;
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.Cache;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.annotations.Cascade;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.Parameter;
-import org.hibernate.annotations.Type;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -230,7 +231,7 @@ public class SkuImpl implements Sku, SkuAdminPresentation {
     //as it now relates on CLOB. Probably you can change signature and pass old/new values
     //and check them for length, if someone exceeds some value (255?) consider it large
     @Lob
-    @Type(type = "org.hibernate.type.MaterializedClobType")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "LONG_DESCRIPTION", length = Integer.MAX_VALUE - 1)
     @AdminPresentation(friendlyName = "SkuImpl_Sku_Large_Description",
             group = GroupName.General, order = FieldOrder.LONG_DESCRIPTION,

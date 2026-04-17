@@ -24,8 +24,9 @@ import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformMe
 import org.broadleafcommerce.common.extensibility.jpa.copy.DirectCopyTransformTypes;
 import org.broadleafcommerce.common.extensibility.jpa.copy.ProfileEntity;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.hibernate.annotations.Parameter;
-import org.hibernate.annotations.Type;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -66,7 +67,7 @@ public class PageRuleImpl implements PageRule, ProfileEntity {
     protected Long id;
 
     @Lob
-    @Type(type = "org.hibernate.type.MaterializedClobType")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "MATCH_RULE", length = Integer.MAX_VALUE - 1)
     protected String matchRule;
 

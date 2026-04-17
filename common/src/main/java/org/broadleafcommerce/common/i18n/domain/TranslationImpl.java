@@ -35,8 +35,6 @@ import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.Index;
 import org.hibernate.annotations.Parameter;
 import org.hibernate.annotations.Table;
-import org.hibernate.annotations.Type;
-
 import java.io.Serializable;
 
 import jakarta.persistence.Column;
@@ -46,6 +44,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Inheritance;
 import jakarta.persistence.InheritanceType;
 import jakarta.persistence.Lob;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
@@ -95,7 +95,7 @@ public class TranslationImpl implements Serializable, Translation {
 
     @Column(name = "TRANSLATED_VALUE", length = Integer.MAX_VALUE - 1)
     @Lob
-    @Type(type = "org.hibernate.type.MaterializedClobType")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @AdminPresentation(friendlyName = "TranslationImpl_TranslatedValue", prominent = true, requiredOverride = RequiredOverride.REQUIRED)
     protected String translatedValue;
 

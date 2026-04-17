@@ -49,7 +49,6 @@ import org.broadleafcommerce.openadmin.server.dao.provider.metadata.request.Late
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldManager;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.FieldNamePropertyValidator;
 import org.broadleafcommerce.openadmin.server.service.type.MetadataProviderResponse;
-import org.hibernate.Criteria;
 import org.hibernate.MappingException;
 import org.hibernate.Session;
 import org.hibernate.mapping.PersistentClass;
@@ -158,8 +157,12 @@ public class DynamicEntityDaoImpl implements DynamicEntityDao, ApplicationContex
     }
 
     @Override
-    public Criteria createCriteria(Class<?> entityClass) {
-        return getStandardEntityManager().unwrap(Session.class).createCriteria(entityClass);
+    @Deprecated
+    public CriteriaQuery createCriteria(Class<?> entityClass) {
+        CriteriaBuilder cb = getStandardEntityManager().getCriteriaBuilder();
+        CriteriaQuery cq = cb.createQuery(entityClass);
+        cq.from(entityClass);
+        return cq;
     }
 
     @Override
@@ -1101,12 +1104,10 @@ public class DynamicEntityDaoImpl implements DynamicEntityDao, ApplicationContex
         propertyTypes.add(idType);
 
         PersistentClass persistentClass = getPersistentClass(targetClass.getName());
-        Iterator testIter = persistentClass.getPropertyIterator();
         List<Property> propertyList = new ArrayList<>();
 
         //check the properties for problems
-        while (testIter.hasNext()) {
-            Property property = (Property) testIter.next();
+        for (Property property : persistentClass.getProperties()) {
             if (property.getName().contains(".")) {
                 throw new IllegalArgumentException("Properties from entities that utilize a period character ('.') in their name are incompatible with this system. The property name in question is: (" + property.getName() + ") from the class: (" + targetClass.getName() + ")");
             }

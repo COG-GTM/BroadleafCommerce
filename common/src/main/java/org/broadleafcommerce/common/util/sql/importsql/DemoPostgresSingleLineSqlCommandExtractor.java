@@ -20,7 +20,8 @@ package org.broadleafcommerce.common.util.sql.importsql;
 import org.broadleafcommerce.common.logging.SupportLogManager;
 import org.broadleafcommerce.common.logging.SupportLogger;
 import org.hibernate.dialect.Dialect;
-import org.hibernate.tool.hbm2ddl.SingleLineSqlCommandExtractor;
+import org.hibernate.tool.schema.internal.script.SingleLineSqlScriptExtractor;
+import org.hibernate.tool.schema.spi.SqlScriptCommandExtractor;
 
 import java.io.Reader;
 import java.io.Serial;
@@ -40,15 +41,13 @@ import java.util.regex.Pattern;
  *
  * @author Jay Aisenbrey (cja769)
  */
-public class DemoPostgresSingleLineSqlCommandExtractor extends SingleLineSqlCommandExtractor {
+public class DemoPostgresSingleLineSqlCommandExtractor implements SqlScriptCommandExtractor {
 
     public static final String NEWLINE_REPLACEMENT_REGEX = "\\\\r\\\\n";
-    @Serial
-    private static final long serialVersionUID = 1L;
 
     @Override
-    public String[] extractCommands(Reader reader) {
-        String[] commands = super.extractCommands(reader);
+    public List<String> extractCommands(Reader reader, Dialect dialect) {
+        String[] commands = SingleLineSqlScriptExtractor.INSTANCE.extractCommands(reader, dialect).toArray(new String[0]);
         String[] newCommands = new String[commands.length];
         int i = 0;
         for (String command : commands) {
@@ -83,7 +82,7 @@ public class DemoPostgresSingleLineSqlCommandExtractor extends SingleLineSqlComm
             newCommands[i] = newCommand;
             i++;
         }
-        return newCommands;
+        return List.of(newCommands);
     }
 
 }

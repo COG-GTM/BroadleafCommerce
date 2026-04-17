@@ -20,9 +20,7 @@ package org.broadleafcommerce.openadmin.server.service.persistence.module.criter
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.util.dao.DynamicDaoHelper;
 import org.broadleafcommerce.common.util.dao.DynamicDaoHelperImpl;
-import org.hibernate.internal.SessionFactoryImpl;
-import org.hibernate.query.criteria.internal.CriteriaBuilderImpl;
-import org.hibernate.query.criteria.internal.path.PluralAttributePath;
+import org.hibernate.query.sqm.NodeBuilder;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +33,7 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.EntityType;
 import jakarta.persistence.metamodel.ManagedType;
 import jakarta.persistence.metamodel.Metamodel;
 
@@ -57,7 +56,8 @@ public class FieldPathBuilder {
             checkPiece: {
                 if (j == 0) {
                     Path path = root.get(piece);
-                    if (path instanceof PluralAttributePath) {
+                    if (((EntityType<?>) root.getModel()).getPluralAttributes().stream()
+                            .anyMatch(a -> a.getName().equals(piece))) {
                         associationPath.add(piece);
                         break checkPiece;
                     }
@@ -98,8 +98,8 @@ public class FieldPathBuilder {
                 // We weren't able to resolve the requested piece, likely because it's in a polymoprhic version
                 // of the path we're currently on. Let's see if there's any polymoprhic version of our class to
                 // use instead.
-                SessionFactoryImpl em = ((CriteriaBuilderImpl) builder).getEntityManagerFactory();
-                Metamodel mm = em.getMetamodel();
+                // In Hibernate 6, CriteriaBuilder implements NodeBuilder which provides getDomainModel()
+                Metamodel mm = ((NodeBuilder) builder).getDomainModel();
                 boolean found = false;
 
                 Class<?>[] polyClasses = dynamicDaoHelper.getAllPolymorphicEntitiesFromCeiling(
@@ -127,7 +127,10 @@ public class FieldPathBuilder {
                 }
             }
 
-            if (path.getParentPath() != null && path.getParentPath().getJavaType().isAnnotationPresent(Embeddable.class) && path instanceof PluralAttributePath) {
+            final String currentPiece = myFieldPath.getTargetPropertyPieces().get(i);
+            if (path.getParentPath() != null && path.getParentPath().getJavaType().isAnnotationPresent(Embeddable.class)
+                    && ((EntityType<?>) root.getModel()).getPluralAttributes().stream()
+                            .anyMatch(a -> a.getName().equals(currentPiece))) {
                 //We need a workaround for this problem until it is resolved in Hibernate (loosely related to and likely resolved by https://hibernate.atlassian.net/browse/HHH-8802)
                 //We'll throw a specialized exception (and handle in an alternate flow for calls from BasicPersistenceModule)
                 throw new CriteriaConversionException(String.format("Unable to create a JPA criteria Path through an @Embeddable object to a collection that resides therein (%s)", fieldPath.getTargetProperty()), fieldPath);

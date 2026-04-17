@@ -28,7 +28,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 
 import java.io.ByteArrayInputStream;
-import java.lang.instrument.IllegalClassFormatException;
+import jakarta.persistence.spi.TransformerException;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -103,7 +103,7 @@ public class RemoveCacheClassTransformer extends AbstractClassTransformer implem
             Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain,
             byte[] classfileBuffer
-    ) throws IllegalClassFormatException {
+    ) throws TransformerException {
 
         // Lambdas and anonymous methods in Java 8 do not have a class name defined and so no transformation should be done
         if (className == null) {
@@ -144,7 +144,7 @@ public class RemoveCacheClassTransformer extends AbstractClassTransformer implem
             error.printStackTrace();
             throw error;
         } catch (Exception e) {
-            throw new IllegalClassFormatException("Unable to transform class");
+            throw new TransformerException("Unable to transform class");
         } finally {
             if (clazz != null) {
                 try {
