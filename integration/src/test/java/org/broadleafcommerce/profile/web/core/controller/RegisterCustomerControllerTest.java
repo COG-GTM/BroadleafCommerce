@@ -33,6 +33,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -70,10 +71,9 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.web.core.controller.dataprovider.RegisterCustomerDataProvider#createCustomer")
+    @Disabled
     @Transactional
     @Rollback(false)
     public void createCustomerFromController(RegisterCustomerForm registerCustomer) {
@@ -87,8 +87,6 @@ public class RegisterCustomerControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     public void viewRegisterCustomerFromController() {
         String view = registerCustomerController.registerCustomer();

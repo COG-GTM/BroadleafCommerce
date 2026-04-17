@@ -86,8 +86,6 @@ public class OfferAuditTest extends CommonSetupBaseTest {
     private long sku;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -104,8 +102,6 @@ public class OfferAuditTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @Test
     @Transactional
     public void testMinimumDaysPerUsageAudit() throws Exception {

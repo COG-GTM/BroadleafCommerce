@@ -53,8 +53,6 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
     private CustomerService customerService;
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerPhoneDataProvider#createCustomerPhone")
     @Transactional
@@ -73,8 +71,6 @@ public class CustomerPhoneTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     @Transactional
     public void readCustomerPhoneByUserId() {

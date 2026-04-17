@@ -55,8 +55,6 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     private OrderDao orderDao;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Transactional
@@ -82,8 +80,6 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @Test
     @Transactional
     public void readDefaultFulfillmentGroupForOrder() {
@@ -96,8 +92,6 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void readDefaultFulfillmentGroupForId() {
@@ -108,8 +102,6 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(4)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Transactional
@@ -134,8 +126,6 @@ public class FulfillmentGroupDaoTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(5)
-
-
     @Test
     @Transactional
     public void readFulfillmentGroupsForId() {

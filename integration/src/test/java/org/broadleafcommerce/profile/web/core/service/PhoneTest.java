@@ -47,8 +47,6 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
     private Long phoneId;
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.PhoneDataProvider#createPhone")
     @Transactional
@@ -62,8 +60,6 @@ public class PhoneTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     public void readPhoneById() {
         Phone phone = phoneService.readPhoneById(phoneId);

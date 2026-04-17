@@ -97,8 +97,6 @@ public class OfferTest extends CommonSetupBaseTest {
     private CreateOrderEntityUtility orderUtil;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -115,8 +113,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -131,8 +127,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void testThreePercentOffOffers() throws Exception {
@@ -154,8 +148,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(4)
-
-
     @Test
     @Transactional
     public void testTwoPercentOffOffers() throws Exception {
@@ -176,8 +168,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(5)
-
-
     @Test
     @Transactional
     public void testBOGOCombination() throws Exception {
@@ -198,8 +188,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(6)
-
-
     @Test
     @Transactional
     public void testBOGOAmountOffCombination() throws Exception {
@@ -244,8 +232,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(8)
-
-
     @Test
     @Transactional
     public void testPercentOffOfferWithItemMinPriceSecondEvaluation() throws Exception {
@@ -265,8 +251,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(9)
-
-
     @Test
     @Transactional
     public void testPercentOffOfferWithItemMinPriceQuantityReduction() throws Exception {
@@ -287,8 +271,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(10)
-
-
     @Test
     @Transactional
     public void testOfferUsedForPricing() throws Exception {
@@ -308,8 +290,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(11)
-
-
     @Test
     @Transactional
     public void testOfferNotCombinableItemOffers() throws Exception {
@@ -330,8 +310,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(12)
-
-
     @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer() throws Exception {
@@ -350,8 +328,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(13)
-
-
     @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOfferAndInformation() throws Exception {
@@ -382,8 +358,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(14)
-
-
     @Test
     @Transactional
     public void testOfferLowerSalePriceWithNotCombinableOffer2() throws Exception {
@@ -409,8 +383,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(15)
-
-
     @Test
     @Transactional
     public void testOfferNotStackableOrderOffers() throws Exception {
@@ -431,8 +403,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(16)
-
-
     @Test
     @Transactional
     public void testOfferNotCombinableOrderOffers() throws Exception {
@@ -452,8 +422,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(17)
-
-
     @Test
     @Transactional
     public void testOfferNotCombinableOrderOffersWithItemOffer() throws Exception {
@@ -476,8 +444,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(18)
-
-
     @Test
     @Transactional
     public void testGlobalOffers() throws Exception {
@@ -500,8 +466,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(19)
-
-
     @Test
     @Transactional
     public void testCustomerAssociatedOffers() throws Exception {
@@ -527,8 +491,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(20)
-
-
     @Test
     @Transactional
     public void testCustomerAssociatedOffers2() throws Exception {
@@ -560,8 +522,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(21)
-
-
     @Test
     @Transactional
     public void testFulfillmentGroupOffers() throws Exception {
@@ -586,8 +546,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(22)
-
-
     @Test
     @Transactional
     public void testOfferDelete() throws Exception {
@@ -625,8 +583,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(23)
-
-
     @Test
     @Transactional
     public void testReadAllOffers() throws Exception {
@@ -637,8 +593,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(24)
-
-
     @Test
     @Transactional
     public void testOfferCodeDao() throws Exception {
@@ -666,8 +620,6 @@ public class OfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(25)
-
-
     @Test
     @Transactional
     public void testCustomerOffers() throws Exception {

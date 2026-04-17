@@ -54,8 +54,6 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
     List<String> userNames = new ArrayList<>();
 
     @Order(1)
-
-
     @Test
     @Commit
     @Transactional
@@ -71,8 +69,6 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.profile.dataprovider.CustomerDataProvider#createCustomers")
     @Rollback(false)
@@ -89,8 +85,6 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     public void readCustomersById() {
         for (Long userId : userIds) {
@@ -100,8 +94,6 @@ public class CustomerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(4)
-
-
     @Test
     @Transactional
     @Commit

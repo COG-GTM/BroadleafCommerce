@@ -98,8 +98,6 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     @Transactional
     public void makePhoneDefaultOnCustomerPhoneController() {
@@ -130,8 +128,6 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     @Transactional
     public void readCustomerPhoneFromController() {
@@ -148,8 +144,6 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(4)
-
-
     @Test
     public void viewCustomerPhoneFromController() {
         PhoneNameForm pnf = new PhoneNameForm();
@@ -164,8 +158,6 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(5)
-
-
     @Test
     @Transactional
     public void viewExistingCustomerPhoneFromController() {

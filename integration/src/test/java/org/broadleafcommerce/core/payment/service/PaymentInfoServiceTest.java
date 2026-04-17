@@ -59,8 +59,6 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
     private CustomerService customerService;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Rollback(false)
@@ -85,8 +83,6 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @Test
     public void readPaymentInfoById(){
         OrderPayment sop = paymentInfoService.readPaymentById(paymentInfo.getId());
@@ -95,8 +91,6 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void readPaymentInfoByOrder(){
@@ -106,8 +100,6 @@ public class PaymentInfoServiceTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(4)
-
-
     @Test
     @Transactional
     public void createTestPayment(){

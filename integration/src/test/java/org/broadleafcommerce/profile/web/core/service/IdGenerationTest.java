@@ -49,8 +49,6 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
     List<String> userNames = new ArrayList<>();
 
     @Order(1)
-
-
     @Test
     @Rollback(false)
     @Transactional
@@ -63,8 +61,6 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     @Rollback(true)
     public void findIds() {
@@ -75,8 +71,6 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     @Rollback(false)
     @Transactional
@@ -91,8 +85,6 @@ public class IdGenerationTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(4)
-
-
     @Test
     @Rollback(true)
     public void findIdsForBeginEndSequence() {

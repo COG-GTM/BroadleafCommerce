@@ -80,8 +80,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @Test
     @Transactional
     @Rollback(false)
@@ -96,8 +94,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Rollback(false)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -405,8 +401,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(8)
-
-
     @Test
     @Transactional
     public void testManyToOneFGItemToOrderItem() throws UpdateCartException, RemoveFromCartException, PricingException {
@@ -443,8 +437,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(9)
-
-
     @Test
     @Transactional
     public void updateItemsInOrder() throws UpdateCartException, RemoveFromCartException {
@@ -532,8 +524,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(10)
-
-
     @Test
     @Transactional
     public void removeItemFromOrder() throws RemoveFromCartException {
@@ -558,8 +548,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(11)
-
-
     @Test
     @Transactional
     public void checkOrderItems() throws PricingException {
@@ -578,8 +566,6 @@ public class OrderTest extends OrderBaseTest {
 
     
     @org.junit.jupiter.api.Order(12)
-
-
     
     @Test
     @Transactional
@@ -592,8 +578,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(13)
-
-
     @Test
     public void findCartForAnonymousCustomer() {
         Customer customer = customerService.createCustomerFromId(null);
@@ -607,8 +591,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(14)
-
-
     @Test
     @Transactional
     public void findOrderByOrderNumber() throws PricingException {
@@ -629,8 +611,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(15)
-
-
     @Test
     @Transactional
     public void findNamedOrderForCustomer() throws PricingException {
@@ -646,8 +626,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(16)
-
-
     @Test
     @Transactional
     public void testReadOrdersForCustomer() throws PricingException {
@@ -672,8 +650,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(17)
-
-
     @Test
     public void testOrderProperties() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -688,8 +664,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(18)
-
-
     @Test
     public void testNamedOrderForCustomer() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);
@@ -706,8 +680,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(19)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Rollback(false)
@@ -726,8 +698,6 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(20)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.payment.PaymentInfoDataProvider#provideBasicSalesPaymentInfo")
     @Transactional
@@ -749,16 +719,12 @@ public class OrderTest extends OrderBaseTest {
     }
 
     @org.junit.jupiter.api.Order(21)
-
-
     @Test
     public void findCartForNullCustomerId() {
         assert orderService.findCartForCustomer(new CustomerImpl()) == null;
     }
 
     @org.junit.jupiter.api.Order(22)
-
-
     @Test
     public void testSubmitOrder() throws PricingException {
         Customer customer = customerService.createCustomerFromId(null);

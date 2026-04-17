@@ -77,8 +77,6 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
     private FulfillmentGroupService fulfillmentGroupService;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.FulfillmentGroupDataProvider#provideBasicSalesFulfillmentGroup")
     @Rollback(false)
@@ -128,8 +126,6 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void readFulfillmentGroupItemsForFulfillmentGroup() {
@@ -139,8 +135,6 @@ public class FulfillmentGroupItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(4)
-
-
     @Test
     @Transactional
     public void readFulfillmentGroupItemsById() {

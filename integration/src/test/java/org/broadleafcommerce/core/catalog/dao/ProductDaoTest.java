@@ -70,8 +70,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#createProducts")
     @Rollback(false)
@@ -83,8 +81,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     @Rollback(false)
     @Transactional
@@ -108,8 +104,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     @Transactional
     public void testReadProductsWithUpSaleValues() {
@@ -126,8 +120,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(4)
-
-
     @Test
     @Rollback(false)
     @Transactional
@@ -151,8 +143,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(5)
-
-
     @Test
     @Transactional
     public void testReadProductsWithCrossSaleValues() {
@@ -169,8 +159,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(6)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
@@ -181,8 +169,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(7)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional
@@ -194,8 +180,6 @@ public class ProductDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(8)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.ProductDataProvider#provideBasicProduct")
     @Transactional

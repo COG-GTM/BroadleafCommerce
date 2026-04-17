@@ -49,8 +49,6 @@ public class CustomerAddressTest extends CommonSetupBaseTest {
     private CustomerAddressService customerAddressService;
 
     @Order(1)
-
-
     @Test
     @Transactional
     public void readCustomerAddresses() {

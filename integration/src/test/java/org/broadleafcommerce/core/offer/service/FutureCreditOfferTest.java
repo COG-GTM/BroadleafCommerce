@@ -73,8 +73,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     private long sku2;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -91,8 +89,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -107,8 +103,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void testTwoFutureCreditPercentOffOffers() throws Exception {
@@ -138,8 +132,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(4)
-
-
     @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountPercentOffOffers() throws Exception {
@@ -169,8 +161,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(5)
-
-
     @Test
     @Transactional
     public void testFutureCreditAndOrderDiscountOrderAndOrderItemOffers() throws Exception {
@@ -200,8 +190,6 @@ public class FutureCreditOfferTest extends CommonSetupBaseTest {
     }
 
     @org.junit.jupiter.api.Order(6)
-
-
     @Test
     @Transactional
     public void testFutureCreditAllOfferTypes() throws Exception {

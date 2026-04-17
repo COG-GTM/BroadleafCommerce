@@ -47,8 +47,6 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
     private CustomerService customerService;
 
     @org.junit.jupiter.api.Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderDataProvider#provideBasicSalesOrder")
     @Rollback(false)
@@ -64,8 +62,6 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(2)
-
-
     @Test
     public void readOrderById() {
         Order result = orderDao.readOrderById(orderId);
@@ -73,8 +69,6 @@ public class OrderDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @org.junit.jupiter.api.Order(3)
-
-
     @Test
     @Transactional
     public void readOrdersForCustomer() {

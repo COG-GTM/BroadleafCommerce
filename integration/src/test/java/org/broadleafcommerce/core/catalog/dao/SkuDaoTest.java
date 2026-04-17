@@ -48,8 +48,6 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
     private CatalogService catalogService;
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.catalog.SkuDaoDataProvider#provideBasicSku")
     @Rollback(false)
@@ -67,8 +65,6 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @Test
     @Transactional
     public void readFirstSku() {
@@ -78,8 +74,6 @@ public class SkuDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     @Transactional
     public void readSkuById() {

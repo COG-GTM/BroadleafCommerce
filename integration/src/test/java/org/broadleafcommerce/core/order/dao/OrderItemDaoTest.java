@@ -48,8 +48,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     private SkuDao skuDao;
 
     @Order(1)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicDiscreteSalesOrderItem")
     @Rollback(false)
@@ -66,8 +64,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(2)
-
-
     @ParameterizedTest
     @MethodSource("org.broadleafcommerce.core.order.OrderItemDataProvider#provideBasicGiftWrapSalesOrderItem")
     @Rollback(false)
@@ -88,8 +84,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(3)
-
-
     @Test
     @Transactional
     public void readGiftWrapOrderItemsById() {
@@ -101,8 +95,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(4)
-
-
     @Test
     @Rollback(false)
     public void deleteGiftWrapOrderItemsById() {
@@ -112,8 +104,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(5)
-
-
     @Test
     public void readOrderItemsById() {
         assert orderItemId != null;
@@ -123,8 +113,6 @@ public class OrderItemDaoTest extends TestNGSiteIntegrationSetup {
     }
 
     @Order(6)
-
-
     @Test
     public void readOrderItemsByIdAfterGiftWrapDeletion() {
         assert orderItemId != null;
