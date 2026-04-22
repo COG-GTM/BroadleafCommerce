@@ -49,12 +49,27 @@ public class CartQueryResolver {
 
     @QueryMapping
     public Order order(@Argument Long id) {
-        return orderService.findOrderById(id);
+        Order order = orderService.findOrderById(id);
+        return filterOrderForCurrentCustomer(order);
     }
 
     @QueryMapping
     public Order orderByNumber(@Argument String orderNumber) {
-        return orderService.findOrderByOrderNumber(orderNumber);
+        Order order = orderService.findOrderByOrderNumber(orderNumber);
+        return filterOrderForCurrentCustomer(order);
+    }
+
+    protected Order filterOrderForCurrentCustomer(Order order) {
+        if (order == null) {
+            return null;
+        }
+        Customer currentCustomer = CustomerState.getCustomer();
+        Customer orderCustomer = order.getCustomer();
+        if (currentCustomer == null || orderCustomer == null
+                || !currentCustomer.equals(orderCustomer)) {
+            return null;
+        }
+        return order;
     }
 
     @QueryMapping

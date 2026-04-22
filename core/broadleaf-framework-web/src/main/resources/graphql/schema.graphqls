@@ -94,7 +94,8 @@ enum OrderStatus {
     SUBMITTED
     CANCELLED
     QUOTE
-    CSR
+    CSR_OWNED
+    ARCHIVED
 }
 
 type OrderItem {

@@ -86,7 +86,7 @@ public class CartMutationResolver {
     @MutationMapping
     public Order updateCartItemQuantity(@Argument Long orderItemId, @Argument int quantity)
             throws UpdateCartException, PricingException, RemoveFromCartException {
-        Order cart = CartState.getCart();
+        Order cart = requireActiveCart();
         OrderItemRequestDTO itemRequest = new OrderItemRequestDTO();
         itemRequest.setOrderItemId(orderItemId);
         itemRequest.setQuantity(quantity);
@@ -99,10 +99,18 @@ public class CartMutationResolver {
     @MutationMapping
     public Order removeFromCart(@Argument Long orderItemId)
             throws PricingException, RemoveFromCartException {
-        Order cart = CartState.getCart();
+        Order cart = requireActiveCart();
         cart = orderService.removeItem(cart.getId(), orderItemId, false);
         cart = orderService.save(cart, true);
         CartState.setCart(cart);
+        return cart;
+    }
+
+    protected Order requireActiveCart() {
+        Order cart = CartState.getCart();
+        if (cart == null || cart instanceof NullOrderImpl) {
+            throw new IllegalStateException("No active cart for the current customer");
+        }
         return cart;
     }
 
