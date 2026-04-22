@@ -17,8 +17,6 @@
  */
 package org.broadleafcommerce.core.web.graphql.resolvers;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.search.domain.SearchCriteria;
 import org.broadleafcommerce.core.search.domain.SearchResult;
@@ -39,8 +37,6 @@ import java.util.List;
 @Controller
 public class SearchQueryResolver {
 
-    protected static final Log LOG = LogFactory.getLog(SearchQueryResolver.class);
-
     protected static final int DEFAULT_LIMIT = 50;
     protected static final int DEFAULT_OFFSET = 0;
 
@@ -51,7 +47,7 @@ public class SearchQueryResolver {
     @QueryMapping
     public List<Product> search(@Argument String query,
                                 @Argument Integer limit,
-                                @Argument Integer offset) {
+                                @Argument Integer offset) throws Exception {
         int effectiveLimit = limit != null ? limit : DEFAULT_LIMIT;
         int effectiveOffset = offset != null ? offset : DEFAULT_OFFSET;
 
@@ -62,15 +58,10 @@ public class SearchQueryResolver {
         int page = effectiveLimit > 0 ? (effectiveOffset / effectiveLimit) + 1 : 1;
         criteria.setPage(page);
 
-        try {
-            SearchResult result = searchService.findSearchResults(criteria);
-            if (result == null || result.getProducts() == null) {
-                return Collections.emptyList();
-            }
-            return result.getProducts();
-        } catch (Exception ex) {
-            LOG.warn("GraphQL search failed for query='" + query + "'", ex);
+        SearchResult result = searchService.findSearchResults(criteria);
+        if (result == null || result.getProducts() == null) {
             return Collections.emptyList();
         }
+        return result.getProducts();
     }
 }
