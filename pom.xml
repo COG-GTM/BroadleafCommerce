@@ -581,6 +581,18 @@
                 <scope>test</scope>
             </dependency>
 
+            <!-- Spring Boot GraphQL -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-graphql</artifactId>
+                <version>${spring.boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.reactivestreams</groupId>
+                <artifactId>reactive-streams</artifactId>
+                <version>1.0.4</version>
+            </dependency>
+
             <!-- Hibernate Libraries -->
             <dependency>
                 <groupId>org.hibernate</groupId>
