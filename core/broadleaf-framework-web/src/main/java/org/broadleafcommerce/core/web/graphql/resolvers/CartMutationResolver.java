@@ -33,6 +33,7 @@ import org.broadleafcommerce.core.order.service.exception.RemoveFromCartExceptio
 import org.broadleafcommerce.core.order.service.exception.UpdateCartException;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
 import org.broadleafcommerce.core.web.graphql.dto.AddToCartInput;
+import org.broadleafcommerce.core.web.graphql.dto.ItemAttributeInput;
 import org.broadleafcommerce.core.web.graphql.dto.PromoCodeResult;
 import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.core.web.service.UpdateCartService;
@@ -43,7 +44,9 @@ import org.springframework.graphql.data.method.annotation.Argument;
 import org.springframework.graphql.data.method.annotation.MutationMapping;
 import org.springframework.stereotype.Controller;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Controller
 public class CartMutationResolver {
@@ -74,6 +77,13 @@ public class CartMutationResolver {
             itemRequest.setSkuId(Long.parseLong(input.getSkuId()));
         }
         itemRequest.setQuantity(input.getQuantity());
+        if (CollectionUtils.isNotEmpty(input.getItemAttributes())) {
+            Map<String, String> attributes = new HashMap<>();
+            for (ItemAttributeInput attr : input.getItemAttributes()) {
+                attributes.put(attr.getName(), attr.getValue());
+            }
+            itemRequest.setItemAttributes(attributes);
+        }
 
         updateCartService.validateAddToCartRequest(itemRequest, cart);
 
@@ -155,6 +165,9 @@ public class CartMutationResolver {
     public Order removePromoCode(@Argument Long offerCodeId) throws PricingException {
         Order cart = requireActiveCart();
         OfferCode offerCode = offerService.findOfferCodeById(offerCodeId);
+        if (offerCode == null) {
+            throw new IllegalArgumentException("Offer code not found for id: " + offerCodeId);
+        }
         cart = orderService.removeOfferCode(cart, offerCode, false);
         cart = orderService.save(cart, true);
         CartState.setCart(cart);

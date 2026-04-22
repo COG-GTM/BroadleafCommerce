@@ -17,45 +17,25 @@
  */
 package org.broadleafcommerce.core.web.graphql.dto;
 
-import java.util.List;
+public class ItemAttributeInput {
 
-public class AddToCartInput {
+    private String name;
+    private String value;
 
-    private String productId;
-    private String skuId;
-    private int quantity;
-    private List<ItemAttributeInput> itemAttributes;
-
-    public String getProductId() {
-        return productId;
+    public String getName() {
+        return name;
     }
 
-    public void setProductId(String productId) {
-        this.productId = productId;
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public String getSkuId() {
-        return skuId;
+    public String getValue() {
+        return value;
     }
 
-    public void setSkuId(String skuId) {
-        this.skuId = skuId;
-    }
-
-    public int getQuantity() {
-        return quantity;
-    }
-
-    public void setQuantity(int quantity) {
-        this.quantity = quantity;
-    }
-
-    public List<ItemAttributeInput> getItemAttributes() {
-        return itemAttributes;
-    }
-
-    public void setItemAttributes(List<ItemAttributeInput> itemAttributes) {
-        this.itemAttributes = itemAttributes;
+    public void setValue(String value) {
+        this.value = value;
     }
 
 }
