@@ -93,7 +93,7 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
     }
 
     protected void ensureCustomerContext() {
-        if (CustomerState.getCustomer() != null) {
+        if (hasResolvedCustomer()) {
             return;
         }
         try {
@@ -103,6 +103,23 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         } catch (Exception ex) {
             LOG.warn("Failed to create anonymous customer for GraphQL request", ex);
         }
+    }
+
+    /**
+     * Returns {@code true} when a customer has already been attached to the current request,
+     * either via {@link CustomerState} (servlet transport) or via {@link BroadleafRequestContext}
+     * {@code additionalProperties} (non-servlet transports such as WebSocket GraphQL).
+     */
+    protected boolean hasResolvedCustomer() {
+        if (CustomerState.getCustomer() != null) {
+            return true;
+        }
+        BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
+        if (brc == null) {
+            return false;
+        }
+        Map<String, Object> additional = brc.getAdditionalProperties();
+        return additional != null && additional.get("customer") != null;
     }
 
     /**
