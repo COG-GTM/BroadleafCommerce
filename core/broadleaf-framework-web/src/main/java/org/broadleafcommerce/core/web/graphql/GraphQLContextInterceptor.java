@@ -17,7 +17,6 @@
  */
 package org.broadleafcommerce.core.web.graphql;
 
-import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.util.StringUtil;
@@ -67,6 +66,7 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         } catch (Exception ex) {
             LOG.warn("Failed to populate customer context for GraphQL request", ex);
         }
+        ensureCustomerContext();
         return chain.next(request);
     }
 
@@ -78,23 +78,45 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         }
 
         String customerId = resolveCustomerId(request);
-        if (customerId != null && !customerId.trim().isEmpty()) {
-            if (NumberUtils.isCreatable(customerId)) {
-                Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
-                if (customer != null) {
-                    CustomerState.setCustomer(customer);
-                    setupCustomerForRuleProcessing(customer);
-                    return;
-                }
-            } else {
-                LOG.warn(String.format("The customer id passed in '%s' was not a number",
-                        StringUtil.sanitize(customerId)));
-            }
+        if (customerId == null || customerId.trim().isEmpty()) {
+            return;
         }
+        if (!isValidLong(customerId)) {
+            LOG.warn(String.format("The customer id passed in '%s' was not a number",
+                    StringUtil.sanitize(customerId)));
+            return;
+        }
+        Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
+        if (customer != null) {
+            CustomerState.setCustomer(customer);
+            setupCustomerForRuleProcessing(customer);
+        }
+    }
 
-        Customer anonymousCustomer = customerService.createCustomer();
-        CustomerState.setCustomer(anonymousCustomer);
-        setupCustomerForRuleProcessing(anonymousCustomer);
+    protected void ensureCustomerContext() {
+        if (CustomerState.getCustomer() != null) {
+            return;
+        }
+        try {
+            ensureBroadleafRequestContext();
+            Customer anonymousCustomer = customerService.createCustomer();
+            CustomerState.setCustomer(anonymousCustomer);
+            setupCustomerForRuleProcessing(anonymousCustomer);
+        } catch (Exception ex) {
+            LOG.warn("Failed to create anonymous customer for GraphQL request", ex);
+        }
+    }
+
+    protected boolean isValidLong(String value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            Long.parseLong(value);
+            return true;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 
     protected String resolveCustomerId(WebGraphQlRequest request) {
