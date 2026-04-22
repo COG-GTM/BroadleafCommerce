@@ -104,8 +104,9 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         String customerId = readCustomerId(request);
 
         if (customerId != null && customerId.trim().length() > 0) {
-            if (NumberUtils.isDigits(customerId)) {
-                Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
+            Long parsedId = parseCustomerId(customerId);
+            if (parsedId != null) {
+                Customer customer = customerService.readCustomerById(parsedId);
                 if (customer != null) {
                     ensureWebRequest(request);
                     CustomerState.setCustomer(customer);
@@ -113,7 +114,7 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
                     return customer;
                 }
             } else {
-                LOG.warn(String.format("The customer id passed in '%s' was not a number", StringUtil.sanitize(customerId)));
+                LOG.warn(String.format("The customer id passed in '%s' was not a valid long", StringUtil.sanitize(customerId)));
             }
         } else if (LOG.isDebugEnabled()) {
             LOG.debug("No customer ID was found for the GraphQL request. In order to look up a customer for the request"
@@ -127,6 +128,17 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
 
         ensureWebRequest(request);
         return null;
+    }
+
+    protected Long parseCustomerId(String customerId) {
+        if (!NumberUtils.isDigits(customerId)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(customerId);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     protected String readCustomerId(HttpServletRequest request) {
