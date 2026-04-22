@@ -1,0 +1,258 @@
+type Query {
+    # Catalog
+    product(id: ID!): Product
+    productByExternalId(externalId: String!): Product
+    productByUri(uri: String!): Product
+    products(name: String, limit: Int = 25, offset: Int = 0): [Product!]!
+    category(id: ID!): Category
+    categoryByUri(uri: String!): Category
+    categories(name: String, limit: Int = 25, offset: Int = 0): [Category!]!
+    sku(id: ID!): Sku
+    skuByUpc(upc: String!): Sku
+    search(query: String!, limit: Int = 25, offset: Int = 0): [Product!]!
+
+    # Cart & Orders
+    cart: Order
+    order(id: ID!): Order
+    orderByNumber(orderNumber: String!): Order
+    orderHistory(status: OrderStatus): [Order!]!
+
+    # Account
+    customer: Customer
+    customerAddresses: [CustomerAddress!]!
+}
+
+type Mutation {
+    # Cart
+    addToCart(input: AddToCartInput!): Order!
+    updateCartItemQuantity(orderItemId: ID!, quantity: Int!): Order!
+    removeFromCart(orderItemId: ID!): Order!
+    applyPromoCode(code: String!): PromoCodeResult!
+    removePromoCode(offerCodeId: ID!): Order!
+
+    # Checkout
+    saveShippingInfo(input: ShippingInfoInput!): Order!
+    saveBillingInfo(input: BillingInfoInput!): Order!
+    saveOrderEmail(email: String!): Order!
+    processCheckout(orderId: ID!): CheckoutResult!
+
+    # Account
+    updateAccount(input: UpdateAccountInput!): Customer!
+    changePassword(input: ChangePasswordInput!): Boolean!
+    addCustomerAddress(input: CustomerAddressInput!): CustomerAddress!
+    updateCustomerAddress(input: CustomerAddressInput!): CustomerAddress!
+    removeCustomerAddress(id: ID!): Boolean!
+}
+
+type Product {
+    id: ID!
+    name: String
+    description: String
+    longDescription: String
+    url: String
+    manufacturer: String
+    defaultCategory: Category
+    defaultSku: Sku
+    additionalSkus: [Sku!]!
+    productOptions: [ProductOption!]!
+}
+
+type Category {
+    id: ID!
+    name: String
+    description: String
+    longDescription: String
+    url: String
+    activeSubCategories(limit: Int = 25, offset: Int = 0): [Category!]!
+    products(limit: Int = 25, offset: Int = 0): [Product!]!
+}
+
+type Sku {
+    id: ID!
+    name: String
+    description: String
+    salePrice: Money
+    retailPrice: Money
+    upc: String
+    quantityAvailable: Int
+    available: Boolean
+}
+
+type Money {
+    amount: BigDecimal
+    currency: String
+}
+
+type Order {
+    id: ID!
+    orderNumber: String
+    status: OrderStatus
+    subTotal: Money
+    total: Money
+    totalTax: Money
+    totalShipping: Money
+    orderItems: [OrderItem!]!
+    fulfillmentGroups: [FulfillmentGroup!]!
+    payments: [OrderPayment!]!
+    emailAddress: String
+    customer: Customer
+    addedOfferCodes: [OfferCode!]!
+    itemCount: Int
+}
+
+type OrderItem {
+    id: ID!
+    name: String
+    quantity: Int
+    price: Money
+    salePrice: Money
+    retailPrice: Money
+    totalPrice: Money
+    product: Product
+    sku: Sku
+}
+
+type FulfillmentGroup {
+    id: ID!
+    address: Address
+    fulfillmentOption: FulfillmentOption
+    fulfillmentPrice: Money
+    items: [FulfillmentGroupItem!]!
+}
+
+type FulfillmentGroupItem {
+    id: ID!
+    orderItem: OrderItem
+    quantity: Int
+}
+
+type FulfillmentOption {
+    id: ID!
+    name: String
+    description: String
+    price: Money
+}
+
+type OrderPayment {
+    id: ID!
+    type: String
+    amount: Money
+    billingAddress: Address
+}
+
+type OfferCode {
+    id: ID!
+    offerCode: String
+}
+
+type Customer {
+    id: ID!
+    firstName: String
+    lastName: String
+    emailAddress: String
+    username: String
+}
+
+type CustomerAddress {
+    id: ID!
+    addressName: String
+    address: Address
+}
+
+type Address {
+    id: ID!
+    addressLine1: String
+    addressLine2: String
+    city: String
+    stateProvinceRegion: String
+    postalCode: String
+    country: String
+    phonePrimary: String
+}
+
+type ProductOption {
+    id: ID!
+    label: String
+    type: String
+    required: Boolean
+    values: [ProductOptionValue!]!
+}
+
+type ProductOptionValue {
+    id: ID!
+    attributeValue: String
+    displayOrder: Int
+    priceAdjustment: Money
+}
+
+type PromoCodeResult {
+    order: Order!
+    promoAdded: Boolean!
+    exception: String
+}
+
+type CheckoutResult {
+    order: Order!
+    success: Boolean!
+    errorMessage: String
+}
+
+enum OrderStatus {
+    IN_PROCESS
+    SUBMITTED
+    CANCELLED
+}
+
+scalar BigDecimal
+
+input AddToCartInput {
+    productId: ID!
+    skuId: ID
+    quantity: Int!
+    itemAttributes: [ItemAttributeInput!]
+}
+
+input ItemAttributeInput {
+    name: String!
+    value: String!
+}
+
+input ShippingInfoInput {
+    address: AddressInput!
+    fulfillmentOptionId: ID!
+    personalMessage: String
+    deliveryMessage: String
+}
+
+input BillingInfoInput {
+    address: AddressInput!
+    paymentType: String
+}
+
+input AddressInput {
+    addressLine1: String!
+    addressLine2: String
+    city: String!
+    stateProvinceRegion: String!
+    postalCode: String!
+    country: String!
+    phonePrimary: String
+}
+
+input UpdateAccountInput {
+    firstName: String
+    lastName: String
+    emailAddress: String
+}
+
+input ChangePasswordInput {
+    currentPassword: String!
+    newPassword: String!
+    newPasswordConfirm: String!
+}
+
+input CustomerAddressInput {
+    id: ID
+    addressName: String!
+    address: AddressInput!
+}
