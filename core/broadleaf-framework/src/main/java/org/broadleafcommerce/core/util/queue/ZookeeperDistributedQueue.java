@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,44 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Default {@link ObjectInputFilter} pattern applied to {@link #deserialize(byte[])} to mitigate insecure
+     * deserialization (CWE-502). The pattern imposes resource limits and rejects packages that are well known
+     * to be abused as Java deserialization gadget chains. Subclasses that store a restricted set of types
+     * should override {@link #getObjectInputFilter()} and return a stricter, allow-list based filter.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxdepth=64;maxarray=1000000;maxrefs=100000;maxbytes=10000000;"
+            + "!org.apache.commons.collections.functors.**;"
+            + "!org.apache.commons.collections4.functors.**;"
+            + "!org.codehaus.groovy.runtime.**;"
+            + "!org.springframework.beans.factory.**;"
+            + "!org.springframework.core.SerializableTypeWrapper*;"
+            + "!com.sun.org.apache.xalan.internal.xsltc.trax.**;"
+            + "!org.apache.xalan.xsltc.trax.**;"
+            + "!com.sun.rowset.**;"
+            + "!javax.management.BadAttributeValueExpException;"
+            + "!com.mchange.v2.c3p0.**;"
+            + "!org.hibernate.engine.spi.**;"
+            + "!org.hibernate.property.**;"
+            + "!org.apache.tomcat.dbcp.**;"
+            + "!sun.rmi.server.**;"
+            + "!java.rmi.server.**;"
+            + "!org.jboss.interceptor.**;"
+            + "!bsh.**;"
+            + "!clojure.**;"
+            + "!org.python.core.**;"
+            + "!com.sun.syndication.feed.impl.**;"
+            + "!com.rometools.rome.feed.impl.**;"
+            + "!javassist.util.proxy.**;"
+            + "!org.mozilla.javascript.**;"
+            + "!com.vaadin.data.util.**;"
+            + "!org.apache.xbean.naming.context.**;"
+            + "!javax.naming.**";
+
+    private static final ObjectInputFilter DEFAULT_DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +861,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Returns the {@link ObjectInputFilter} applied when deserializing queue entries to mitigate insecure
+     * deserialization (CWE-502). The default filter imposes resource limits and rejects packages that are
+     * well known to be abused as Java deserialization gadget chains.
+     * <p>
+     * Subclasses that store a narrow set of types should override this method and return a stricter, allow-list
+     * based filter (e.g. one created via {@link ObjectInputFilter.Config#createFilter(String)} with a pattern
+     * that only permits the expected types and rejects everything else via a trailing {@code "!*"}).
+     * <p>
+     * Returning {@code null} disables the per-stream filter and falls back to the process-wide
+     * {@code jdk.serialFilter} configuration. This is not recommended.
+     *
+     * @return the filter to apply, or {@code null} to disable per-stream filtering.
+     */
+    protected ObjectInputFilter getObjectInputFilter() {
+        return DEFAULT_DESERIALIZATION_FILTER;
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * configured with the {@link ObjectInputFilter} returned by {@link #getObjectInputFilter()} to mitigate
+     * insecure deserialization (CWE-502).
      *
      * @param bytes
      * @return
@@ -832,6 +891,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ObjectInputFilter filter = getObjectInputFilter();
+            if (filter != null) {
+                ois.setObjectInputFilter(filter);
+            }
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
