@@ -104,7 +104,7 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         String customerId = readCustomerId(request);
 
         if (customerId != null && customerId.trim().length() > 0) {
-            if (NumberUtils.isCreatable(customerId)) {
+            if (NumberUtils.isDigits(customerId)) {
                 Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
                 if (customer != null) {
                     ensureWebRequest(request);
