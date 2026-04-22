@@ -1,0 +1,201 @@
+type Query {
+    # Catalog queries
+    product(id: ID!): Product
+    productByExternalId(externalId: String!): Product
+    productByUri(uri: String!): Product
+    products(name: String!, limit: Int = 50, offset: Int = 0): [Product!]!
+    category(id: ID!): Category
+    categoryByUri(uri: String!): Category
+    categories(name: String!, limit: Int = 50, offset: Int = 0): [Category!]!
+    sku(id: ID!): Sku
+    skuByUpc(upc: String!): Sku
+    search(query: String!, limit: Int = 50, offset: Int = 0): [Product!]!
+}
+
+type Mutation {
+    _placeholder: Boolean
+}
+
+type Money {
+    amount: BigDecimal!
+    currency: String
+}
+
+scalar BigDecimal
+
+type Product {
+    id: ID!
+    name: String
+    description: String
+    longDescription: String
+    url: String
+    manufacturer: String
+    defaultCategory: Category
+    defaultSku: Sku
+    additionalSkus: [Sku!]
+    productOptions: [ProductOption!]
+}
+
+type Category {
+    id: ID!
+    name: String
+    url: String
+    description: String
+    longDescription: String
+    activeStartDate: String
+    activeEndDate: String
+    activeSubCategories(limit: Int = 50, offset: Int = 0): [Category!]
+    products(limit: Int = 50, offset: Int = 0): [Product!]
+}
+
+type Sku {
+    id: ID!
+    name: String
+    description: String
+    longDescription: String
+    salePrice: Money
+    retailPrice: Money
+    cost: Money
+    upc: String
+    quantityAvailable: Int
+    available: Boolean
+    activeStartDate: String
+    activeEndDate: String
+}
+
+type ProductOption {
+    id: ID!
+    label: String
+    type: String
+    required: Boolean
+    allowedValues: [ProductOptionValue!]
+}
+
+type ProductOptionValue {
+    id: ID!
+    attributeValue: String
+    displayOrder: Int
+    priceAdjustment: Money
+}
+
+type Order {
+    id: ID!
+    orderNumber: String
+    status: OrderStatus
+    subTotal: Money
+    total: Money
+    totalTax: Money
+    totalShipping: Money
+    emailAddress: String
+    orderItems: [OrderItem!]
+    fulfillmentGroups: [FulfillmentGroup!]
+    payments: [OrderPayment!]
+}
+
+enum OrderStatus {
+    IN_PROCESS
+    NAMED
+    SUBMITTED
+    CANCELLED
+    QUOTE
+    CSR
+}
+
+type OrderItem {
+    id: ID!
+    name: String
+    quantity: Int
+    price: Money
+    salePrice: Money
+    retailPrice: Money
+    totalPrice: Money
+    product: Product
+    sku: Sku
+    orderItemAttributes: [OrderItemAttribute!]
+}
+
+type OrderItemAttribute {
+    id: ID!
+    name: String
+    value: String
+}
+
+type FulfillmentGroup {
+    id: ID!
+    address: Address
+    shippingPrice: Money
+    merchandiseTotal: Money
+    total: Money
+    type: String
+    fulfillmentGroupItems: [FulfillmentGroupItem!]
+}
+
+type FulfillmentGroupItem {
+    id: ID!
+    quantity: Int
+    totalItemAmount: Money
+    orderItem: OrderItem
+}
+
+type Address {
+    id: ID!
+    firstName: String
+    lastName: String
+    addressLine1: String
+    addressLine2: String
+    city: String
+    stateProvinceRegion: String
+    postalCode: String
+    country: String
+    phonePrimary: String
+}
+
+type OrderPayment {
+    id: ID!
+    amount: Money
+    type: String
+    gatewayType: String
+    referenceNumber: String
+}
+
+type Customer {
+    id: ID!
+    firstName: String
+    lastName: String
+    emailAddress: String
+    username: String
+}
+
+input AddToCartInput {
+    productId: ID!
+    skuId: ID
+    quantity: Int!
+    itemAttributes: [ItemAttributeInput!]
+}
+
+input ItemAttributeInput {
+    name: String!
+    value: String!
+}
+
+input ShippingInfoInput {
+    address: AddressInput!
+    fulfillmentOption: String
+}
+
+input AddressInput {
+    firstName: String
+    lastName: String
+    addressLine1: String!
+    addressLine2: String
+    city: String!
+    stateProvinceRegion: String!
+    postalCode: String!
+    country: String!
+    phonePrimary: String
+}
+
+input BillingInfoInput {
+    address: AddressInput!
+    paymentType: String!
+}
