@@ -153,7 +153,7 @@ public class CartMutationResolver {
 
     @MutationMapping
     public Order removePromoCode(@Argument Long offerCodeId) throws PricingException {
-        Order cart = CartState.getCart();
+        Order cart = requireActiveCart();
         OfferCode offerCode = offerService.findOfferCodeById(offerCodeId);
         cart = orderService.removeOfferCode(cart, offerCode, false);
         cart = orderService.save(cart, true);

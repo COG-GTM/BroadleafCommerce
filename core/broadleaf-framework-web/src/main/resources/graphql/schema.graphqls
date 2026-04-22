@@ -164,7 +164,7 @@ type Customer {
 }
 
 type PromoCodeResult {
-    order: Order!
+    order: Order
     promoAdded: Boolean!
     errorMessage: String
 }
