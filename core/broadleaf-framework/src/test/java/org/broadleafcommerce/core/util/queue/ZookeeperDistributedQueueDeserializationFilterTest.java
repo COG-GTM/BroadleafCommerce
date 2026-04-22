@@ -48,6 +48,10 @@ public class ZookeeperDistributedQueueDeserializationFilterTest extends TestCase
         assertRejected(Class.forName("com.sun.rowset.JdbcRowSetImpl"));
         assertRejected(Class.forName("com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl"));
         assertRejected(Class.forName("org.springframework.beans.factory.ObjectFactory"));
+        // The outer class and its inner gadget classes must both be rejected. Inner classes use `$`
+        // in their binary name, which `ObjectInputFilter` only matches via a trailing prefix `*`.
+        assertRejected(Class.forName("org.springframework.core.SerializableTypeWrapper"));
+        assertRejected(Class.forName("org.springframework.core.SerializableTypeWrapper$MethodInvokeTypeProvider"));
     }
 
     public void testPatternMentionsWellKnownGadgetPackages() {

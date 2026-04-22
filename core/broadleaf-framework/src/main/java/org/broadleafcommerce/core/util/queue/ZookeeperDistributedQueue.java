@@ -92,7 +92,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             + "!org.apache.commons.collections4.functors.**;"
             + "!org.codehaus.groovy.runtime.**;"
             + "!org.springframework.beans.factory.**;"
-            + "!org.springframework.core.SerializableTypeWrapper**;"
+            + "!org.springframework.core.SerializableTypeWrapper*;"
             + "!com.sun.org.apache.xalan.internal.xsltc.trax.**;"
             + "!org.apache.xalan.xsltc.trax.**;"
             + "!com.sun.rowset.**;"
