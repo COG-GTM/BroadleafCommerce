@@ -36,6 +36,9 @@ import java.util.List;
 @Controller
 public class CatalogQueryResolver {
 
+    protected static final int DEFAULT_LIMIT = 50;
+    protected static final int DEFAULT_OFFSET = 0;
+
     @Autowired
     @Qualifier("blCatalogService")
     protected CatalogService catalogService;
@@ -57,9 +60,11 @@ public class CatalogQueryResolver {
 
     @QueryMapping
     public List<Product> products(@Argument String name,
-                                  @Argument int limit,
-                                  @Argument int offset) {
-        return catalogService.findProductsByName(name, limit, offset);
+                                  @Argument Integer limit,
+                                  @Argument Integer offset) {
+        int effectiveLimit = limit != null ? limit : DEFAULT_LIMIT;
+        int effectiveOffset = offset != null ? offset : DEFAULT_OFFSET;
+        return catalogService.findProductsByName(name, effectiveLimit, effectiveOffset);
     }
 
     @QueryMapping
@@ -74,9 +79,11 @@ public class CatalogQueryResolver {
 
     @QueryMapping
     public List<Category> categories(@Argument String name,
-                                     @Argument int limit,
-                                     @Argument int offset) {
-        return catalogService.findCategoriesByName(name, limit, offset);
+                                     @Argument Integer limit,
+                                     @Argument Integer offset) {
+        int effectiveLimit = limit != null ? limit : DEFAULT_LIMIT;
+        int effectiveOffset = offset != null ? offset : DEFAULT_OFFSET;
+        return catalogService.findCategoriesByName(name, effectiveLimit, effectiveOffset);
     }
 
     @QueryMapping

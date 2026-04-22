@@ -52,6 +52,7 @@ import java.util.Map;
 public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
 
     public static final String CUSTOMER_ID_ATTRIBUTE = "customerId";
+    public static final String BLC_RULE_MAP_PARAM = "blRuleMap";
 
     protected static final Log LOG = LogFactory.getLog(GraphQLContextInterceptor.class);
 
@@ -139,15 +140,31 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         return null;
     }
 
+    @SuppressWarnings("unchecked")
     protected void setupCustomerForRuleProcessing(Customer customer) {
         BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
         if (brc == null) {
             return;
         }
-        Map<String, Object> ruleMap = brc.getAdditionalProperties();
+        if (brc.getRequest() != null) {
+            Map<String, Object> ruleMap = (Map<String, Object>) brc.getRequest()
+                    .getAttribute(BLC_RULE_MAP_PARAM);
+            if (ruleMap == null) {
+                ruleMap = new HashMap<>();
+            }
+            ruleMap.put("customer", customer);
+            brc.getRequest().setAttribute(BLC_RULE_MAP_PARAM, ruleMap);
+            return;
+        }
+        Map<String, Object> additional = brc.getAdditionalProperties();
+        if (additional == null) {
+            additional = new HashMap<>();
+            brc.setAdditionalProperties(additional);
+        }
+        Map<String, Object> ruleMap = (Map<String, Object>) additional.get(BLC_RULE_MAP_PARAM);
         if (ruleMap == null) {
             ruleMap = new HashMap<>();
-            brc.setAdditionalProperties(ruleMap);
+            additional.put(BLC_RULE_MAP_PARAM, ruleMap);
         }
         ruleMap.put("customer", customer);
     }
