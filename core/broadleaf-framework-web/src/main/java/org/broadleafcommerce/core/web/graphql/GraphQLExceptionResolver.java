@@ -81,8 +81,9 @@ public class GraphQLExceptionResolver extends DataFetcherExceptionResolverAdapte
             ErrorClassification classification,
             String code
     ) {
+        String message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
         return GraphqlErrorBuilder.newError(env)
-                .message(ex.getMessage())
+                .message(message)
                 .errorType(classification)
                 .extensions(Map.of("code", code))
                 .build();
