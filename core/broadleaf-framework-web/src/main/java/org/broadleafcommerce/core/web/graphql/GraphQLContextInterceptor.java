@@ -88,8 +88,7 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         }
         Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
         if (customer != null) {
-            CustomerState.setCustomer(customer);
-            setupCustomerForRuleProcessing(customer);
+            applyCustomer(customer);
         }
     }
 
@@ -100,11 +99,38 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
         try {
             ensureBroadleafRequestContext();
             Customer anonymousCustomer = customerService.createCustomer();
-            CustomerState.setCustomer(anonymousCustomer);
-            setupCustomerForRuleProcessing(anonymousCustomer);
+            applyCustomer(anonymousCustomer);
         } catch (Exception ex) {
             LOG.warn("Failed to create anonymous customer for GraphQL request", ex);
         }
+    }
+
+    /**
+     * Binds the customer to the current request context. {@link CustomerState#setCustomer(Customer)}
+     * requires a {@link WebRequest} on the {@link BroadleafRequestContext}; for transports where no
+     * servlet request is bound (e.g., WebSocket GraphQL), we fall back to storing the customer directly
+     * in {@code additionalProperties} so downstream resolvers can still retrieve it via
+     * {@link BroadleafRequestContext}.
+     */
+    protected void applyCustomer(Customer customer) {
+        BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
+        if (brc != null && brc.getWebRequest() != null) {
+            CustomerState.setCustomer(customer);
+        } else {
+            if (brc == null) {
+                brc = new BroadleafRequestContext();
+                BroadleafRequestContext.setBroadleafRequestContext(brc);
+            }
+            Map<String, Object> additional = brc.getAdditionalProperties();
+            if (additional == null) {
+                additional = new HashMap<>();
+                brc.setAdditionalProperties(additional);
+            }
+            additional.put("customer", customer);
+            LOG.debug("No WebRequest bound to BroadleafRequestContext; "
+                    + "customer stored in additionalProperties for GraphQL request");
+        }
+        setupCustomerForRuleProcessing(customer);
     }
 
     protected boolean isValidLong(String value) {

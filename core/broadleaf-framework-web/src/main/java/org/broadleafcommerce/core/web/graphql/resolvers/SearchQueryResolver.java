@@ -51,11 +51,23 @@ public class SearchQueryResolver {
         int effectiveLimit = limit != null ? limit : DEFAULT_LIMIT;
         int effectiveOffset = offset != null ? offset : DEFAULT_OFFSET;
 
+        if (effectiveLimit <= 0) {
+            throw new IllegalArgumentException("limit must be greater than zero");
+        }
+        if (effectiveOffset < 0) {
+            throw new IllegalArgumentException("offset must be greater than or equal to zero");
+        }
+        // The Broadleaf search backend paginates via page/pageSize and ignores startIndex for
+        // non-page-aligned offsets, so reject values that would silently round down.
+        if (effectiveOffset % effectiveLimit != 0) {
+            throw new IllegalArgumentException(
+                    "offset must be a multiple of limit (" + effectiveLimit + ")");
+        }
+
         SearchCriteria criteria = new SearchCriteria();
         criteria.setQuery(query);
         criteria.setPageSize(effectiveLimit);
-        criteria.setStartIndex(effectiveOffset);
-        int page = effectiveLimit > 0 ? (effectiveOffset / effectiveLimit) + 1 : 1;
+        int page = (effectiveOffset / effectiveLimit) + 1;
         criteria.setPage(page);
 
         SearchResult result = searchService.findSearchResults(criteria);
