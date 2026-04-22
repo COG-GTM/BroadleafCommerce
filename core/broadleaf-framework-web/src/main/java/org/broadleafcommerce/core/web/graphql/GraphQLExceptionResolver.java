@@ -73,9 +73,12 @@ public class GraphQLExceptionResolver extends DataFetcherExceptionResolverAdapte
         extensions.put(ERROR_CODE_KEY, errorCode);
         extensions.put(CLASSIFICATION_KEY, errorType.name());
 
+        boolean safeToExposeMessage = errorType != ErrorType.INTERNAL_ERROR && ex.getMessage() != null;
+        String message = safeToExposeMessage ? ex.getMessage() : errorCode;
+
         return GraphqlErrorBuilder.newError(env)
                 .errorType(errorType)
-                .message(ex.getMessage() != null ? ex.getMessage() : errorCode)
+                .message(message)
                 .extensions(extensions)
                 .build();
     }

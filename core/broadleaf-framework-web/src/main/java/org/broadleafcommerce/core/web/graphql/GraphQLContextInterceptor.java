@@ -31,6 +31,10 @@ import org.springframework.graphql.server.WebGraphQlInterceptor;
 import org.springframework.graphql.server.WebGraphQlRequest;
 import org.springframework.graphql.server.WebGraphQlResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
@@ -116,6 +120,23 @@ public class GraphQLContextInterceptor implements WebGraphQlInterceptor {
             brc = new BroadleafRequestContext();
             BroadleafRequestContext.setBroadleafRequestContext(brc);
         }
+        if (brc.getWebRequest() == null) {
+            WebRequest webRequest = resolveWebRequest();
+            if (webRequest != null) {
+                brc.setWebRequest(webRequest);
+            }
+        }
+    }
+
+    protected WebRequest resolveWebRequest() {
+        try {
+            if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
+                return new ServletWebRequest(attrs.getRequest(), attrs.getResponse());
+            }
+        } catch (IllegalStateException ignored) {
+            // No servlet request bound to this thread; fall through
+        }
+        return null;
     }
 
     protected void setupCustomerForRuleProcessing(Customer customer) {
