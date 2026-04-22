@@ -17,25 +17,22 @@
  */
 package org.broadleafcommerce.core.web.graphql;
 
-import graphql.Scalars;
 import graphql.scalars.ExtendedScalars;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.graphql.execution.RuntimeWiringConfigurer;
 
 /**
- * Registers Broadleaf-specific GraphQL runtime wiring, including the custom
- * {@code BigDecimal} scalar aliased to the standard GraphQL {@code Float} scalar.
+ * Registers Broadleaf-specific GraphQL runtime wiring, including the
+ * {@code BigDecimal} scalar used for monetary amounts. The scalar preserves
+ * the full precision of {@link java.math.BigDecimal}; serializing via
+ * {@code GraphQLFloat} would silently degrade values to IEEE 754 doubles.
  */
 @Configuration
 public class GraphQLConfig {
 
     @Bean
     public RuntimeWiringConfigurer runtimeWiringConfigurer() {
-        return wiringBuilder -> wiringBuilder.scalar(
-                ExtendedScalars.newAliasedScalar("BigDecimal")
-                        .aliasedScalar(Scalars.GraphQLFloat)
-                        .build()
-        );
+        return wiringBuilder -> wiringBuilder.scalar(ExtendedScalars.GraphQLBigDecimal);
     }
 }
