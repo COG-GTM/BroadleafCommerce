@@ -38,18 +38,22 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,6 +80,23 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Default set of class name prefixes allowed during deserialization.
+     * Only classes whose fully-qualified names start with one of these prefixes
+     * (or are Java primitive / boxed types, or standard collection types) will be
+     * permitted by the filtering {@link ObjectInputStream}.
+     */
+    public static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_PREFIXES =
+            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+                    "org.broadleafcommerce.",
+                    "org.apache.solr.",
+                    "java.lang.",
+                    "java.math.",
+                    "java.util.",
+                    "java.time."
+            )));
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -822,7 +843,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses a filtering
+     * {@link ObjectInputStream} that only allows classes whose names match
+     * {@link #getAllowedDeserializationPrefixes()}.
      *
      * @param bytes
      * @return
@@ -831,7 +854,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = createFilteredObjectInputStream(bais);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +877,62 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Creates an {@link ObjectInputStream} that rejects any class not matching the allowed prefixes.
+     * This mitigates CWE-502 (Insecure Deserialization) by preventing arbitrary class instantiation
+     * from untrusted data stored in Zookeeper.
+     *
+     * @param bais the underlying byte stream
+     * @return a filtering ObjectInputStream
+     * @throws IOException if the stream header is invalid
+     */
+    protected ObjectInputStream createFilteredObjectInputStream(ByteArrayInputStream bais) throws IOException {
+        final Set<String> allowedPrefixes = getAllowedDeserializationPrefixes();
+        return new ObjectInputStream(bais) {
+            @Override
+            protected Class<?> resolveClass(java.io.ObjectStreamClass desc)
+                    throws IOException, ClassNotFoundException {
+                String className = desc.getName();
+                String classToCheck = className;
+
+                // Strip array dimension markers (e.g. "[[Ljava.lang.String;" -> "Ljava.lang.String;")
+                while (classToCheck.startsWith("[")) {
+                    classToCheck = classToCheck.substring(1);
+                }
+                // Unwrap object type descriptor (e.g. "Ljava.lang.String;" -> "java.lang.String")
+                if (classToCheck.startsWith("L") && classToCheck.endsWith(";")) {
+                    classToCheck = classToCheck.substring(1, classToCheck.length() - 1);
+                }
+
+                // Primitive array descriptors (B, C, I, J, S, D, F, Z) are single chars after stripping
+                if (classToCheck.length() == 1) {
+                    return super.resolveClass(desc);
+                }
+
+                for (String prefix : allowedPrefixes) {
+                    if (classToCheck.startsWith(prefix)) {
+                        return super.resolveClass(desc);
+                    }
+                }
+                throw new InvalidClassException(className,
+                        "Deserialization of class " + className + " is not allowed. "
+                                + "If this class is expected, add it to the allowed deserialization prefixes.");
+            }
+        };
+    }
+
+    /**
+     * Returns the set of allowed class name prefixes for deserialization. Classes whose fully-qualified
+     * names do not start with one of these prefixes will be rejected during deserialization.
+     * <p>
+     * Override this method to customize the allowlist for subclasses that serialize additional types.
+     *
+     * @return an unmodifiable set of allowed class name prefixes
+     */
+    protected Set<String> getAllowedDeserializationPrefixes() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_PREFIXES;
     }
 
     /**
