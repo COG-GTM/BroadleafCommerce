@@ -90,18 +90,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_PREFIXES =
             Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
                     "org.broadleafcommerce.",
+                    "org.apache.solr.",
                     "java.lang.",
                     "java.math.",
                     "java.util.",
-                    "java.time.",
-                    "[B",  // byte array
-                    "[C",  // char array
-                    "[I",  // int array
-                    "[J",  // long array
-                    "[S",  // short array
-                    "[D",  // double array
-                    "[F",  // float array
-                    "[Z"   // boolean array
+                    "java.time."
             )));
 
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
@@ -902,8 +895,24 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             protected Class<?> resolveClass(java.io.ObjectStreamClass desc)
                     throws IOException, ClassNotFoundException {
                 String className = desc.getName();
+                String classToCheck = className;
+
+                // Strip array dimension markers (e.g. "[[Ljava.lang.String;" -> "Ljava.lang.String;")
+                while (classToCheck.startsWith("[")) {
+                    classToCheck = classToCheck.substring(1);
+                }
+                // Unwrap object type descriptor (e.g. "Ljava.lang.String;" -> "java.lang.String")
+                if (classToCheck.startsWith("L") && classToCheck.endsWith(";")) {
+                    classToCheck = classToCheck.substring(1, classToCheck.length() - 1);
+                }
+
+                // Primitive array descriptors (B, C, I, J, S, D, F, Z) are single chars after stripping
+                if (classToCheck.length() == 1) {
+                    return super.resolveClass(desc);
+                }
+
                 for (String prefix : allowedPrefixes) {
-                    if (className.startsWith(prefix)) {
+                    if (classToCheck.startsWith(prefix)) {
                         return super.resolveClass(desc);
                     }
                 }
