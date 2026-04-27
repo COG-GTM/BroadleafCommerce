@@ -38,18 +38,22 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -86,7 +90,18 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final ObjectInputFilter deserializationFilter;
     private int capacity;
+
+    private static final Set<String> DEFAULT_ALLOWED_PACKAGES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "java.lang.",
+            "java.util.",
+            "java.io.",
+            "java.math.",
+            "java.time.",
+            "java.net.",
+            "org.broadleafcommerce."
+    )));
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -98,7 +113,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param zk
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk) {
-        this(queuePath, zk, DEFAULT_MAX_QUEUE_SIZE, true, null);
+        this(queuePath, zk, DEFAULT_MAX_QUEUE_SIZE, true, null, null);
     }
 
     /**
@@ -112,7 +127,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param maxQueueSize
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize) {
-        this(queuePath, zk, maxQueueSize, true, null);
+        this(queuePath, zk, maxQueueSize, true, null, null);
     }
 
     /**
@@ -129,6 +144,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param acls
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls) {
+        this(queuePath, zk, maxQueueSize, useDefaultBasePath, acls, null);
+    }
+
+    /**
+     * Constructs a folder structure in Zookeeper for managing a queue and queue state. The argument, queuePath, should start with a forward slash ('/') and should not
+     * end with a slash. This argument should be alpha-numeric, not contain whitespaces or other special characters, and can contain forward slashes ('/') to delineate folders.
+     * If useDefaultBasePath is true, then /broadleaf/app/distributed-queues will be prepended to the queuePath. Otherwise, the queuePath will be used as it is provided.
+     * <p>
+     * The argument, maxQueueSize, will be a hint. If another thread creates the queue structure in Zookeeper, then it will persist the maxQueueSize.
+     * <p>
+     * The argument, additionalAllowedPackages, allows callers to specify additional package prefixes that are permitted during deserialization.
+     * By default, standard Java types and org.broadleafcommerce.* types are allowed.
+     *
+     * @param queuePath
+     * @param zk
+     * @param maxQueueSize
+     * @param useDefaultBasePath
+     * @param acls
+     * @param additionalAllowedPackages
+     */
+    public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls, Set<String> additionalAllowedPackages) {
         Assert.notNull(zk, "The SolrZkClient cannot be null.");
         Assert.notNull(queuePath, "The queuePath cannot be null and must be a Unix-style path (e.g. '/solr-index/command-queue').");
         Assert.hasText(queuePath.trim(), "The queuePath must not be empty and should not contain white spaces.");
@@ -162,6 +198,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
         Assert.notNull(this.queueAccessLock, "The queue access lock cannot be null.");
         Assert.notNull(this.configLock, "The config lock cannot be null.");
+
+        this.deserializationFilter = createDeserializationFilter(additionalAllowedPackages);
 
         this.requestedMaxQueueCapacity = maxQueueSize;
         seMaxCapacity(this.requestedMaxQueueCapacity);
@@ -832,6 +870,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(deserializationFilter);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +893,49 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Creates an {@link ObjectInputFilter} that restricts deserialization to an allowlist of safe packages.
+     * This mitigates CWE-502 (Deserialization of Untrusted Data) by preventing instantiation of
+     * arbitrary classes that could be exploited for Remote Code Execution.
+     *
+     * @param additionalAllowedPackages optional set of additional package prefixes to allow
+     * @return a configured ObjectInputFilter
+     */
+    private ObjectInputFilter createDeserializationFilter(Set<String> additionalAllowedPackages) {
+        final Set<String> allowedPackages = new HashSet<>(DEFAULT_ALLOWED_PACKAGES);
+        if (additionalAllowedPackages != null) {
+            allowedPackages.addAll(additionalAllowedPackages);
+        }
+
+        return filterInfo -> {
+            Class<?> clazz = filterInfo.serialClass();
+            if (clazz == null) {
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            if (clazz.isArray()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            String className = clazz.getName();
+            for (String allowedPackage : allowedPackages) {
+                if (className.startsWith(allowedPackage)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+
+            if (LOG.isWarnEnabled()) {
+                LOG.warn("Rejected deserialization of class: " + className
+                        + ". If this class is expected, add its package to the allowed packages.");
+            }
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
