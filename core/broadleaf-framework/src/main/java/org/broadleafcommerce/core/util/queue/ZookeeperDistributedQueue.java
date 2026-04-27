@@ -916,7 +916,24 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             }
 
             if (clazz.isArray()) {
-                return ObjectInputFilter.Status.ALLOWED;
+                Class<?> componentType = clazz.getComponentType();
+                while (componentType.isArray()) {
+                    componentType = componentType.getComponentType();
+                }
+                if (componentType.isPrimitive()) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+                String componentName = componentType.getName();
+                for (String allowedPackage : allowedPackages) {
+                    if (componentName.startsWith(allowedPackage)) {
+                        return ObjectInputFilter.Status.ALLOWED;
+                    }
+                }
+                if (LOG.isWarnEnabled()) {
+                    LOG.warn("Rejected deserialization of array with component class: " + componentName
+                            + ". If this class is expected, add its package to the allowed packages.");
+                }
+                return ObjectInputFilter.Status.REJECTED;
             }
 
             if (clazz.isPrimitive()) {
