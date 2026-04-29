@@ -84,7 +84,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * Filter that restricts deserialization to known safe classes to prevent RCE via CWE-502.
      */
     private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
-            "org.broadleafcommerce.**;java.lang.*;java.util.*;java.io.Serializable;java.math.*;java.time.*;!*"
+            "org.broadleafcommerce.**;org.apache.solr.**;java.lang.*;java.util.*;java.io.Serializable;java.math.*;java.time.*;!*"
     );
 
     protected final Object QUEUE_MONITOR = new Object();
