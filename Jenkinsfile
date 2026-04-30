@@ -1,2 +1,2 @@
 properties(commonModuleJobProps())
-buildBroadleafModule(params, false, 'maven-jdk17')
+buildBroadleafModule(params, false, 'maven-jdk21')
