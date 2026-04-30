@@ -910,6 +910,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             String elementClass = className.substring(2, className.length() - 1);
             return isClassAllowed(elementClass);
         }
+        // Handle multi-dimensional arrays (e.g. "[[B", "[[Ljava.lang.String;")
+        if (className.startsWith("[")) {
+            return isClassAllowed(className.substring(1));
+        }
         return false;
     }
 
