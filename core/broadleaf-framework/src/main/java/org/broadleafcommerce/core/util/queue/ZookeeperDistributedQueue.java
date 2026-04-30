@@ -94,7 +94,6 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "java.util.",
             "java.math.",
             "java.time.",
-            "java.io.Serializable",
             "[B", // byte arrays
             "[C", // char arrays
             "[I", // int arrays
