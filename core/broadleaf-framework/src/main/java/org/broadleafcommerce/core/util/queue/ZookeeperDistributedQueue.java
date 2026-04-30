@@ -38,18 +38,23 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +83,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Allowed package prefixes for deserialization. Only classes whose fully-qualified names start with one of these
+     * prefixes will be permitted during deserialization. This mitigates CWE-502 (Deserialization of Untrusted Data).
+     */
+    private static final Set<String> ALLOWED_DESERIALIZATION_PREFIXES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "org.broadleafcommerce.",
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "java.time.",
+            "java.io.Serializable",
+            "[B", // byte arrays
+            "[C", // char arrays
+            "[I", // int arrays
+            "[J", // long arrays
+            "[D", // double arrays
+            "[F", // float arrays
+            "[S", // short arrays
+            "[Z"  // boolean arrays
+    )));
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +848,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses a filtering {@link ObjectInputStream}
+     * that only permits classes from {@link #ALLOWED_DESERIALIZATION_PREFIXES} to be deserialized.
      *
      * @param bytes
      * @return
@@ -831,7 +858,16 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = new ObjectInputStream(bais) {
+                @Override
+                protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                    String className = desc.getName();
+                    if (!isClassAllowed(className)) {
+                        throw new InvalidClassException(className, "Deserialization of class is not allowed: " + className);
+                    }
+                    return super.resolveClass(desc);
+                }
+            };
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +890,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Determines whether a class is permitted for deserialization based on the configured allowlist.
+     * Array types of allowed classes are also permitted.
+     *
+     * @param className the fully-qualified class name to check
+     * @return true if the class is allowed, false otherwise
+     */
+    protected boolean isClassAllowed(String className) {
+        for (String prefix : ALLOWED_DESERIALIZATION_PREFIXES) {
+            if (className.startsWith(prefix)) {
+                return true;
+            }
+        }
+        // Allow arrays of permitted types (e.g. "[Lorg.broadleafcommerce.SomeClass;")
+        if (className.startsWith("[L") && className.endsWith(";")) {
+            String elementClass = className.substring(2, className.length() - 1);
+            return isClassAllowed(elementClass);
+        }
+        return false;
     }
 
     /**
