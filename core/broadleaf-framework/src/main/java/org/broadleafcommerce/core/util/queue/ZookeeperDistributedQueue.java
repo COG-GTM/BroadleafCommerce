@@ -867,6 +867,16 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     }
                     return super.resolveClass(desc);
                 }
+
+                @Override
+                protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
+                    for (String iface : interfaces) {
+                        if (!isClassAllowed(iface)) {
+                            throw new InvalidClassException(iface, "Deserialization of proxy interface is not allowed: " + iface);
+                        }
+                    }
+                    return super.resolveProxyClass(interfaces);
+                }
             };
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
