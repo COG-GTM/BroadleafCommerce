@@ -90,6 +90,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      */
     private static final Set<String> ALLOWED_DESERIALIZATION_PREFIXES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "org.broadleafcommerce.",
+            "org.apache.solr.",
             "java.lang.",
             "java.util.",
             "java.math.",
