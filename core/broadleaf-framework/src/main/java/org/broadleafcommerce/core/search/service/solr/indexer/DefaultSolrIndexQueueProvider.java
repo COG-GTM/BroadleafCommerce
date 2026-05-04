@@ -27,8 +27,10 @@ import org.broadleafcommerce.core.util.queue.ZookeeperDistributedQueue;
 import org.springframework.core.env.Environment;
 import org.springframework.util.Assert;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -57,6 +59,29 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     public static final int MAX_QUEUE_SIZE = 500;
     public static final String LOCK_PATH = "/solr-index/command-lock";
     public static final String QUEUE_PATH = "/solr-index/command-queue";
+
+    /**
+     * Allowlist of {@link java.io.ObjectInputFilter} patterns granted to the Solr command queue's deserialization
+     * filter.  This includes the {@link SolrUpdateCommand} subclasses that are placed on the queue, the
+     * {@link org.apache.solr.common.SolrInputDocument}/{@link org.apache.solr.common.SolrInputField} types they carry,
+     * and the JDK boxed-primitive / collection / date types those documents typically reference.  Anything outside
+     * this list (or other patterns subclasses contribute) will be rejected by
+     * {@link ZookeeperDistributedQueue#deserialize(byte[])}.
+     */
+    protected static final List<String> SOLR_QUEUE_DESERIALIZATION_ALLOWLIST = Collections.unmodifiableList(Arrays.asList(
+            "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
+            "org.apache.solr.common.SolrInputDocument",
+            "org.apache.solr.common.SolrInputField",
+            "java.lang.*",
+            "java.util.*",
+            "java.util.concurrent.*",
+            "java.time.*",
+            "java.math.*"
+    ));
     protected static final Map<String, BlockingQueue<? super SolrUpdateCommand>> QUEUE_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     protected static final Map<String, Lock> LOCK_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     private static final Log LOG = LogFactory.getLog(DefaultSolrIndexQueueProvider.class);
@@ -145,7 +170,25 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     }
 
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
-        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        return new ZookeeperDistributedQueue<>(
+                QUEUE_PATH + '/' + queueName,
+                getZookeeper(),
+                MAX_QUEUE_SIZE,
+                true,
+                null,
+                getDeserializationAllowlistPatterns()
+        );
+    }
+
+    /**
+     * Returns the {@link java.io.ObjectInputFilter} patterns that should be allowlisted when the Solr command queue
+     * deserializes data read from Zookeeper.  Subclasses that put additional payload types on the queue must override
+     * this method to register those types; otherwise they will be rejected as a CWE-502 mitigation.
+     *
+     * @return a non-null collection of allowlist patterns; defaults to {@link #SOLR_QUEUE_DESERIALIZATION_ALLOWLIST}.
+     */
+    protected List<String> getDeserializationAllowlistPatterns() {
+        return SOLR_QUEUE_DESERIALIZATION_ALLOWLIST;
     }
 
     protected Lock createLocalLock(String lockName) {
