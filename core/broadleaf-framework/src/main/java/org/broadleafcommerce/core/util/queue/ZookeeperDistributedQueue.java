@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -822,7 +824,51 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Maximum object graph depth permitted while deserializing a queue entry.
+     */
+    protected static final long MAX_DESERIALIZATION_DEPTH = 64L;
+
+    /**
+     * Maximum number of object references permitted while deserializing a queue entry.
+     */
+    protected static final long MAX_DESERIALIZATION_REFS = 1_000_000L;
+
+    /**
+     * Maximum number of bytes that may be consumed from the stream while deserializing a queue entry.
+     * Aligned with Zookeeper's default 1MB transport limit (see {@link #serialize(Serializable)}).
+     */
+    protected static final long MAX_DESERIALIZATION_BYTES = 1_048_576L;
+
+    /**
+     * Maximum length of any single array deserialized from a queue entry.
+     */
+    protected static final long MAX_DESERIALIZATION_ARRAY_LENGTH = 100_000L;
+
+    private static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES = Set.of(
+            "java.lang",
+            "java.math",
+            "java.net",
+            "java.time",
+            "java.util",
+            "java.util.concurrent",
+            "java.util.concurrent.atomic",
+            "org.broadleafcommerce.core.util.queue",
+            "org.broadleafcommerce.core.search.service.solr.indexer",
+            "org.apache.solr.common",
+            "org.apache.solr.common.util"
+    );
+
+    private static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_CLASSES = Set.of();
+
+    /**
+     * Mechanism to convert a byte array to an object. Default implementation uses {@link ObjectInputStream}
+     * with an {@link ObjectInputFilter} that restricts deserialization to a small allowlist of types and
+     * applies bounds on stream depth, references, byte length, and array length to mitigate insecure
+     * deserialization (CWE-502) of payloads stored in Zookeeper.
+     * <p>
+     * Subclasses that put custom {@link Serializable} payloads on the queue should override
+     * {@link #getAllowedDeserializationPackages()} or {@link #getAllowedDeserializationClasses()} (or, for
+     * full control, {@link #getDeserializationFilter()}) to allow the additional payload types.
      *
      * @param bytes
      * @return
@@ -832,6 +878,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +901,111 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to {@link ObjectInputStream} during
+     * {@link #deserialize(byte[])}. The default filter restricts deserialization to the classes
+     * returned by {@link #getAllowedDeserializationClasses()} and the packages returned by
+     * {@link #getAllowedDeserializationPackages()}, and rejects streams that exceed the
+     * configured depth, reference count, byte length, or array length limits.
+     *
+     * @return the filter installed on every {@link ObjectInputStream} created by {@link #deserialize(byte[])}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return buildDeserializationFilter(
+                getAllowedDeserializationPackages(),
+                getAllowedDeserializationClasses(),
+                MAX_DESERIALIZATION_DEPTH,
+                MAX_DESERIALIZATION_REFS,
+                MAX_DESERIALIZATION_BYTES,
+                MAX_DESERIALIZATION_ARRAY_LENGTH);
+    }
+
+    /**
+     * Builds an {@link ObjectInputFilter} that allows only classes whose fully qualified name appears
+     * in {@code allowedClasses} or whose package appears in {@code allowedPackages}, while rejecting
+     * any stream that exceeds the supplied depth, reference, byte, or array length limits.
+     * <p>
+     * Primitive component types and array element types are unwrapped for the package/class check.
+     * The filter returns {@link ObjectInputFilter.Status#UNDECIDED} for stream-resource checks where
+     * no class is provided so the limit checks above still apply on subsequent invocations.
+     *
+     * @param allowedPackages packages whose classes are accepted
+     * @param allowedClasses fully qualified class names that are accepted regardless of package
+     * @param maxDepth maximum permitted object graph depth
+     * @param maxRefs maximum permitted number of object references
+     * @param maxBytes maximum permitted number of bytes consumed from the stream
+     * @param maxArrayLength maximum permitted length for any single array
+     * @return an {@link ObjectInputFilter} enforcing the supplied allowlist and limits
+     */
+    protected static ObjectInputFilter buildDeserializationFilter(final Set<String> allowedPackages,
+                                                                  final Set<String> allowedClasses,
+                                                                  final long maxDepth,
+                                                                  final long maxRefs,
+                                                                  final long maxBytes,
+                                                                  final long maxArrayLength) {
+        return info -> {
+            if (info.depth() > maxDepth) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            if (info.references() > maxRefs) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            if (info.streamBytes() > maxBytes) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            if (info.arrayLength() > maxArrayLength) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> cls = info.serialClass();
+            if (cls == null) {
+                // Filter is also invoked for stream resource checks with no class; leave those undecided.
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+            while (cls.isArray()) {
+                cls = cls.getComponentType();
+            }
+            if (cls.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            if (allowedClasses.contains(cls.getName())) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+            String pkg = cls.getPackageName();
+            if (allowedPackages.contains(pkg)) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            return ObjectInputFilter.Status.REJECTED;
+        };
+    }
+
+    /**
+     * Set of packages whose classes are accepted by {@link #getDeserializationFilter()}. Subclasses that
+     * put custom payloads on the queue should override this method and include both the default
+     * packages (via {@code super.getAllowedDeserializationPackages()}) and the packages of those payload
+     * types.
+     *
+     * @return packages whose classes may appear in the deserialized object graph
+     */
+    protected Set<String> getAllowedDeserializationPackages() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES;
+    }
+
+    /**
+     * Set of fully qualified class names that are accepted by {@link #getDeserializationFilter()}
+     * regardless of the package allowlist. Subclasses that put custom payloads on the queue and prefer
+     * to opt-in by class name (rather than by package) should override this method and include the
+     * default classes (via {@code super.getAllowedDeserializationClasses()}) along with their additional
+     * payload types.
+     *
+     * @return fully qualified class names that may appear in the deserialized object graph
+     */
+    protected Set<String> getAllowedDeserializationClasses() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_CLASSES;
     }
 
     /**
