@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -822,7 +823,45 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Default {@link ObjectInputFilter} pattern applied to the {@link ObjectInputStream} used by
+     * {@link #deserialize(byte[])}. This is a defense-in-depth measure to mitigate the risk of
+     * insecure Java deserialization (CWE-502) on data read back from Zookeeper.
+     * <p>
+     * The pattern uses the syntax described by {@link ObjectInputFilter.Config#createFilter(String)}.
+     * It applies stream-shape resource limits and allows three groups of classes:
+     * <ul>
+     *     <li><b>{@code java.**}</b> &mdash; any class in the {@code java.*} package hierarchy
+     *     (collections, primitive wrappers, dates, etc.). This is needed because the JDK itself
+     *     consults the filter for internal arrays and entry types when deserializing standard
+     *     collections (for example {@code java.util.HashMap.readObject} checks
+     *     {@code java.util.Map$Entry[]}).</li>
+     *     <li><b>{@code org.apache.solr.**}</b> &mdash; the Solr types referenced by built-in
+     *     queue payloads such as
+     *     {@code org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand},
+     *     which holds {@code SolrInputDocument} fields.</li>
+     *     <li><b>{@code org.broadleafcommerce.**}</b> &mdash; the package hierarchy in which queue
+     *     payloads such as {@code SolrUpdateCommand} subclasses live.</li>
+     * </ul>
+     * Anything else is rejected, which blocks the {@code javax.*}, {@code com.sun.*},
+     * {@code org.apache.commons.*}, and other namespaces commonly used by published Java
+     * deserialization gadget chains. Subclasses that legitimately need to deserialize additional
+     * classes should override {@link #getDeserializationFilter()} rather than modifying this
+     * constant.
+     */
+    protected static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=20;maxarray=10000;maxrefs=10000;"
+                    + "java.**;"
+                    + "org.apache.solr.**;"
+                    + "org.broadleafcommerce.**;"
+                    + "!*";
+
+    private static final ObjectInputFilter DEFAULT_DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with an {@link ObjectInputFilter} returned by {@link #getDeserializationFilter()} applied so that
+     * only an allow-listed set of classes can be resolved during deserialization.
      *
      * @param bytes
      * @return
@@ -832,6 +871,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ObjectInputFilter filter = getDeserializationFilter();
+            if (filter != null) {
+                ois.setObjectInputFilter(filter);
+            }
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +897,25 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied by {@link #deserialize(byte[])} when reading
+     * queue entries from Zookeeper. The default filter is built from
+     * {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}, which restricts resolved classes to a small
+     * set of common JDK types plus everything under {@code org.broadleafcommerce.**} and rejects
+     * all other classes. Returning {@code null} from this method disables filtering entirely and
+     * is strongly discouraged.
+     * <p>
+     * Subclasses whose queue payloads include classes outside the default allow-list should
+     * override this method and return a more permissive filter, for example by wrapping
+     * {@link ObjectInputFilter.Config#createFilter(String)} with a pattern that adds the required
+     * classes and still ends with {@code !*} to reject anything unexpected.
+     *
+     * @return the filter to apply to the {@link ObjectInputStream}, or {@code null} to skip filtering
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return DEFAULT_DESERIALIZATION_FILTER;
     }
 
     /**
