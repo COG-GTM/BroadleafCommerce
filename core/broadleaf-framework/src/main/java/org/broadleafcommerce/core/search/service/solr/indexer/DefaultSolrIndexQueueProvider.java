@@ -145,7 +145,18 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     }
 
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
-        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue =
+                new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        queue.addAllowedDeserializationClassPatterns(
+                "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
+                "org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand",
+                "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
+                "org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand",
+                "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
+                "org.apache.solr.common.SolrInputDocument",
+                "org.apache.solr.common.SolrInputField"
+        );
+        return queue;
     }
 
     protected Lock createLocalLock(String lockName) {
