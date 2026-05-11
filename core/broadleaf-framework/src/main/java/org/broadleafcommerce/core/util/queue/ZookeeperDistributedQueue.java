@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -79,6 +81,52 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
+    /**
+     * Default {@link ObjectInputFilter} pattern applied when deserializing entries from Zookeeper.
+     * <p>
+     * This filter mitigates Java deserialization attacks (CWE-502) by allow-listing a conservative
+     * set of JDK types and rejecting everything else. Callers that need to deserialize additional
+     * types must register them via {@link #addAllowedDeserializationClassPatterns(String...)}.
+     * <p>
+     * The pattern follows the syntax of {@link ObjectInputFilter.Config#createFilter(String)}.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN = String.join(";",
+            "maxdepth=50",
+            "maxrefs=10000",
+            "maxarray=10000",
+            "maxbytes=1048576",
+            "java.lang.Object",
+            "java.lang.Boolean",
+            "java.lang.Byte",
+            "java.lang.Character",
+            "java.lang.Short",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.lang.Number",
+            "java.lang.String",
+            "java.lang.Enum",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            "java.time.*",
+            "java.sql.Date",
+            "java.sql.Time",
+            "java.sql.Timestamp",
+            "java.util.Date",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.TreeMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.TreeSet",
+            "java.util.Collections$*",
+            "java.util.Arrays$*",
+            "!*"
+    );
+
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
     private final ZooKeeper zk;
@@ -87,6 +135,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+
+    private final List<String> additionalAllowedDeserializationPatterns = new CopyOnWriteArrayList<>();
+    private volatile ObjectInputFilter cachedDeserializationFilter;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -832,6 +883,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -853,6 +905,64 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayInputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to {@link ObjectInputStream}s used by
+     * {@link #deserialize(byte[])}. The default filter is built from
+     * {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN} combined with any patterns registered via
+     * {@link #addAllowedDeserializationClassPatterns(String...)}.
+     * <p>
+     * Subclasses may override to fully customize the filter, but should be very careful to keep the
+     * filter restrictive enough to reject untrusted classes (CWE-502).
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = cachedDeserializationFilter;
+        if (filter == null) {
+            synchronized (this) {
+                filter = cachedDeserializationFilter;
+                if (filter == null) {
+                    StringBuilder sb = new StringBuilder();
+                    for (String pattern : additionalAllowedDeserializationPatterns) {
+                        sb.append(pattern).append(';');
+                    }
+                    sb.append(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+                    filter = ObjectInputFilter.Config.createFilter(sb.toString());
+                    cachedDeserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * Registers additional class patterns that are permitted by the {@link ObjectInputFilter} used
+     * during {@link #deserialize(byte[])}. Patterns use the syntax described in
+     * {@link ObjectInputFilter.Config#createFilter(String)} (for example, a fully-qualified class
+     * name, a {@code com.example.*} single-package wildcard, or a {@code com.example.**} recursive
+     * package wildcard).
+     * <p>
+     * Registered patterns are prepended to {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}, which
+     * already allows common JDK types and rejects everything else. Callers should register the
+     * specific application types they expect to read from the queue. Avoid wildcards that would
+     * permit deserialization of arbitrary types.
+     *
+     * @param patterns one or more {@link ObjectInputFilter} class patterns
+     */
+    public void addAllowedDeserializationClassPatterns(String... patterns) {
+        if (patterns == null) {
+            return;
+        }
+        boolean added = false;
+        for (String pattern : patterns) {
+            if (pattern != null && !pattern.trim().isEmpty()) {
+                additionalAllowedDeserializationPatterns.add(pattern.trim());
+                added = true;
+            }
+        }
+        if (added) {
+            cachedDeserializationFilter = null;
         }
     }
 
