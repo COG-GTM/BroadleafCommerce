@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +80,36 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Known dangerous classes/packages used in deserialization gadget chains (CWE-502).
+     */
+    private static final Set<String> REJECTED_CLASSES = Set.of(
+            "org.apache.commons.collections.functors.InvokerTransformer",
+            "org.apache.commons.collections.functors.InstantiateTransformer",
+            "org.apache.commons.collections4.functors.InvokerTransformer",
+            "org.apache.commons.collections4.functors.InstantiateTransformer",
+            "org.codehaus.groovy.runtime.ConvertedClosure",
+            "org.codehaus.groovy.runtime.MethodClosure",
+            "org.springframework.beans.factory.ObjectFactory",
+            "com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl",
+            "org.apache.xalan.xsltc.trax.TemplatesImpl",
+            "com.sun.rowset.JdbcRowSetImpl",
+            "java.rmi.registry.Registry",
+            "java.rmi.server.ObjID",
+            "java.rmi.server.RemoteObjectInvocationHandler",
+            "javax.xml.transform.Templates",
+            "org.apache.commons.beanutils.BeanComparator"
+    );
+
+    private static final Set<String> REJECTED_PACKAGES = Set.of(
+            "org.apache.commons.collections.functors.",
+            "org.apache.commons.collections4.functors.",
+            "javassist.",
+            "org.mozilla.javascript.",
+            "com.mchange.v2.c3p0.",
+            "bsh."
+    );
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +854,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with an {@link ObjectInputFilter} to reject known dangerous deserialization gadget classes (CWE-502).
      *
      * @param bytes
      * @return
@@ -832,6 +865,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +888,46 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} used to guard against insecure deserialization.
+     * Rejects known gadget chain classes and constrains stream depth/references.
+     * Subclasses may override to provide a stricter allowlist for their expected types.
+     *
+     * @return a non-null ObjectInputFilter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return filterInfo -> {
+            Class<?> clazz = filterInfo.serialClass();
+            if (clazz != null) {
+                String className = clazz.getName();
+
+                if (REJECTED_CLASSES.contains(className)) {
+                    LOG.warn("Rejected deserialization of dangerous class: " + className);
+                    return ObjectInputFilter.Status.REJECTED;
+                }
+
+                for (String pkg : REJECTED_PACKAGES) {
+                    if (className.startsWith(pkg)) {
+                        LOG.warn("Rejected deserialization of class in dangerous package: " + className);
+                        return ObjectInputFilter.Status.REJECTED;
+                    }
+                }
+            }
+
+            if (filterInfo.depth() > 20) {
+                LOG.warn("Rejected deserialization due to excessive depth: " + filterInfo.depth());
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            if (filterInfo.references() > 1000) {
+                LOG.warn("Rejected deserialization due to excessive references: " + filterInfo.references());
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            return ObjectInputFilter.Status.ALLOWED;
+        };
     }
 
     /**
