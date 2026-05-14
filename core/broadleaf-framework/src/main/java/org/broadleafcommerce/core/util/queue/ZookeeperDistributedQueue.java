@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -821,8 +822,20 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
     }
 
+    private static final int MAX_DESERIALIZATION_DEPTH = 10;
+    private static final long MAX_ARRAY_LENGTH = 10_000L;
+    private static final List<String> ALLOWED_PACKAGE_PREFIXES = List.of(
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "java.io.",
+            "java.time.",
+            "org.broadleafcommerce."
+    );
+
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with an {@link ObjectInputFilter} that restricts deserialization to a safe set of classes.
      *
      * @param bytes
      * @return
@@ -832,6 +845,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(createDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +868,46 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Creates an {@link ObjectInputFilter} that restricts deserialization to known safe classes.
+     * This mitigates CWE-502 (Insecure Deserialization) by preventing arbitrary class instantiation
+     * from untrusted Zookeeper data.
+     */
+    protected ObjectInputFilter createDeserializationFilter() {
+        return filterInfo -> {
+            if (filterInfo.depth() > MAX_DESERIALIZATION_DEPTH) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            if (filterInfo.arrayLength() > MAX_ARRAY_LENGTH) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> clazz = filterInfo.serialClass();
+            if (clazz == null) {
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            // Unwrap array types to their component type
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            String className = clazz.getName();
+            for (String prefix : ALLOWED_PACKAGE_PREFIXES) {
+                if (className.startsWith(prefix)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+
+            LOG.warn("Deserialization rejected for class: " + className);
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
