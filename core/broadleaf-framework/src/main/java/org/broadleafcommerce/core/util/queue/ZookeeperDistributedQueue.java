@@ -822,16 +822,32 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
     }
 
-    private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
-            "maxdepth=10;maxbytes=1000000;"
-            + "org.broadleafcommerce.**;"
+    private static final String DEFAULT_ALLOWED_PACKAGES =
+            "org.broadleafcommerce.**;"
+            + "org.apache.solr.**;"
             + "java.lang.**;"
             + "java.math.**;"
             + "java.util.**;"
             + "java.io.Serializable;"
-            + "[*;"
-            + "!*"
-    );
+            + "[*";
+
+    private static final String DEFAULT_FILTER_PATTERN =
+            "maxdepth=10;maxbytes=1000000;"
+            + DEFAULT_ALLOWED_PACKAGES + ";"
+            + "!*";
+
+    private static final ObjectInputFilter DEFAULT_DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DEFAULT_FILTER_PATTERN);
+
+    /**
+     * Returns the {@link ObjectInputFilter} used during deserialization. Subclasses may override
+     * this to allow additional packages while still rejecting all unlisted classes.
+     *
+     * @return a non-null ObjectInputFilter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return DEFAULT_DESERIALIZATION_FILTER;
+    }
 
     /**
      * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
@@ -845,7 +861,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
-            ois.setObjectInputFilter(DESERIALIZATION_FILTER);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
