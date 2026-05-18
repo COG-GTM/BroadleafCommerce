@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -821,8 +822,20 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
     }
 
+    private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
+            "maxdepth=10;maxbytes=1000000;"
+            + "org.broadleafcommerce.**;"
+            + "java.lang.**;"
+            + "java.math.**;"
+            + "java.util.**;"
+            + "java.io.Serializable;"
+            + "[*;"
+            + "!*"
+    );
+
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with an allowlist-based {@link ObjectInputFilter} to mitigate insecure deserialization (CWE-502).
      *
      * @param bytes
      * @return
@@ -832,6 +845,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(DESERIALIZATION_FILTER);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
