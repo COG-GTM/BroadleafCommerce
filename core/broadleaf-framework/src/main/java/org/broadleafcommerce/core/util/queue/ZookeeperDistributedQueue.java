@@ -40,6 +40,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -821,8 +823,32 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
     }
 
+    private static final Set<String> ALLOWED_PACKAGE_PREFIXES = Set.of(
+            "org.broadleafcommerce.",
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "java.time.",
+            "[L" // arrays
+    );
+
+    private static boolean isAllowedClass(String className) {
+        if (className.startsWith("[")) {
+            // Array type — validate the element type
+            String elementType = className.replaceFirst("^\\[+L?", "").replace(";", "");
+            return isAllowedClass(elementType);
+        }
+        for (String prefix : ALLOWED_PACKAGE_PREFIXES) {
+            if (className.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with class-name filtering to prevent deserialization of unexpected types (CWE-502).
      *
      * @param bytes
      * @return
@@ -831,7 +857,18 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = new ObjectInputStream(bais) {
+                @Override
+                protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                    String className = desc.getName();
+                    if (!isAllowedClass(className)) {
+                        throw new ClassNotFoundException(
+                                "Deserialization of class '" + className + "' is not allowed. "
+                                        + "Only Broadleaf Commerce and core Java types are permitted.");
+                    }
+                    return super.resolveClass(desc);
+                }
+            };
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
