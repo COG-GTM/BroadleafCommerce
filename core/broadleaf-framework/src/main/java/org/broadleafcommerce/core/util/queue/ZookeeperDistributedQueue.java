@@ -80,7 +80,34 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
+    private static final long MAX_STREAM_BYTES = 1_000_000L;
+    private static final int MAX_OBJECT_GRAPH_DEPTH = 50;
+    private static final int MAX_REFERENCES = 10_000;
+
+    private static final String[] DEFAULT_ALLOWED_PACKAGE_PREFIXES = {
+            "java.lang.",
+            "java.math.",
+            "java.util.",
+            "java.time.",
+            "java.io.",
+            "org.apache.solr.common.",
+            "org.broadleafcommerce.",
+    };
+
     private static final ObjectInputFilter DESERIALIZATION_FILTER = filterInfo -> {
+        if (filterInfo.depth() > MAX_OBJECT_GRAPH_DEPTH) {
+            LOG.warn("Rejected deserialization: object graph depth " + filterInfo.depth() + " exceeds limit " + MAX_OBJECT_GRAPH_DEPTH);
+            return ObjectInputFilter.Status.REJECTED;
+        }
+        if (filterInfo.references() > MAX_REFERENCES) {
+            LOG.warn("Rejected deserialization: reference count " + filterInfo.references() + " exceeds limit " + MAX_REFERENCES);
+            return ObjectInputFilter.Status.REJECTED;
+        }
+        if (filterInfo.streamBytes() > MAX_STREAM_BYTES) {
+            LOG.warn("Rejected deserialization: stream size " + filterInfo.streamBytes() + " exceeds limit " + MAX_STREAM_BYTES);
+            return ObjectInputFilter.Status.REJECTED;
+        }
+
         Class<?> clazz = filterInfo.serialClass();
         if (clazz == null) {
             return ObjectInputFilter.Status.UNDECIDED;
@@ -91,12 +118,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
 
         String name = clazz.getName();
-        if (name.startsWith("java.lang.")
-                || name.startsWith("java.math.")
-                || name.startsWith("java.util.")
-                || name.startsWith("java.time.")
-                || name.startsWith("org.broadleafcommerce.")) {
-            return ObjectInputFilter.Status.ALLOWED;
+        for (String prefix : DEFAULT_ALLOWED_PACKAGE_PREFIXES) {
+            if (name.startsWith(prefix)) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
         }
 
         LOG.warn("Rejected deserialization of unauthorized class: " + name);
