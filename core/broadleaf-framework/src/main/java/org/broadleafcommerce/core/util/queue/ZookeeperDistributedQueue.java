@@ -824,7 +824,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
             "maxdepth=10;maxbytes=1000000;"
-                    + "org.broadleafcommerce.**;java.lang.*;java.util.*;java.math.*;java.io.Serializable;!*"
+                    + "org.broadleafcommerce.**;org.apache.solr.common.**;java.lang.*;java.util.*;java.math.*;java.io.Serializable;!*"
     );
 
     /**
