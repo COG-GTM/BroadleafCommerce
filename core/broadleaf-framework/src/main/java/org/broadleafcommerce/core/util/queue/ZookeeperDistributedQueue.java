@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,29 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    private static final ObjectInputFilter DESERIALIZATION_FILTER = filterInfo -> {
+        Class<?> clazz = filterInfo.serialClass();
+        if (clazz == null) {
+            return ObjectInputFilter.Status.UNDECIDED;
+        }
+
+        if (clazz.isArray()) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+
+        String name = clazz.getName();
+        if (name.startsWith("java.lang.")
+                || name.startsWith("java.math.")
+                || name.startsWith("java.util.")
+                || name.startsWith("java.time.")
+                || name.startsWith("org.broadleafcommerce.")) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+
+        LOG.warn("Rejected deserialization of unauthorized class: " + name);
+        return ObjectInputFilter.Status.REJECTED;
+    };
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -832,6 +856,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(DESERIALIZATION_FILTER);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
