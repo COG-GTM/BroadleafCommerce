@@ -98,7 +98,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 || className.startsWith("java.util.")
                 || className.startsWith("java.math.")
                 || className.startsWith("java.time.")
-                || className.startsWith("org.broadleafcommerce.")) {
+                || className.startsWith("org.broadleafcommerce.")
+                || className.startsWith("org.apache.solr.")) {
             return ObjectInputFilter.Status.ALLOWED;
         }
         if (clazz.isArray() && (clazz.getComponentType().isPrimitive()
