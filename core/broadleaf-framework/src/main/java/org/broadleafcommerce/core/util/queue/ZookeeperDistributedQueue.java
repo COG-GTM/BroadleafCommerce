@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,35 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final int MAX_DESERIALIZATION_DEPTH = 10;
+    private static final long MAX_DESERIALIZED_BYTES = 1_000_000L;
+
+    private static final ObjectInputFilter DESERIALIZATION_FILTER = filterInfo -> {
+        Class<?> clazz = filterInfo.serialClass();
+        if (clazz == null) {
+            return ObjectInputFilter.Status.UNDECIDED;
+        }
+        if (filterInfo.depth() > MAX_DESERIALIZATION_DEPTH) {
+            return ObjectInputFilter.Status.REJECTED;
+        }
+        if (filterInfo.streamBytes() > MAX_DESERIALIZED_BYTES) {
+            return ObjectInputFilter.Status.REJECTED;
+        }
+        String className = clazz.getName();
+        if (className.startsWith("java.lang.")
+                || className.startsWith("java.util.")
+                || className.startsWith("java.math.")
+                || className.startsWith("java.time.")
+                || className.startsWith("org.broadleafcommerce.")) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+        if (clazz.isArray() && (clazz.getComponentType().isPrimitive()
+                || clazz.getComponentType().getName().startsWith("java.lang.")
+                || clazz.getComponentType().getName().startsWith("org.broadleafcommerce."))) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+        return ObjectInputFilter.Status.REJECTED;
+    };
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -832,6 +862,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(DESERIALIZATION_FILTER);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
