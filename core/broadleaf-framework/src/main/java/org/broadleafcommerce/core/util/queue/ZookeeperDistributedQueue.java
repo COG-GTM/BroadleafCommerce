@@ -86,7 +86,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * (Insecure Deserialization) by rejecting unexpected classes before instantiation.
      */
     private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
-            "org.broadleafcommerce.**;java.lang.*;java.util.*;java.math.*;java.io.Serializable;!*"
+            "org.broadleafcommerce.**;org.apache.solr.**;java.lang.*;java.util.*;java.math.*;java.io.Serializable;!*"
     );
 
     protected final Object QUEUE_MONITOR = new Object();
