@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,15 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Deserialization filter that restricts allowed classes to Broadleaf packages and
+     * standard Java types needed for queue element transport. This mitigates CWE-502
+     * (Insecure Deserialization) by rejecting unexpected classes before instantiation.
+     */
+    private static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
+            "org.broadleafcommerce.**;org.apache.solr.**;java.lang.*;java.util.*;java.math.*;java.io.Serializable;!*"
+    );
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -832,6 +842,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(DESERIALIZATION_FILTER);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
