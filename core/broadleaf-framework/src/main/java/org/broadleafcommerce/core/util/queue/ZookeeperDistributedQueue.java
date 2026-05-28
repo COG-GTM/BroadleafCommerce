@@ -38,18 +38,21 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +81,36 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final int MAX_DESERIALIZATION_DEPTH = 10;
+    private static final long MAX_DESERIALIZATION_BYTES = 1_000_000L;
+
+    private static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_CLASSES = Set.of(
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Double",
+            "java.lang.Float",
+            "java.lang.Short",
+            "java.lang.Byte",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.HashSet",
+            "java.util.TreeSet",
+            "java.util.TreeMap",
+            "java.util.Date",
+            "java.time.Instant",
+            "java.time.LocalDate",
+            "java.time.LocalDateTime",
+            "java.util.UUID",
+            "[B"
+    );
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -86,6 +119,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final Set<String> allowedDeserializationClasses;
     private int capacity;
 
     /**
@@ -98,7 +132,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param zk
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk) {
-        this(queuePath, zk, DEFAULT_MAX_QUEUE_SIZE, true, null);
+        this(queuePath, zk, DEFAULT_MAX_QUEUE_SIZE, true, null, null);
     }
 
     /**
@@ -112,7 +146,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param maxQueueSize
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize) {
-        this(queuePath, zk, maxQueueSize, true, null);
+        this(queuePath, zk, maxQueueSize, true, null, null);
     }
 
     /**
@@ -129,10 +163,35 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param acls
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls) {
+        this(queuePath, zk, maxQueueSize, useDefaultBasePath, acls, null);
+    }
+
+    /**
+     * Constructs a folder structure in Zookeeper for managing a queue and queue state. The argument, queuePath, should start with a forward slash ('/') and should not
+     * end with a slash. This argument should be alpha-numeric, not contain whitespaces or other special characters, and can contain forward slashes ('/') to delineate folders.
+     * If useDefaultBasePath is true, then /broadleaf/app/distributed-queues will be prepended to the queuePath. Otherwise, the queuePath will be used as it is provided.
+     * <p>
+     * The argument, maxQueueSize, will be a hint. If another thread creates the queue structure in Zookeeper, then it will persist the maxQueueSize.
+     * <p>
+     * The argument, additionalAllowedClasses, allows callers to specify additional class names that are permitted during deserialization beyond the default allowlist.
+     *
+     * @param queuePath
+     * @param zk
+     * @param maxQueueSize
+     * @param useDefaultBasePath
+     * @param acls
+     * @param additionalAllowedClasses
+     */
+    public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls, Set<String> additionalAllowedClasses) {
         Assert.notNull(zk, "The SolrZkClient cannot be null.");
         Assert.notNull(queuePath, "The queuePath cannot be null and must be a Unix-style path (e.g. '/solr-index/command-queue').");
         Assert.hasText(queuePath.trim(), "The queuePath must not be empty and should not contain white spaces.");
         Assert.isTrue(maxQueueSize > 0, "maxQueueSize must be greater than 0.");
+
+        this.allowedDeserializationClasses = new HashSet<>(DEFAULT_ALLOWED_DESERIALIZATION_CLASSES);
+        if (additionalAllowedClasses != null) {
+            this.allowedDeserializationClasses.addAll(additionalAllowedClasses);
+        }
 
         this.zk = zk;
         if (acls == null || acls.isEmpty()) {
@@ -822,7 +881,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}
+     * with an {@link ObjectInputFilter} that restricts deserialization to an allowlist of safe classes.
+     * This prevents deserialization attacks (CWE-502) where an attacker could inject malicious
+     * serialized objects via Zookeeper data.
      *
      * @param bytes
      * @return
@@ -832,6 +894,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(createDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +917,40 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Creates an {@link ObjectInputFilter} that restricts deserialization to classes in the allowlist
+     * and classes in the org.broadleafcommerce package hierarchy.
+     * Subclasses may override this to provide a custom filter.
+     *
+     * @return the deserialization filter
+     */
+    protected ObjectInputFilter createDeserializationFilter() {
+        return filterInfo -> {
+            if (filterInfo.serialClass() == null) {
+                if (filterInfo.depth() > MAX_DESERIALIZATION_DEPTH) {
+                    return ObjectInputFilter.Status.REJECTED;
+                }
+                if (filterInfo.streamBytes() > MAX_DESERIALIZATION_BYTES) {
+                    return ObjectInputFilter.Status.REJECTED;
+                }
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            String className = filterInfo.serialClass().getName();
+
+            if (allowedDeserializationClasses.contains(className)) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            if (className.startsWith("org.broadleafcommerce.")) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            LOG.warn("Rejected deserialization of unauthorized class: " + className);
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
