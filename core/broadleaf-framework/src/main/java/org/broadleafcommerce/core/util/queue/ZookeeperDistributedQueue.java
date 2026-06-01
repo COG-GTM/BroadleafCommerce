@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,20 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+    /**
+     * Optional system property used to extend the default deserialization allowlist with additional, semicolon-separated
+     * {@link ObjectInputFilter} patterns (for example {@code com.example.MyMessage;com.example.dto.**}). Applications that
+     * place their own custom {@link Serializable} types onto the queue should register those types here (or override
+     * {@link #getDeserializationAllowlist()}) so that they pass the filter.
+     */
+    public static final String DESERIALIZATION_ALLOWLIST_PROPERTY = "broadleaf.zookeeper.queue.deserialization.allowlist";
+    /**
+     * Default set of {@link ObjectInputFilter} patterns that are considered safe to read off of the queue. Anything that is
+     * not matched by the allowlist is rejected in order to mitigate insecure deserialization (CWE-502), which could
+     * otherwise allow remote code execution if an attacker influenced the data stored in Zookeeper.
+     */
+    protected static final String DEFAULT_DESERIALIZATION_ALLOWLIST =
+            "java.lang.*;java.util.*;java.util.concurrent.*;java.time.**;java.math.*;org.broadleafcommerce.**";
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -832,6 +847,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            // Restrict the classes that may be resolved during deserialization to a known allowlist. Without this,
+            // ObjectInputStream.readObject() will instantiate arbitrary classes present on the classpath, which is the
+            // root cause of insecure deserialization (CWE-502) and can lead to remote code execution.
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +873,45 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Builds the {@link ObjectInputFilter} applied while {@link #deserialize(byte[]) deserializing} queue data. The filter
+     * combines the {@link #getDeserializationAllowlist() allowlist} with a trailing reject-all rule ({@code !*}) so that
+     * any class not explicitly allowed is rejected.
+     *
+     * @return the filter used to guard deserialization
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        String allowlist = getDeserializationAllowlist();
+        if (allowlist == null) {
+            allowlist = "";
+        }
+        allowlist = allowlist.trim();
+        final String pattern;
+        if (allowlist.isEmpty()) {
+            pattern = "!*";
+        } else if (allowlist.endsWith(";")) {
+            pattern = allowlist + "!*";
+        } else {
+            pattern = allowlist + ";!*";
+        }
+        return ObjectInputFilter.Config.createFilter(pattern);
+    }
+
+    /**
+     * Returns the semicolon-separated list of {@link ObjectInputFilter} patterns describing the classes that are allowed to
+     * be deserialized from the queue. The {@link #DEFAULT_DESERIALIZATION_ALLOWLIST default allowlist} can be extended via
+     * the {@link #DESERIALIZATION_ALLOWLIST_PROPERTY} system property or by overriding this method in a subclass.
+     *
+     * @return the allowlist patterns (never including the trailing reject-all rule)
+     */
+    protected String getDeserializationAllowlist() {
+        final String additional = System.getProperty(DESERIALIZATION_ALLOWLIST_PROPERTY);
+        if (additional != null && !additional.trim().isEmpty()) {
+            return DEFAULT_DESERIALIZATION_ALLOWLIST + ";" + additional.trim();
+        }
+        return DEFAULT_DESERIALIZATION_ALLOWLIST;
     }
 
     /**
