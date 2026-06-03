@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,23 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Allow-list and resource limits applied when deserializing queue payloads in order to guard against
+     * insecure deserialization / object-injection attacks (CWE-502).  Only the JDK value types, collections,
+     * and Broadleaf classes that this queue is expected to carry are permitted; every other class is rejected
+     * before {@link ObjectInputStream#readObject()} can instantiate it.  The byte/depth/reference/array limits
+     * additionally protect against malformed streams crafted to exhaust resources.  The pattern syntax is
+     * documented on {@link ObjectInputFilter.Config#createFilter(String)}.
+     *
+     * <p>Subclasses or callers that legitimately store other element types should widen the allow-list via
+     * {@link #setObjectInputFilter(ObjectInputFilter)} rather than removing the filter.</p>
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=64;maxrefs=8192;maxarray=100000;"
+                    + "java.lang.*;java.util.*;java.util.concurrent.*;java.time.**;java.math.*;"
+                    + "org.broadleafcommerce.**;!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +105,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private volatile ObjectInputFilter objectInputFilter =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -832,6 +852,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            //Restrict the classes that may be reconstructed from the (potentially attacker-influenced)
+            //Zookeeper payload to a vetted allow-list to prevent insecure deserialization / RCE (CWE-502).
+            ois.setObjectInputFilter(getObjectInputFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +877,29 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} used to restrict which classes may be reconstructed by
+     * {@link #deserialize(byte[])}.  Defaults to a filter built from {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}.
+     *
+     * @return the (non-null) deserialization allow-list filter
+     */
+    protected ObjectInputFilter getObjectInputFilter() {
+        return objectInputFilter;
+    }
+
+    /**
+     * Overrides the {@link ObjectInputFilter} used to guard {@link #deserialize(byte[])}.  Use this to widen the
+     * allow-list when custom (non-Broadleaf) {@link Serializable} element types are stored in the queue.  The
+     * supplied filter must continue to reject unexpected classes -- do not disable filtering, as that re-introduces
+     * the insecure deserialization vulnerability (CWE-502).
+     *
+     * @param objectInputFilter the filter to apply; must not be {@code null}
+     */
+    public void setObjectInputFilter(ObjectInputFilter objectInputFilter) {
+        Assert.notNull(objectInputFilter, "objectInputFilter must not be null");
+        this.objectInputFilter = objectInputFilter;
     }
 
     /**
