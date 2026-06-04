@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -832,6 +833,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +856,41 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Default allowlist pattern applied to {@link #deserialize(byte[])} to mitigate insecure deserialization
+     * (CWE-502). Only classes in the listed packages (plus their array forms) may be reconstructed from the
+     * Zookeeper payload; everything else is rejected by the trailing {@code !*}. Resource limits guard against
+     * deserialization bombs. Subclasses that queue additional types can override {@link #getDeserializationFilter()}.
+     *
+     * @see ObjectInputFilter
+     */
+    protected static final String DESERIALIZATION_ALLOWLIST_PATTERN =
+            "maxbytes=2097152;"
+            + "maxdepth=20;"
+            + "maxrefs=10000;"
+            + "maxarray=100000;"
+            + "java.lang.*;"
+            + "java.util.*;"
+            + "java.util.concurrent.atomic.*;"
+            + "java.math.*;"
+            + "java.time.**;"
+            + "org.broadleafcommerce.**;"
+            + "!*";
+
+    private final ObjectInputFilter deserializationFilter =
+            ObjectInputFilter.Config.createFilter(DESERIALIZATION_ALLOWLIST_PATTERN);
+
+    /**
+     * Returns the {@link ObjectInputFilter} used to constrain which classes {@link #deserialize(byte[])} is
+     * allowed to reconstruct. The default enforces the allowlist defined by
+     * {@link #DESERIALIZATION_ALLOWLIST_PATTERN}. Override to broaden or tighten the set of permitted classes.
+     *
+     * @return the deserialization filter, never {@code null}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
     }
 
     /**
