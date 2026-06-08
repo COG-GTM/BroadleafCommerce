@@ -38,8 +38,11 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -50,6 +53,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,6 +80,24 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * The default set of class-name prefixes that are permitted to be deserialized from the queue.
+     * This is used to protect against insecure deserialization (CWE-502) of untrusted data that may
+     * have been written to Zookeeper. It covers the JDK types used by queue payloads as well as the
+     * Solr and Broadleaf command objects that are actually placed on this queue. Subclasses that
+     * place additional custom {@link Serializable} types on the queue should override
+     * {@link #getDeserializationAllowList()} rather than relaxing this default.
+     */
+    public static final Set<String> DEFAULT_DESERIALIZATION_ALLOW_LIST = Collections.unmodifiableSet(Set.of(
+            "java.lang.",
+            "java.util.",
+            "java.time.",
+            "java.math.",
+            "org.apache.solr.common.",
+            "org.broadleafcommerce."
+    ));
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -831,7 +853,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = createObjectInputStream(bais);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -853,6 +875,82 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayInputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Creates the {@link ObjectInputStream} used by {@link #deserialize(byte[])}. The default
+     * implementation returns an {@link AllowListObjectInputStream}, which restricts the classes that
+     * can be resolved during deserialization to those returned by {@link #getDeserializationAllowList()}.
+     * This guards against insecure deserialization / object-injection attacks (CWE-502), since data read
+     * here originates from Zookeeper and must be treated as untrusted.
+     *
+     * @param in the raw byte stream backing the queue entry
+     * @return a hardened {@link ObjectInputStream}
+     * @throws IOException if the stream cannot be created
+     */
+    protected ObjectInputStream createObjectInputStream(InputStream in) throws IOException {
+        return new AllowListObjectInputStream(in, getDeserializationAllowList());
+    }
+
+    /**
+     * Returns the set of fully-qualified class names, or class-name prefixes (typically package names
+     * ending in a '.'), that are permitted to be deserialized from the queue. Subclasses that place
+     * additional custom {@link Serializable} types on the queue should override this method to add
+     * their own types, e.g. by returning a superset of {@link #DEFAULT_DESERIALIZATION_ALLOW_LIST}.
+     *
+     * @return the immutable allow list of permitted class names / prefixes
+     */
+    protected Set<String> getDeserializationAllowList() {
+        return DEFAULT_DESERIALIZATION_ALLOW_LIST;
+    }
+
+    /**
+     * An {@link ObjectInputStream} that only resolves classes whose names match a configured allow list,
+     * rejecting everything else with an {@link InvalidClassException}. Deserialization of dynamic proxy
+     * classes is always rejected. This mitigates insecure deserialization (CWE-502) of untrusted data.
+     */
+    protected static class AllowListObjectInputStream extends ObjectInputStream {
+
+        private final Set<String> allowList;
+
+        public AllowListObjectInputStream(InputStream in, Set<String> allowList) throws IOException {
+            super(in);
+            this.allowList = (allowList == null) ? Collections.emptySet() : allowList;
+        }
+
+        @Override
+        protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+            final String className = desc.getName();
+            // Unwrap array types (e.g. "[Ljava.lang.String;" or "[[I") down to their element type.
+            String elementType = className;
+            while (elementType.startsWith("[")) {
+                elementType = elementType.substring(1);
+            }
+            if (elementType.startsWith("L") && elementType.endsWith(";")) {
+                elementType = elementType.substring(1, elementType.length() - 1);
+            }
+            // A single-character element type is a primitive (B, C, D, F, I, J, S, Z) and is always safe.
+            if (elementType.length() > 1 && !isAllowed(elementType)) {
+                throw new InvalidClassException(className,
+                        "Deserialization blocked for non-allow-listed class (CWE-502 protection).");
+            }
+            return super.resolveClass(desc);
+        }
+
+        @Override
+        protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
+            throw new InvalidClassException(
+                    "Deserialization of dynamic proxy classes is not permitted (CWE-502 protection).");
+        }
+
+        private boolean isAllowed(String className) {
+            for (String allowed : allowList) {
+                if (className.equals(allowed) || className.startsWith(allowed)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
