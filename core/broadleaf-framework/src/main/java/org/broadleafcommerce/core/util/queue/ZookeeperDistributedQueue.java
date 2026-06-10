@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,18 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Allowlist {@link ObjectInputFilter} applied while deserializing queue entries to mitigate insecure deserialization
+     * (CWE-502). Only the JDK and Broadleaf/Solr types that legitimately travel through this queue are permitted; any
+     * other class (e.g. a gadget-chain class injected into Zookeeper) is rejected before it can be instantiated. Resource
+     * limits (depth, references, array length, and total bytes) provide additional defense against malicious payloads.
+     */
+    protected static final ObjectInputFilter DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
+            "maxdepth=20;maxrefs=100000;maxarray=100000;maxbytes=2097152;"
+                    + "java.lang.*;java.util.*;java.math.*;java.time.**;java.sql.*;"
+                    + "org.broadleafcommerce.**;org.apache.solr.common.**;"
+                    + "!*");
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -832,6 +845,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +868,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to the {@link ObjectInputStream} used by {@link #deserialize(byte[])}.
+     * The default implementation returns an allowlist filter that only permits the JDK and Broadleaf/Solr types that
+     * legitimately travel through this queue, rejecting everything else to mitigate insecure deserialization (CWE-502).
+     * Subclasses that place additional custom types on the queue may override this to extend the allowlist, but should
+     * avoid relaxing it to allow arbitrary classes.
+     *
+     * @return the filter to apply while deserializing queue entries
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return DESERIALIZATION_FILTER;
     }
 
     /**
