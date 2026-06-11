@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Allowlist of classes that may be deserialized from Zookeeper, expressed as an {@link ObjectInputFilter} pattern.
+     * This guards against deserialization of untrusted data (CWE-502). Only the JDK value types and collections used by
+     * queue payloads, along with Broadleaf and Solr command classes, are permitted; everything else is rejected. Subclasses
+     * that enqueue additional types may override {@link #getDeserializationFilter()} to broaden the allowlist.
+     */
+    protected static final String DESERIALIZATION_ALLOWLIST_PATTERN =
+            "java.lang.*;java.util.*;java.time.*;java.math.*;"
+                    + "org.broadleafcommerce.**;org.apache.solr.common.**;!*";
+
+    private static final ObjectInputFilter DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DESERIALIZATION_ALLOWLIST_PATTERN);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -828,10 +842,37 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, getDeserializationFilter());
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied while deserializing queue elements. The default filter only permits the
+     * classes described by {@link #DESERIALIZATION_ALLOWLIST_PATTERN}. Subclasses may override this to allow additional
+     * types that they legitimately enqueue.
+     *
+     * @return the filter used to restrict deserializable classes; never {@code null}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return DESERIALIZATION_FILTER;
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object using {@link ObjectInputStream}, restricting the classes that may be
+     * deserialized to those accepted by the supplied {@link ObjectInputFilter}. A {@code null} filter disables filtering and
+     * should not be used with untrusted data.
+     *
+     * @param bytes the serialized object
+     * @param filter the filter restricting deserializable classes, or {@code null} to disable filtering
+     * @return the deserialized object
+     */
+    protected static Object deserialize(byte[] bytes, ObjectInputFilter filter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            if (filter != null) {
+                ois.setObjectInputFilter(filter);
+            }
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
