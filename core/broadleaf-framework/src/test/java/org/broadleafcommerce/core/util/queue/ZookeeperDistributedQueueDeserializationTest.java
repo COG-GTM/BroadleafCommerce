@@ -52,8 +52,10 @@ import static org.junit.Assert.fail;
  */
 public class ZookeeperDistributedQueueDeserializationTest {
 
-    private final ObjectInputFilter filter =
-            ObjectInputFilter.Config.createFilter(ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+    // Mirrors ZookeeperDistributedQueue#getDeserializationFilter(): the pattern filter is wrapped so that any class not
+    // explicitly allow-listed is rejected (deny-by-default), even when a pattern omits the trailing "!*" token.
+    private final ObjectInputFilter filter = ObjectInputFilter.rejectUndecidedClass(
+            ObjectInputFilter.Config.createFilter(ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_FILTER_PATTERN));
 
     @Test
     public void testDefaultFilterPatternRejectsByDefault() {
@@ -104,6 +106,24 @@ public class ZookeeperDistributedQueueDeserializationTest {
         // java.util.regex.Pattern is Serializable; the allow-list permits the java.util package (java.util.*) but not
         // its subpackages, so a class from java.util.regex must be rejected.
         assertRejected(java.util.regex.Pattern.compile("a.*b"));
+    }
+
+    @Test
+    public void testCustomPatternWithoutRejectAllStillRejectsUnmatchedClasses() throws Exception {
+        // A caller-supplied pattern that only allow-lists extra types and omits the trailing "!*" token must still
+        // reject everything else, because getDeserializationFilter() wraps the filter with rejectUndecidedClass().
+        ObjectInputFilter customFilter = ObjectInputFilter.rejectUndecidedClass(
+                ObjectInputFilter.Config.createFilter("org.broadleafcommerce.**"));
+
+        byte[] bytes = serialize(new File("/etc/passwd"));
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+             ObjectInputStream ois = new ObjectInputStream(bais)) {
+            ois.setObjectInputFilter(customFilter);
+            ois.readObject();
+            fail("Expected a non-allow-listed class to be rejected even though the pattern omits the reject-all token.");
+        } catch (InvalidClassException expected) {
+            // expected: rejectUndecidedClass denied the unmatched class
+        }
     }
 
     private void assertRejected(Serializable obj) throws Exception {

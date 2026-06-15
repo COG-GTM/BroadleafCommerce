@@ -922,6 +922,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * Returns the {@link ObjectInputFilter} applied to every {@link ObjectInputStream} used by {@link #deserialize(byte[])}.
      * The filter enforces an allow-list of classes that may be deserialized from data read out of Zookeeper, mitigating
      * insecure deserialization (CWE-502).  The filter is derived from {@link #getDeserializationFilterPattern()} and cached.
+     * <p>
+     * The pattern-based filter is additionally wrapped with {@link ObjectInputFilter#rejectUndecidedClass(ObjectInputFilter)}
+     * so that any class not explicitly allow-listed is rejected even if a caller supplies a pattern that omits the trailing
+     * reject-all ({@code !*}) token.  This guarantees a deny-by-default posture regardless of how the pattern is configured.
      *
      * @return the (non-null) deserialization filter
      */
@@ -931,7 +935,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             synchronized (QUEUE_MONITOR) {
                 filter = this.deserializationFilter;
                 if (filter == null) {
-                    filter = ObjectInputFilter.Config.createFilter(getDeserializationFilterPattern());
+                    filter = ObjectInputFilter.rejectUndecidedClass(
+                            ObjectInputFilter.Config.createFilter(getDeserializationFilterPattern()));
                     this.deserializationFilter = filter;
                 }
             }
@@ -951,8 +956,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Overrides the {@link ObjectInputFilter} pattern used to constrain deserialization.  The supplied pattern should keep
-     * a trailing reject-all ({@code !*}) token so that only explicitly allow-listed classes can be deserialized.
+     * Overrides the {@link ObjectInputFilter} pattern used to constrain deserialization.  The supplied pattern only needs
+     * to allow-list the additional classes that must be deserializable; any class that is not explicitly allow-listed is
+     * still rejected because {@link #getDeserializationFilter()} wraps the pattern with
+     * {@link ObjectInputFilter#rejectUndecidedClass(ObjectInputFilter)} (so a trailing reject-all ({@code !*}) token is
+     * not required for safety, though it remains harmless).
      *
      * @param deserializationFilterPattern a non-empty {@link ObjectInputFilter} pattern string
      */
