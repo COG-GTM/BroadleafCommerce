@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,10 +77,30 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Default allow-list used to constrain which classes may be deserialized from the bytes stored in Zookeeper.
+     * This mitigates insecure deserialization (CWE-502): anything not explicitly matched is rejected (see the trailing
+     * {@code !*}).  The patterns follow the {@link ObjectInputFilter} grammar, where {@code .*} matches a single package
+     * and {@code .**} matches a package and its subpackages.  Resource limits ({@code maxdepth}, {@code maxrefs},
+     * {@code maxarray}, {@code maxbytes}) guard against deserialization-bomb style attacks.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=100;maxrefs=100000;maxarray=100000;"
+            + "org.broadleafcommerce.**;"
+            + "org.apache.solr.common.**;"
+            + "java.lang.*;"
+            + "java.util.*;java.util.concurrent.**;"
+            + "java.time.**;"
+            + "java.math.*;"
+            + "!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
     protected final Object QUEUE_MONITOR = new Object();
+    private volatile String deserializationFilterPattern = DEFAULT_DESERIALIZATION_FILTER_PATTERN;
+    private volatile ObjectInputFilter deserializationFilter;
     private final String queueFolderPath;
     private final ZooKeeper zk;
     private final List<ACL> acls;
@@ -832,6 +853,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -893,6 +915,60 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayOutputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to every {@link ObjectInputStream} used by {@link #deserialize(byte[])}.
+     * The filter enforces an allow-list of classes that may be deserialized from data read out of Zookeeper, mitigating
+     * insecure deserialization (CWE-502).  The filter is derived from {@link #getDeserializationFilterPattern()} and cached.
+     * <p>
+     * The pattern-based filter is additionally wrapped with {@link ObjectInputFilter#rejectUndecidedClass(ObjectInputFilter)}
+     * so that any class not explicitly allow-listed is rejected even if a caller supplies a pattern that omits the trailing
+     * reject-all ({@code !*}) token.  This guarantees a deny-by-default posture regardless of how the pattern is configured.
+     *
+     * @return the (non-null) deserialization filter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = this.deserializationFilter;
+        if (filter == null) {
+            synchronized (QUEUE_MONITOR) {
+                filter = this.deserializationFilter;
+                if (filter == null) {
+                    filter = ObjectInputFilter.rejectUndecidedClass(
+                            ObjectInputFilter.Config.createFilter(getDeserializationFilterPattern()));
+                    this.deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * The {@link ObjectInputFilter} pattern string used to build the deserialization allow-list.  Subclasses or callers
+     * that need to (de)serialize additional types should append to {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN} via
+     * {@link #setDeserializationFilterPattern(String)} rather than removing the trailing reject-all ({@code !*}) token.
+     *
+     * @return the filter pattern, never null
+     */
+    protected String getDeserializationFilterPattern() {
+        return deserializationFilterPattern;
+    }
+
+    /**
+     * Overrides the {@link ObjectInputFilter} pattern used to constrain deserialization.  The supplied pattern only needs
+     * to allow-list the additional classes that must be deserializable; any class that is not explicitly allow-listed is
+     * still rejected because {@link #getDeserializationFilter()} wraps the pattern with
+     * {@link ObjectInputFilter#rejectUndecidedClass(ObjectInputFilter)} (so a trailing reject-all ({@code !*}) token is
+     * not required for safety, though it remains harmless).
+     *
+     * @param deserializationFilterPattern a non-empty {@link ObjectInputFilter} pattern string
+     */
+    public void setDeserializationFilterPattern(String deserializationFilterPattern) {
+        Assert.hasText(deserializationFilterPattern, "The deserializationFilterPattern must not be empty.");
+        synchronized (QUEUE_MONITOR) {
+            this.deserializationFilterPattern = deserializationFilterPattern;
+            this.deserializationFilter = null;
         }
     }
 
