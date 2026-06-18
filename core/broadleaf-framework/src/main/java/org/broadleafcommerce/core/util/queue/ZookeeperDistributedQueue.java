@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -79,6 +80,25 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
+    /**
+     * Default {@link ObjectInputFilter} pattern used to harden deserialization of queue entries against
+     * insecure-deserialization (CWE-502) attacks. Only the JDK value types and collections plus Broadleaf
+     * classes are allowed; everything else (including known gadget classes) is rejected by the trailing
+     * {@code !*}. Resource limits guard against decompression/recursion based denial-of-service.
+     * <p>
+     * Applications that place custom (non-Broadleaf) {@link Serializable} types on the queue should provide
+     * their own pattern via {@link #setDeserializationFilterPattern(String)} (or supply a fully custom
+     * {@link ObjectInputFilter} via {@link #setDeserializationFilter(ObjectInputFilter)}).
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=20;maxrefs=10000;maxarray=100000;"
+                    + "java.lang.Object;"
+                    + "java.lang.Boolean;java.lang.Byte;java.lang.Character;java.lang.Short;java.lang.Integer;"
+                    + "java.lang.Long;java.lang.Float;java.lang.Double;java.lang.Number;java.lang.String;java.lang.Enum;"
+                    + "java.util.*;java.time.*;java.math.*;"
+                    + "org.broadleafcommerce.**;"
+                    + "!*";
+
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
     private final ZooKeeper zk;
@@ -87,6 +107,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private ObjectInputFilter deserializationFilter =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -832,6 +854,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            final ObjectInputFilter filter = getDeserializationFilter();
+            if (filter != null) {
+                ois.setObjectInputFilter(filter);
+            }
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +880,48 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to the {@link ObjectInputStream} used by
+     * {@link #deserialize(byte[])}. The filter allowlists expected classes and rejects everything else,
+     * preventing insecure-deserialization (CWE-502) attacks via data read from Zookeeper.
+     * <p>
+     * This never returns {@code null}: if no filter has been configured, the
+     * {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN} is installed lazily so that deserialization can never
+     * silently fall back to unfiltered {@link ObjectInputStream#readObject()}.
+     *
+     * @return the (non-null) deserialization filter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = this.deserializationFilter;
+        if (filter == null) {
+            filter = ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+            this.deserializationFilter = filter;
+        }
+        return filter;
+    }
+
+    /**
+     * Allows overriding the {@link ObjectInputFilter} applied during {@link #deserialize(byte[])}. Use this
+     * when the queue carries custom {@link Serializable} element types that are not covered by
+     * {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}.
+     *
+     * @param deserializationFilter the filter to apply; passing {@code null} resets to the secure default
+     *                              (see {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN})
+     */
+    public void setDeserializationFilter(ObjectInputFilter deserializationFilter) {
+        this.deserializationFilter = deserializationFilter;
+    }
+
+    /**
+     * Convenience method to set the {@link ObjectInputFilter} from a JEP 290 filter pattern string.
+     *
+     * @param pattern a non-blank {@link ObjectInputFilter} pattern (see {@link ObjectInputFilter.Config#createFilter(String)})
+     */
+    public void setDeserializationFilterPattern(String pattern) {
+        Assert.hasText(pattern, "The deserialization filter pattern must not be empty.");
+        this.deserializationFilter = ObjectInputFilter.Config.createFilter(pattern);
     }
 
     /**
