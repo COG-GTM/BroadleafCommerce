@@ -89,6 +89,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private int capacity;
 
     /**
+     * The allowlist of class name patterns that may be deserialized from Zookeeper. Used to mitigate insecure
+     * deserialization (CWE-502). Applications that place additional custom types on the queue can supply an extended
+     * allowlist via {@link #setDeserializationAllowlist(List)}.
+     */
+    private List<String> deserializationAllowlist = SecureObjectInputStream.DEFAULT_ALLOWED_CLASS_PATTERNS;
+
+    /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
      * end with a slash.  This argument should not contain whitespaces or other special characters.
      * <p>
@@ -831,7 +838,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = new SecureObjectInputStream(bais, getDeserializationAllowlist());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -893,6 +900,31 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayOutputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Returns the allowlist of class name patterns that may be deserialized from Zookeeper. See
+     * {@link SecureObjectInputStream} for the supported pattern syntax.
+     *
+     * @return the deserialization allowlist
+     */
+    public List<String> getDeserializationAllowlist() {
+        return deserializationAllowlist;
+    }
+
+    /**
+     * Overrides the allowlist of class name patterns that may be deserialized from Zookeeper. This should be used by
+     * applications that place custom serializable types on the queue. A {@code null} or empty value restores the
+     * {@link SecureObjectInputStream#DEFAULT_ALLOWED_CLASS_PATTERNS default allowlist}.
+     *
+     * @param deserializationAllowlist the allowlist of class name patterns
+     */
+    public void setDeserializationAllowlist(List<String> deserializationAllowlist) {
+        if (deserializationAllowlist == null || deserializationAllowlist.isEmpty()) {
+            this.deserializationAllowlist = SecureObjectInputStream.DEFAULT_ALLOWED_CLASS_PATTERNS;
+        } else {
+            this.deserializationAllowlist = deserializationAllowlist;
         }
     }
 
