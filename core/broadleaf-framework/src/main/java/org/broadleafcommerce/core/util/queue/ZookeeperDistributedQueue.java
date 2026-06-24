@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,22 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Allow-list applied while deserializing entries read from Zookeeper. Deserialization of untrusted data is a well known
+     * remote code execution vector (CWE-502), so {@link #deserialize(byte[])} only permits the JDK types, Apache Solr command
+     * types and Broadleaf types that this queue is expected to carry. Resource limits guard against decompression/depth based
+     * denial of service. Everything else is rejected. Subclasses that store additional types can override
+     * {@link #getDeserializationFilter()}.
+     */
+    protected static final String DESERIALIZATION_ALLOW_LIST =
+            "maxbytes=10485760;maxdepth=100;maxrefs=100000;maxarray=100000;"
+                    + "java.**;javax.**;"
+                    + "org.apache.solr.common.**;"
+                    + "org.broadleafcommerce.**;"
+                    + "!*";
+
+    private final ObjectInputFilter deserializationFilter = ObjectInputFilter.Config.createFilter(DESERIALIZATION_ALLOW_LIST);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +839,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} guarded by the
+     * {@link ObjectInputFilter} returned by {@link #getDeserializationFilter()}. The filter restricts deserialization to the
+     * limited set of types this queue is expected to carry, mitigating the deserialization-of-untrusted-data (CWE-502) risk
+     * that the queue payloads originate from Zookeeper.
      *
      * @param bytes
      * @return
@@ -832,6 +852,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +875,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to every {@link ObjectInputStream} used in {@link #deserialize(byte[])}.
+     * The default implementation returns an allow-list (see {@link #DESERIALIZATION_ALLOW_LIST}) that only permits the JDK,
+     * Apache Solr command and Broadleaf types that this queue stores, along with resource limits to bound the work performed
+     * while reading a single entry. Subclasses that place additional types on the queue should override this method (for
+     * example, by extending {@link #DESERIALIZATION_ALLOW_LIST}) rather than removing the filter.
+     *
+     * @return the filter used to restrict deserialization; never {@code null}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
     }
 
     /**
