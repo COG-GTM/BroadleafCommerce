@@ -27,6 +27,7 @@ import org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateC
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InvalidClassException;
 import java.io.ObjectInputFilter;
 import java.io.ObjectOutputStream;
@@ -37,7 +38,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Verifies that {@link ZookeeperDistributedQueue#deserialize(byte[], java.io.ObjectInputFilter)} enforces the class
@@ -83,6 +84,11 @@ public class ZookeeperDistributedQueueDeserializationTest {
         HashMap<String, Integer> map = new HashMap<>();
         map.put("one", 1);
         assertEquals(map, deserialize(map));
+
+        // java.util subpackage types (e.g. java.util.concurrent) must be allowed since Solr payloads can reference them.
+        ConcurrentHashMap<String, Integer> concurrentMap = new ConcurrentHashMap<>();
+        concurrentMap.put("two", 2);
+        assertEquals(concurrentMap, deserialize(concurrentMap));
     }
 
     @Test
@@ -109,8 +115,8 @@ public class ZookeeperDistributedQueueDeserializationTest {
 
     @Test
     public void testDisallowedClassIsRejected() throws Exception {
-        // AtomicInteger lives in java.util.concurrent.atomic, which is NOT covered by the "java.util.*" allowlist entry.
-        byte[] payload = serialize(new AtomicInteger(7));
+        // java.io.File is serializable but lives in java.io, which is NOT covered by the allowlist.
+        byte[] payload = serialize(new File("/etc/passwd"));
         try {
             ZookeeperDistributedQueue.deserialize(payload, filter);
             fail("Expected deserialization of a non-allowlisted class to be rejected.");
@@ -124,7 +130,7 @@ public class ZookeeperDistributedQueueDeserializationTest {
     public void testDisallowedClassNestedInAllowedCollectionIsRejected() throws Exception {
         // A disallowed class nested inside an otherwise-allowed collection must still be rejected.
         Map<String, Object> map = new HashMap<>();
-        map.put("evil", new AtomicInteger(13));
+        map.put("evil", new File("/etc/passwd"));
         byte[] payload = serialize((Serializable) map);
         try {
             ZookeeperDistributedQueue.deserialize(payload, filter);

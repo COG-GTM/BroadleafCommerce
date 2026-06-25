@@ -88,7 +88,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      */
     public static final String DEFAULT_DESERIALIZATION_ALLOWED_CLASS_PATTERN =
             "maxbytes=1048576;maxdepth=20;maxrefs=100000;"
-                    + "java.lang.*;java.util.*;java.time.**;java.math.*;"
+                    + "java.lang.*;java.util.**;java.time.**;java.math.*;"
                     + "org.broadleafcommerce.**;org.apache.solr.**;"
                     + "!*";
 
