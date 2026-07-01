@@ -38,18 +38,24 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +84,43 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Default set of fully-qualified class names (or package prefixes ending in a '.') that are permitted when
+     * deserializing queue entries read from Zookeeper. This allowlist mitigates insecure deserialization (CWE-502)
+     * by preventing arbitrary "gadget" classes from being instantiated via {@link ObjectInputStream#readObject()}.
+     * <p>
+     * The defaults cover the common JDK value/collection types used by the queue itself (e.g. the {@link Integer}
+     * capacity marker) as well as Broadleaf domain classes. Applications that place additional custom
+     * {@link Serializable} payloads on the queue should register those class names via
+     * {@link #getAllowedDeserializationClassNames()}.
+     */
+    protected static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_CLASS_NAMES =
+            Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+                    "java.lang.Boolean",
+                    "java.lang.Byte",
+                    "java.lang.Character",
+                    "java.lang.Double",
+                    "java.lang.Enum",
+                    "java.lang.Float",
+                    "java.lang.Integer",
+                    "java.lang.Long",
+                    "java.lang.Number",
+                    "java.lang.Short",
+                    "java.lang.String",
+                    "java.math.",
+                    "java.time.",
+                    "java.util.",
+                    "org.broadleafcommerce."
+            )));
+
+    /**
+     * The effective, mutable allowlist used to validate classes during deserialization. Seeded from
+     * {@link #DEFAULT_ALLOWED_DESERIALIZATION_CLASS_NAMES}. Entries may be exact class names or package prefixes
+     * ending in a '.' (e.g. {@code "com.mycompany.messages."}).
+     */
+    private final Set<String> allowedDeserializationClassNames =
+            new CopyOnWriteArraySet<>(DEFAULT_ALLOWED_DESERIALIZATION_CLASS_NAMES);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +865,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses a hardened {@link ObjectInputStream}
+     * that validates every class against an allowlist (see {@link #getAllowedDeserializationClassNames()}) before it is
+     * resolved. This prevents insecure deserialization / remote-code-execution "gadget chain" attacks (CWE-502) that
+     * could otherwise be triggered by malicious data stored in Zookeeper.
      *
      * @param bytes
      * @return
@@ -831,7 +877,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = new ValidatingObjectInputStream(bais);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -990,6 +1036,111 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new DistributedQueueException("An unexpected error occured executing a retryable operation for distributed Zookeeper queue, "
                         + getQueueFolderPath(), e);
             }
+        }
+    }
+
+    /**
+     * Returns the live, mutable allowlist of class names that are permitted during {@link #deserialize(byte[])}.
+     * Entries may be exact fully-qualified class names (e.g. {@code "com.example.Message"}) or package prefixes
+     * that end in a '.' (e.g. {@code "com.example.messages."}).
+     * <p>
+     * The returned set is seeded from {@link #DEFAULT_ALLOWED_DESERIALIZATION_CLASS_NAMES}. Applications that place
+     * custom {@link Serializable} payloads on the queue should add the relevant class names here (for example during
+     * bean initialization) so that they can be read back:
+     * <pre>
+     *     queue.getAllowedDeserializationClassNames().add("com.example.MyQueueMessage");
+     * </pre>
+     * Any class not covered by this allowlist will be rejected with an {@link InvalidClassException}, which mitigates
+     * insecure deserialization / RCE gadget-chain attacks (CWE-502).
+     *
+     * @return the mutable allowlist of permitted class names/prefixes
+     */
+    public Set<String> getAllowedDeserializationClassNames() {
+        return allowedDeserializationClassNames;
+    }
+
+    /**
+     * Determines whether the supplied class name is permitted by the configured allowlist. Array class names (both
+     * the JVM internal form such as {@code "[Ljava.lang.String;"} and multidimensional variants) are normalized to
+     * their base component type before being checked. Primitive (array) types are always permitted.
+     *
+     * @param className the fully-qualified name reported by {@link ObjectStreamClass#getName()}
+     * @return true if the class is on the allowlist
+     */
+    protected boolean isDeserializationClassAllowed(String className) {
+        String normalized = normalizeClassName(className);
+        if (normalized == null) {
+            // A primitive array component (e.g. "int[]") - always safe.
+            return true;
+        }
+        for (String allowed : getAllowedDeserializationClassNames()) {
+            if (allowed.endsWith(".")) {
+                if (normalized.startsWith(allowed)) {
+                    return true;
+                }
+            } else if (normalized.equals(allowed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Strips array notation from a class name and returns the base component type name, or {@code null} if the base
+     * component is a JVM primitive (which is inherently safe to deserialize).
+     */
+    private static String normalizeClassName(String className) {
+        String name = className;
+        // Handle JVM internal array encodings, e.g. "[[Ljava.lang.String;" or "[I".
+        while (name.startsWith("[")) {
+            name = name.substring(1);
+        }
+        if (name.isEmpty()) {
+            return null;
+        }
+        switch (name.charAt(0)) {
+            case 'L':
+                // Object array component: "Ljava.lang.String;" -> "java.lang.String"
+                if (name.endsWith(";")) {
+                    return name.substring(1, name.length() - 1);
+                }
+                return name;
+            case 'B': case 'C': case 'D': case 'F': case 'I': case 'J': case 'S': case 'Z':
+                // Only a genuine primitive-array descriptor is a single-character code.
+                if (name.length() == 1) {
+                    return null;
+                }
+                return name;
+            default:
+                return name;
+        }
+    }
+
+    /**
+     * An {@link ObjectInputStream} that validates each resolved class (and rejects all dynamic proxies) against an
+     * allowlist before it is loaded, hardening deserialization against CWE-502 gadget-chain attacks.
+     */
+    protected class ValidatingObjectInputStream extends ObjectInputStream {
+
+        protected ValidatingObjectInputStream(java.io.InputStream in) throws IOException {
+            super(in);
+        }
+
+        @Override
+        protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+            final String name = desc.getName();
+            if (!isDeserializationClassAllowed(name)) {
+                throw new InvalidClassException(name,
+                        "Refusing to deserialize class that is not on the Zookeeper queue allowlist. If this class is a "
+                                + "legitimate queue payload, register it via getAllowedDeserializationClassNames().");
+            }
+            return super.resolveClass(desc);
+        }
+
+        @Override
+        protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
+            throw new InvalidClassException(
+                    "Refusing to deserialize a dynamic proxy class from the Zookeeper queue: " + Arrays.toString(interfaces));
         }
     }
 
