@@ -115,6 +115,104 @@ public class MvelHelperTest extends TestCase {
     }
 
     /**
+     * A direct {@code Runtime.getRuntime().exec(...)} payload must not execute a process. The sandbox
+     * neutralizes the {@code Runtime} class literal (compile failure) and, as a backstop, blocks process
+     * execution at the SecurityManager level, so the rule fails closed (returns false).
+     */
+    public void testRuntimeExecPayloadIsBlocked() {
+        assertRuleIsBlocked(
+                "Runtime.getRuntime().exec(new String[]{\"/bin/sh\",\"-c\",\"touch " + rceMarkerPath("runtime") + "\"})");
+        assertNoMarker("runtime");
+    }
+
+    /**
+     * A reflective breakout (obtaining {@code java.lang.Runtime} via {@code getClass().forName(...)}) must
+     * also be contained. This path bypasses any input escaping / class-literal removal, so it exercises the
+     * SecurityManager backstop directly.
+     */
+    public void testReflectionExecPayloadIsBlocked() {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("customer", "victim");
+        assertRuleIsBlocked(
+                "customer.getClass().forName(\"java.lang.Runtime\").getMethod(\"getRuntime\").invoke(null)"
+                        + ".exec(new String[]{\"/bin/sh\",\"-c\",\"touch " + rceMarkerPath("reflect") + "\"})",
+                parameters);
+        assertNoMarker("reflect");
+    }
+
+    /**
+     * A {@code new java.lang.ProcessBuilder(...).start()} payload must not launch a process.
+     */
+    public void testProcessBuilderPayloadIsBlocked() {
+        assertRuleIsBlocked(
+                "new java.lang.ProcessBuilder(new String[]{\"/bin/sh\",\"-c\",\"touch "
+                        + rceMarkerPath("pb") + "\"}).start()");
+        assertNoMarker("pb");
+    }
+
+    /**
+     * An attacker must not be able to terminate the JVM from a rule.
+     */
+    public void testSystemExitPayloadIsBlocked() {
+        assertRuleIsBlocked("System.exit(1)");
+    }
+
+    /**
+     * The sandbox must not break legitimate rules that invoke methods on bound parameters or use MvelHelper
+     * and string operations.
+     */
+    public void testLegitimateMethodInvokingRulesStillWork() {
+        Locale testLocale = new LocaleImpl();
+        testLocale.setLocaleCode("US");
+
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("locale", testLocale);
+        parameters.put("customer", "hello");
+
+        assertTrue(MvelHelper.evaluateRule("locale.localeCode.toUpperCase() == 'US'", parameters));
+        assertTrue(MvelHelper.evaluateRule(
+                "customer.length() > 2 && customer.toUpperCase() == 'HELLO'", parameters));
+        assertTrue(MvelHelper.evaluateRule(
+                "customer.startsWith('he') && customer.substring(1) == 'ello'", parameters));
+        assertTrue(MvelHelper.evaluateRule(
+                "MvelHelper.toUpperCase(customer) == 'HELLO'", parameters));
+    }
+
+    private void assertRuleIsBlocked(String rule) {
+        assertRuleIsBlocked(rule, null);
+    }
+
+    private void assertRuleIsBlocked(String rule, Map<String, Object> parameters) {
+        MvelHelper.setTestMode(true);
+        try {
+            // A blocked/failed rule fails closed, i.e. it does not match.
+            assertFalse("Malicious rule should not evaluate to true: " + rule,
+                    MvelHelper.evaluateRule(rule, parameters));
+        } finally {
+            MvelHelper.setTestMode(false);
+        }
+    }
+
+    private String rceMarkerPath(String suffix) {
+        // Forward-slash path (also valid inside MVEL string literals) under the temp dir.
+        return (System.getProperty("java.io.tmpdir") + "/blc-mvel-rce-" + suffix + "-"
+                + System.nanoTime()).replace('\\', '/');
+    }
+
+    private void assertNoMarker(String suffix) {
+        // If any exec had actually run it would have created a marker file in the temp dir.
+        java.io.File tmp = new java.io.File(System.getProperty("java.io.tmpdir"));
+        java.io.File[] markers = tmp.listFiles((dir, name) -> name.startsWith("blc-mvel-rce-" + suffix + "-"));
+        if (markers != null) {
+            for (java.io.File marker : markers) {
+                boolean deleted = marker.delete();
+                fail("Remote code execution was NOT blocked; marker file created: " + marker
+                        + (deleted ? " (cleaned up)" : ""));
+            }
+        }
+    }
+
+    /**
      * Confirms MVEL failure for special overloaded method case.
      * </p>
      * During compilation, if an mvel expression contains a method calls with params, mvel will attempt to identify a perfect
