@@ -67,6 +67,9 @@ public class MvelHelper {
 
     static {
         System.setProperty("mvel2.disable.jit", "true");
+        // Contain the effects of evaluating untrusted (admin/rule-builder authored) MVEL rule strings so
+        // that a rule cannot escalate to remote code execution. See MvelSandbox for details.
+        MvelSandbox.initialize();
     }
 
     /**
@@ -201,7 +204,17 @@ public class MvelHelper {
             populateParamsFromMap(ruleParameters, mvelParameters);
 
             try {
-                Object test = MVEL.executeExpression(exp, mvelParameters);
+                // Execution is where an attacker-influenced rule string could break out (Runtime.exec,
+                // reflection, etc.), so it must run inside the sandbox. Compilation does not execute the
+                // expression, so it is deliberately left outside the sandbox to avoid interfering with
+                // trusted lambda/invokedynamic linkage in modifyExpression.
+                Object test;
+                MvelSandbox.enter();
+                try {
+                    test = MVEL.executeExpression(exp, mvelParameters);
+                } finally {
+                    MvelSandbox.exit();
+                }
                 if (test == null) {
                     // This can occur if there is no actual rule
                     return true;
