@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,31 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Package name prefixes whose classes are permitted to be deserialized from Zookeeper by {@link #deserialize(byte[])}.
+     * Any class that is not covered by one of these prefixes (and is not a primitive/array of a permitted type) is rejected
+     * to guard against insecure deserialization (CWE-502). Subclasses may override {@link #getAllowedDeserializationClassPrefixes()}
+     * to extend this list for custom queue payloads.
+     */
+    protected static final List<String> DEFAULT_ALLOWED_DESERIALIZATION_CLASS_PREFIXES = List.of(
+            "java.lang.",
+            "java.util.",
+            "java.time.",
+            "java.math.",
+            "org.broadleafcommerce.",
+            "org.apache.solr.common."
+    );
+
+    /**
+     * Upper bounds enforced on any object graph deserialized from Zookeeper. These provide defense-in-depth against
+     * malicious or malformed payloads that attempt resource-exhaustion attacks even when the class allowlist is satisfied.
+     */
+    protected static final long MAX_DESERIALIZATION_STREAM_BYTES = 5L * 1024L * 1024L;
+    protected static final long MAX_DESERIALIZATION_DEPTH = 32L;
+    protected static final long MAX_DESERIALIZATION_REFERENCES = 100_000L;
+    protected static final long MAX_DESERIALIZATION_ARRAY_LENGTH = 100_000L;
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -832,6 +858,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +881,59 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the package name prefixes whose classes are permitted to be deserialized from the queue.  Subclasses that
+     * place custom payload types on the queue can override this method to add their own package prefixes (each prefix
+     * should end with a '.').  The returned collection is used as an allowlist by {@link #getDeserializationFilter()}.
+     *
+     * @return the collection of allowed class-name prefixes
+     */
+    protected Collection<String> getAllowedDeserializationClassPrefixes() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_CLASS_PREFIXES;
+    }
+
+    /**
+     * Builds the {@link ObjectInputFilter} applied while deserializing queue entries.  This mitigates insecure
+     * deserialization (CWE-502) by (1) rejecting any class that is not covered by
+     * {@link #getAllowedDeserializationClassPrefixes()} and (2) enforcing resource limits (stream size, graph depth,
+     * reference count, and array length) as defense-in-depth against resource-exhaustion payloads.
+     *
+     * @return the filter to apply to the {@link ObjectInputStream}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        final Collection<String> allowedPrefixes = getAllowedDeserializationClassPrefixes();
+        return info -> {
+            if (info.depth() > MAX_DESERIALIZATION_DEPTH
+                    || info.references() > MAX_DESERIALIZATION_REFERENCES
+                    || info.streamBytes() > MAX_DESERIALIZATION_STREAM_BYTES
+                    || info.arrayLength() > MAX_DESERIALIZATION_ARRAY_LENGTH) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> clazz = info.serialClass();
+            if (clazz == null) {
+                //This is a resource-limit check (no class to evaluate); leave the decision to the limits above.
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            final String className = clazz.getName();
+            for (String prefix : allowedPrefixes) {
+                if (className.startsWith(prefix)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
