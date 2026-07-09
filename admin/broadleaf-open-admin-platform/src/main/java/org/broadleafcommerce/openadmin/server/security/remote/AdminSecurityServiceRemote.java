@@ -31,7 +31,6 @@ import org.broadleafcommerce.common.web.SandBoxContext;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.PersistencePackage;
 import org.broadleafcommerce.openadmin.dto.Property;
-import org.broadleafcommerce.openadmin.dto.SectionCrumb;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermission;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminRole;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
@@ -40,8 +39,6 @@ import org.broadleafcommerce.openadmin.server.security.service.RowLevelSecurityS
 import org.broadleafcommerce.openadmin.server.security.service.type.PermissionType;
 import org.broadleafcommerce.openadmin.server.service.ValidationException;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.GlobalValidationResult;
-import org.springframework.cglib.core.CollectionUtils;
-import org.springframework.cglib.core.Transformer;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -135,15 +132,6 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
     public void securityCheck(PersistencePackage persistencePackage, EntityOperationType operationType) throws ServiceException {
         Set<String> ceilingNames = new HashSet<>();
         ceilingNames.add(persistencePackage.getSecurityCeilingEntityFullyQualifiedClassname());
-        if (!ArrayUtils.isEmpty(persistencePackage.getSectionCrumbs())) {
-            ceilingNames.addAll(CollectionUtils.transform(Arrays.asList(persistencePackage.getSectionCrumbs()),
-                    new Transformer() {
-                        @Override
-                        public Object transform(Object o) {
-                            return ((SectionCrumb) o).getSectionIdentifier();
-                        }
-                    }));
-        }
 
         Entity entity = persistencePackage.getEntity();
 
