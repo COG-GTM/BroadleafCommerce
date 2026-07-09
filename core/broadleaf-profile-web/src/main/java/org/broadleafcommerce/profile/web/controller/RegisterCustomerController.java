@@ -79,6 +79,7 @@ public class RegisterCustomerController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        registerCustomerForm.getCustomer().setId(null);
         registerCustomerValidator.validate(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             customerService.registerCustomer(
@@ -146,6 +147,9 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        binder.setDisallowedFields("customer.id", "customer.registered", "customer.deactivated",
+                "customer.password", "customer.passwordChangeRequired",
+                "customer.customerAttributes*", "customer.auditable*");
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
