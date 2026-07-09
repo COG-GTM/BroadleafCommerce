@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,30 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Default allowlist applied to {@link ObjectInputStream} when reading queue entries back from Zookeeper.
+     * <p>
+     * Deserializing untrusted data with an unconstrained {@link ObjectInputStream} is a well known remote code
+     * execution vector (CWE-502). Because anything stored in Zookeeper must be treated as potentially attacker
+     * influenced, {@link #deserialize(byte[])} installs an {@link ObjectInputFilter} built from this pattern so that
+     * only the primitive wrappers, common JDK value/collection types, and Broadleaf domain classes that this queue is
+     * designed to carry are permitted; every other class is rejected before it is instantiated. The pattern also caps
+     * the object graph depth and array sizes to limit resource-exhaustion payloads.
+     * <p>
+     * Applications that place additional (non-Broadleaf) types on the queue should extend this via
+     * {@link #setDeserializationAllowlist(String)} rather than removing the trailing {@code !*} reject-all rule.
+     * See {@link ObjectInputFilter.Config#createFilter(String)} for the pattern grammar.
+     */
+    public static final String DEFAULT_DESERIALIZATION_ALLOWLIST =
+            "maxdepth=32;maxarray=100000;maxrefs=100000;"
+                    + "java.lang.Boolean;java.lang.Byte;java.lang.Character;java.lang.Short;"
+                    + "java.lang.Integer;java.lang.Long;java.lang.Float;java.lang.Double;"
+                    + "java.lang.Number;java.lang.String;java.lang.Enum;java.lang.Object;"
+                    + "java.util.**;java.time.**;java.math.**;"
+                    + "org.broadleafcommerce.**;"
+                    + "!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +112,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+
+    private volatile String deserializationAllowlist = DEFAULT_DESERIALIZATION_ALLOWLIST;
+    private volatile ObjectInputFilter deserializationFilter =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_ALLOWLIST);
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -828,10 +857,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, getDeserializationFilter());
+    }
+
+    /**
+     * Converts a byte array to an object using an {@link ObjectInputStream} guarded by the supplied
+     * {@link ObjectInputFilter}. The filter is applied before any class is resolved, so classes that are not on the
+     * allowlist cause an {@link java.io.InvalidClassException} instead of being instantiated. This is the mitigation
+     * for the insecure-deserialization risk (CWE-502) inherent in reading serialized data back from Zookeeper.
+     *
+     * @param bytes the serialized payload
+     * @param filter the allowlist filter to enforce; when {@code null} no filtering is applied (not recommended)
+     * @return the deserialized object
+     */
+    protected static Object deserialize(byte[] bytes, ObjectInputFilter filter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            if (filter != null) {
+                ois.setObjectInputFilter(filter);
+            }
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -918,6 +964,33 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     protected int getRequestedMaxQueueSize() {
         return requestedMaxQueueCapacity;
+    }
+
+    /**
+     * @return the current {@link ObjectInputFilter} allowlist pattern enforced during deserialization.
+     */
+    public String getDeserializationAllowlist() {
+        return deserializationAllowlist;
+    }
+
+    /**
+     * Overrides the allowlist used to guard deserialization of queue entries (CWE-502 mitigation). Provide a pattern
+     * in the {@link ObjectInputFilter.Config#createFilter(String)} grammar. Keep a trailing {@code !*} so that any
+     * class not explicitly permitted is rejected.
+     *
+     * @param allowlist the allowlist pattern; must not be blank
+     */
+    public void setDeserializationAllowlist(String allowlist) {
+        Assert.hasText(allowlist, "The deserialization allowlist must not be blank.");
+        this.deserializationFilter = ObjectInputFilter.Config.createFilter(allowlist);
+        this.deserializationAllowlist = allowlist;
+    }
+
+    /**
+     * @return the {@link ObjectInputFilter} applied to the {@link ObjectInputStream} in {@link #deserialize(byte[])}.
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
     }
 
     public String getQueueFolderPath() {
