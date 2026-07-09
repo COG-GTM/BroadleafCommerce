@@ -652,6 +652,11 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
             if (fmd.getAddMethodType().equals(AddMethodType.LOOKUP_FOR_UPDATE)) {
                 ppr.setUpdateLookupType(true);
+                if (StringUtils.isNotBlank(mainMetadata.getSecurityCeilingType())) {
+                    ppr.setSecurityCeilingEntityClassname(mainMetadata.getSecurityCeilingType());
+                } else {
+                    ppr.setSecurityCeilingEntityClassname(mainMetadata.getCeilingType());
+                }
             }
 
             Property fp = new Property();
@@ -1003,11 +1008,8 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         PersistencePackage pkg = persistencePackageFactory.create(request);
         try {
             if (request.isUpdateLookupType()) {
-                if (pkg.getSectionCrumbs() != null && pkg.getSectionCrumbs().length > 0) {
-                    SectionCrumb sc = pkg.getSectionCrumbs()[0];
-                    if (StringUtils.isNotBlank(sc.getSectionIdentifier())) {
-                        pkg.setSecurityCeilingEntityFullyQualifiedClassname(sc.getSectionIdentifier());
-                    }
+                if (StringUtils.isNotBlank(request.getSecurityCeilingEntityClassname())) {
+                    pkg.setSecurityCeilingEntityFullyQualifiedClassname(request.getSecurityCeilingEntityClassname());
                 }
                 if (transactional) {
                     return service.update(pkg);
