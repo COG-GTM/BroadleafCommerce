@@ -38,18 +38,22 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +82,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Upper bounds enforced while deserializing queue entries to mitigate resource-exhaustion (DoS) attacks that
+     * abuse the Java serialization protocol.  Zookeeper enforces a 1MB transport limit, so a legitimate queue message
+     * can never exceed that size.
+     */
+    protected static final long MAX_DESERIALIZATION_STREAM_BYTES = 1024L * 1024L;
+    protected static final long MAX_DESERIALIZATION_DEPTH = 64L;
+    protected static final long MAX_DESERIALIZATION_REFERENCES = 10_000L;
+
+    /**
+     * Base allow-list of JDK package prefixes that are considered safe to deserialize.  Everything outside of this
+     * list (and the Broadleaf packages / classes explicitly allowed below) is rejected by default to prevent
+     * insecure deserialization / gadget-chain remote code execution (CWE-502).
+     */
+    private static final List<String> DEFAULT_ALLOWED_PACKAGE_PREFIXES = Collections.unmodifiableList(Arrays.asList(
+            "java.lang.",
+            "java.util.",
+            "java.time.",
+            "java.math.",
+            "org.broadleafcommerce."));
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +847,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} guarded by
+     * the {@link ObjectInputFilter} returned by {@link #getDeserializationFilter()}.  The filter enforces a strict
+     * allow-list of classes so that untrusted bytes read from Zookeeper cannot be used to instantiate arbitrary
+     * gadget-chain classes and achieve remote code execution (CWE-502).
      *
      * @param bytes
      * @return
@@ -832,6 +860,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +883,79 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to every {@link ObjectInputStream} used by
+     * {@link #deserialize(byte[])}.  The default implementation enforces resource limits and a class allow-list
+     * (see {@link #isClassAllowedForDeserialization(String)}) to prevent insecure deserialization (CWE-502).
+     * <p>
+     * Subclasses that legitimately need to place additional types on the queue should prefer overriding
+     * {@link #getAllowedDeserializationPackagePrefixes()} or {@link #isClassAllowedForDeserialization(String)} rather
+     * than removing the filter entirely.
+     *
+     * @return the filter used to validate incoming serialized data
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return this::checkDeserializationInput;
+    }
+
+    /**
+     * Look-ahead validation invoked by the {@link ObjectInputFilter} for each class (and for stream metadata) prior to
+     * instantiation.  Rejects streams that exceed the configured resource limits as well as any class that is not
+     * explicitly allowed.
+     */
+    protected ObjectInputFilter.Status checkDeserializationInput(ObjectInputFilter.FilterInfo info) {
+        if (info.depth() > MAX_DESERIALIZATION_DEPTH
+                || info.references() > MAX_DESERIALIZATION_REFERENCES
+                || info.streamBytes() > MAX_DESERIALIZATION_STREAM_BYTES) {
+            return ObjectInputFilter.Status.REJECTED;
+        }
+
+        Class<?> clazz = info.serialClass();
+        if (clazz == null) {
+            // No class to evaluate for this callback (e.g. array length / reference checks handled above).
+            return ObjectInputFilter.Status.UNDECIDED;
+        }
+
+        while (clazz.isArray()) {
+            clazz = clazz.getComponentType();
+        }
+
+        if (clazz.isPrimitive()) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+
+        if (isClassAllowedForDeserialization(clazz.getName())) {
+            return ObjectInputFilter.Status.ALLOWED;
+        }
+
+        if (LOG.isWarnEnabled()) {
+            LOG.warn("Rejected deserialization of a disallowed class from the Zookeeper queue: " + clazz.getName());
+        }
+        return ObjectInputFilter.Status.REJECTED;
+    }
+
+    /**
+     * Determines whether a given class name is allowed to be deserialized.  A class is allowed when its name starts
+     * with one of the prefixes returned by {@link #getAllowedDeserializationPackagePrefixes()}.
+     */
+    protected boolean isClassAllowedForDeserialization(String className) {
+        for (String prefix : getAllowedDeserializationPackagePrefixes()) {
+            if (className.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The set of package prefixes whose classes are allowed to be deserialized from the queue.  Defaults to a small set
+     * of safe JDK packages plus the Broadleaf packages.  Subclasses may override this to add application-specific
+     * packages; overriding implementations should keep the allow-list as narrow as possible.
+     */
+    protected Set<String> getAllowedDeserializationPackagePrefixes() {
+        return new HashSet<>(DEFAULT_ALLOWED_PACKAGE_PREFIXES);
     }
 
     /**
