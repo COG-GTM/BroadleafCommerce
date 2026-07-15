@@ -38,7 +38,6 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -50,6 +49,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -87,6 +87,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+
+    /**
+     * Performs hardened, allow-list-based deserialization of queue payloads. This is the primary defense against
+     * insecure deserialization (CWE-502): it prevents an attacker who can influence the data stored in Zookeeper from
+     * instantiating arbitrary "gadget" classes and achieving remote code execution. When a queue stores custom payload
+     * types, register their prefixes via {@link #addAllowedDeserializationClassName(String)}.
+     */
+    private final SecureQueueDeserializer secureDeserializer = new SecureQueueDeserializer();
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -822,38 +830,37 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object. Deserialization is delegated to {@link SecureQueueDeserializer},
+     * which enforces an allow-list of permitted classes (and resource limits) to guard against insecure deserialization
+     * (CWE-502). See {@link #addAllowedDeserializationClassName(String)} to permit custom payload types.
      *
      * @param bytes
      * @return
      */
     protected Object deserialize(byte[] bytes) {
-        ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-        ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
-            return ois.readObject();
+            return secureDeserializer.deserialize(bytes);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
-        } finally {
-            if (ois != null) {
-                try {
-                    ois.close();
-                } catch (IOException e) {
-                    if (LOG.isTraceEnabled()) {
-                        LOG.trace("Error occured closing the ObjectInputStream.", e);
-                    }
-                }
-            }
-
-            try {
-                bais.close();
-            } catch (IOException e) {
-                if (LOG.isTraceEnabled()) {
-                    LOG.trace("Error occured closing the ByteArrayInputStream.", e);
-                }
-            }
         }
+    }
+
+    /**
+     * @return the mutable set of class-name prefixes permitted during deserialization of queue payloads. Never null.
+     * @see #addAllowedDeserializationClassName(String)
+     */
+    public Set<String> getAllowedDeserializationClassNames() {
+        return secureDeserializer.getAllowedClassNamePrefixes();
+    }
+
+    /**
+     * Registers an additional class-name prefix that is permitted during deserialization of queue payloads. Use this
+     * when the queue stores custom {@link Serializable} payload types that are not covered by the default allow-list.
+     *
+     * @param classNamePrefix a fully-qualified class name or package prefix (e.g. {@code com.mycompany.queue.})
+     */
+    public void addAllowedDeserializationClassName(String classNamePrefix) {
+        secureDeserializer.addAllowedClassNamePrefix(classNamePrefix);
     }
 
     /**
