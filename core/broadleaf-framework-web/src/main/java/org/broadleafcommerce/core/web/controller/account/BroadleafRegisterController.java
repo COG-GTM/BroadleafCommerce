@@ -34,6 +34,8 @@ import org.broadleafcommerce.profile.web.core.service.register.RegistrationServi
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,6 +73,17 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     @Resource(name = "blOrderService")
     protected OrderService orderService;
+
+    /**
+     * Prevents mass-assignment of server-managed identity fields on the bound {@link Customer}. Without this an
+     * attacker could submit customer.id=&lt;victimId&gt; so that registration's {@code em.merge} overwrites an
+     * existing customer row, resulting in account takeover. Inherited by concrete registration controllers
+     * (including {@link BroadleafOauthRegisterController}).
+     */
+    @InitBinder
+    public void initBinder(WebDataBinder binder) {
+        binder.setDisallowedFields("customer.id", "customer.registered", "customer.password");
+    }
 
     public String register(
             RegisterCustomerForm registerCustomerForm,

@@ -137,6 +137,17 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public Customer registerCustomer(Customer customer, String password, String passwordConfirm) {
+        // Defense-in-depth against mass assignment / account takeover: registration must never overwrite an
+        // already-registered customer. A request-bound customer.id could otherwise be merged onto a victim's row.
+        // The only legitimate non-null id here is an anonymous (unregistered) customer being converted server-side.
+        if (customer.getId() != null) {
+            Customer existingCustomer = readCustomerById(customer.getId());
+            if (existingCustomer != null && existingCustomer.isRegistered()) {
+                throw new IllegalArgumentException("Cannot register a customer using the id of an already-registered "
+                        + "customer (" + customer.getId() + ").");
+            }
+        }
+
         customer.setRegistered(true);
 
         // When unencodedPassword is set the save() will encode it
