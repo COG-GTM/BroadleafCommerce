@@ -38,18 +38,23 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -87,6 +92,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+
+    /**
+     * Default allowlist of package prefixes (and/or fully-qualified class names) whose classes are permitted
+     * to be reconstructed when deserializing data read out of Zookeeper.  Restricting deserialization to a
+     * known set of safe types is the primary defense against deserialization-based remote code execution
+     * (CWE-502), where an attacker who can influence the serialized bytes stored in Zookeeper could otherwise
+     * trigger the instantiation of dangerous "gadget" classes.
+     */
+    protected static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES;
+    static {
+        final Set<String> defaults = new LinkedHashSet<>();
+        defaults.add("java.lang.");
+        defaults.add("java.util.");
+        defaults.add("java.math.");
+        defaults.add("java.time.");
+        defaults.add("org.broadleafcommerce.");
+        DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES = Collections.unmodifiableSet(defaults);
+    }
+
+    private final Set<String> allowedDeserializationPackages = new LinkedHashSet<>(DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES);
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -831,7 +856,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = new ValidatingObjectInputStream(bais, getAllowedDeserializationPackages());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -969,6 +994,30 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
+     * Returns the mutable set of package prefixes (and/or fully-qualified class names) whose classes are
+     * permitted during deserialization of queue entries.  Callers that store custom {@link Serializable}
+     * entry types outside of the {@link #DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES default allowed packages}
+     * should register those packages (or class names) via {@link #addAllowedDeserializationPackage(String)}.
+     *
+     * @return the mutable allowlist of permitted deserialization package prefixes / class names
+     */
+    public Set<String> getAllowedDeserializationPackages() {
+        return allowedDeserializationPackages;
+    }
+
+    /**
+     * Registers an additional package prefix (e.g. {@code "com.mycompany."}) or fully-qualified class name
+     * that is permitted during deserialization of queue entries.
+     *
+     * @param packageOrClassName a package prefix or fully-qualified class name to allow
+     */
+    public void addAllowedDeserializationPackage(String packageOrClassName) {
+        if (packageOrClassName != null && !packageOrClassName.trim().isEmpty()) {
+            allowedDeserializationPackages.add(packageOrClassName.trim());
+        }
+    }
+
+    /**
      * Allows us to execute retry-able operations.
      *
      * @param operation
@@ -990,6 +1039,65 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new DistributedQueueException("An unexpected error occured executing a retryable operation for distributed Zookeeper queue, "
                         + getQueueFolderPath(), e);
             }
+        }
+    }
+
+    /**
+     * An {@link ObjectInputStream} that restricts the classes that may be deserialized to a configured
+     * allowlist of package prefixes and fully-qualified class names.  Any attempt to resolve a class that
+     * is not on the allowlist results in an {@link InvalidClassException}, mitigating deserialization-based
+     * remote code execution attacks (CWE-502) where an attacker is able to influence the serialized data
+     * that is stored in Zookeeper.
+     */
+    protected static class ValidatingObjectInputStream extends ObjectInputStream {
+
+        private final Set<String> allowedPackages;
+
+        protected ValidatingObjectInputStream(InputStream in, Set<String> allowedPackages) throws IOException {
+            super(in);
+            this.allowedPackages = allowedPackages;
+        }
+
+        @Override
+        protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+            final String elementType = resolveElementTypeName(desc.getName());
+            if (elementType != null && !isAllowed(elementType)) {
+                throw new InvalidClassException(desc.getName(),
+                        "Deserialization of this class is not permitted for security reasons (CWE-502). "
+                                + "Register the package or class via addAllowedDeserializationPackage(String) if it is trusted.");
+            }
+            return super.resolveClass(desc);
+        }
+
+        /**
+         * Resolves the underlying (non-array) object class name for the given stream class name, stripping any
+         * array dimensions.  Returns {@code null} for primitive (array) element types, which are always safe.
+         *
+         * @param name the raw class name from the {@link ObjectStreamClass}
+         * @return the underlying object class name to validate, or {@code null} if it is a primitive type
+         */
+        protected String resolveElementTypeName(String name) {
+            String current = name;
+            while (current.startsWith("[")) {
+                current = current.substring(1);
+            }
+            if (current.startsWith("L") && current.endsWith(";")) {
+                return current.substring(1, current.length() - 1);
+            }
+            if (current.length() == 1) {
+                // Primitive array element type (e.g. 'I', 'Z', 'D'); always safe.
+                return null;
+            }
+            return current;
+        }
+
+        protected boolean isAllowed(String className) {
+            for (String allowed : allowedPackages) {
+                if (className.equals(allowed) || className.startsWith(allowed)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
