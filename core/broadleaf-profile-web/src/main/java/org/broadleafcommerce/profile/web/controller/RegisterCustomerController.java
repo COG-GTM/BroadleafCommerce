@@ -146,6 +146,10 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        // Never allow the persistent Customer id (or other server-managed identity fields) to be bound from
+        // request parameters. Otherwise an attacker could submit customer.id=<victimId> and have the registration
+        // merge overwrite an existing customer row (account takeover).
+        binder.setDisallowedFields("customer.id", "customer.registered", "customer.password");
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
