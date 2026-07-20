@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Default {@link ObjectInputFilter} pattern used to guard {@link #deserialize(byte[])} against untrusted, potentially malicious
+     * data read back from Zookeeper (CWE-502 - Deserialization of Untrusted Data).
+     * <p>
+     * The pattern enforces an allow-list of packages that are legitimately placed on the queue (the JDK types, Broadleaf's own
+     * classes, and Solr command payloads) and rejects everything else via the trailing {@code !*}.  It also caps the object graph
+     * size (depth, references, array length, and total bytes) to blunt deserialization-based denial-of-service attacks.  The byte
+     * limit mirrors Zookeeper's 1MB transport limit.
+     * <p>
+     * Applications that place additional custom types on the queue can supply their own filter via
+     * {@link #setDeserializationFilter(ObjectInputFilter)} or by overriding {@link #createDefaultDeserializationFilter()}.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=20;maxrefs=100000;maxarray=100000;"
+                    + "java.**;"
+                    + "org.broadleafcommerce.**;"
+                    + "org.apache.solr.common.**;"
+                    + "!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +108,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private volatile ObjectInputFilter deserializationFilter;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -823,6 +845,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     /**
      * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * <p>
+     * The data read from Zookeeper is treated as untrusted: an {@link ObjectInputFilter} allow-list (see
+     * {@link #getDeserializationFilter()}) is applied to the stream so that only expected classes are resolved.  This guards
+     * against deserialization-of-untrusted-data attacks (CWE-502) that could otherwise lead to remote code execution or
+     * denial of service if an attacker were able to influence the bytes stored in Zookeeper.
      *
      * @param bytes
      * @return
@@ -832,6 +859,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -894,6 +922,49 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to the {@link ObjectInputStream} in {@link #deserialize(byte[])}.  If one has
+     * not been explicitly configured via {@link #setDeserializationFilter(ObjectInputFilter)}, a default allow-list filter is
+     * created lazily via {@link #createDefaultDeserializationFilter()} and cached.
+     *
+     * @return the (non-null) filter used to validate classes during deserialization
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = this.deserializationFilter;
+        if (filter == null) {
+            synchronized (QUEUE_MONITOR) {
+                filter = this.deserializationFilter;
+                if (filter == null) {
+                    filter = createDefaultDeserializationFilter();
+                    this.deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * Allows applications that place additional custom types on the queue to supply their own class allow-list filter.  Passing
+     * {@code null} restores the default filter (see {@link #createDefaultDeserializationFilter()}).
+     *
+     * @param deserializationFilter the filter to apply during deserialization, or {@code null} to use the default
+     */
+    public void setDeserializationFilter(ObjectInputFilter deserializationFilter) {
+        synchronized (QUEUE_MONITOR) {
+            this.deserializationFilter = deserializationFilter;
+        }
+    }
+
+    /**
+     * Builds the default {@link ObjectInputFilter} from {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}.  Override to customize the
+     * allow-list without replacing the lazy-initialization behavior in {@link #getDeserializationFilter()}.
+     *
+     * @return the default allow-list filter
+     */
+    protected ObjectInputFilter createDefaultDeserializationFilter() {
+        return ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
     }
 
     protected DistributedLock initializeQueueAccessLock() {
