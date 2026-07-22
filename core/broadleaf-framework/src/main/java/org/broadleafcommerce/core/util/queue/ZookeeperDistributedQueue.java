@@ -38,18 +38,24 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -822,7 +828,35 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
+     * The default set of package prefixes whose classes are allowed to be deserialized from the queue.
+     * These cover the JDK value types and Broadleaf/Solr command payloads that are legitimately placed on
+     * the queue (e.g. {@link org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand} and
+     * {@code org.apache.solr.common.SolrInputDocument}).
+     */
+    protected static final Set<String> DEFAULT_WHITELIST_PACKAGE_PREFIXES = Collections.unmodifiableSet(
+            new LinkedHashSet<>(Arrays.asList(
+                    "java.lang.",
+                    "java.util.",
+                    "java.time.",
+                    "java.math.",
+                    "org.broadleafcommerce.",
+                    "org.apache.solr.common."
+            )));
+
+    /**
+     * The maximum size, in bytes, of a stream that may be deserialized.  Zookeeper itself imposes a ~1MB transport
+     * limit, so anything larger is rejected outright to guard against decompression/allocation based attacks.
+     */
+    protected static final long MAX_DESERIALIZE_BYTES = 1_048_576L;
+
+    /**
      * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * <p>
+     * To mitigate insecure deserialization (CWE-502), the stream is hardened with an allow-list
+     * {@link ObjectInputFilter} and a {@link ObjectInputStream#resolveClass(ObjectStreamClass)} override that only
+     * permits classes from the packages returned by {@link #getWhitelistPackagePrefixes()} (plus primitives). Any
+     * attempt to deserialize a class outside of the allow-list (such as a gadget-chain class) results in a
+     * {@link DistributedQueueException} rather than object construction.
      *
      * @param bytes
      * @return
@@ -831,7 +865,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
-            ois = new ObjectInputStream(bais);
+            ois = createHardenedObjectInputStream(bais);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +888,98 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Builds an {@link ObjectInputStream} hardened against insecure deserialization (CWE-502). The returned stream
+     * enforces two independent controls: a JEP-290 {@link ObjectInputFilter} that caps stream depth, references,
+     * array length and byte count, and a {@link ObjectInputStream#resolveClass(ObjectStreamClass)} override that
+     * rejects any class whose (base) type is not on the allow-list returned by {@link #getWhitelistPackagePrefixes()}.
+     *
+     * @param in the raw byte stream from Zookeeper
+     * @return a hardened {@link ObjectInputStream}
+     * @throws IOException if the stream cannot be created
+     */
+    protected ObjectInputStream createHardenedObjectInputStream(ByteArrayInputStream in) throws IOException {
+        ObjectInputStream ois = new ObjectInputStream(in) {
+            @Override
+            protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+                if (!isClassAllowed(desc.getName())) {
+                    throw new InvalidClassException(desc.getName(), "Deserialization of this class is not permitted.");
+                }
+                return super.resolveClass(desc);
+            }
+        };
+        ois.setObjectInputFilter(getObjectInputFilter());
+        return ois;
+    }
+
+    /**
+     * Returns the set of package prefixes (each ending in a '.') whose classes are permitted to be deserialized.
+     * Subclasses may override to broaden or narrow the allow-list for custom queue payloads.
+     *
+     * @return the allowed package prefixes; never {@code null}
+     */
+    protected Set<String> getWhitelistPackagePrefixes() {
+        return DEFAULT_WHITELIST_PACKAGE_PREFIXES;
+    }
+
+    /**
+     * Determines whether a class named in the serialized stream is allowed to be resolved. Primitives and arrays of
+     * allowed types are permitted; all other classes must belong to a package listed in
+     * {@link #getWhitelistPackagePrefixes()}.
+     *
+     * @param className the class name as reported by {@link ObjectStreamClass#getName()}
+     * @return {@code true} if the class may be deserialized
+     */
+    protected boolean isClassAllowed(String className) {
+        if (className == null) {
+            return false;
+        }
+
+        // Unwrap array types (e.g. "[Ljava.lang.String;" or "[[I") down to their base component type.
+        int arrayDepth = 0;
+        while (arrayDepth < className.length() && className.charAt(arrayDepth) == '[') {
+            arrayDepth++;
+        }
+        if (arrayDepth > 0) {
+            String component = className.substring(arrayDepth);
+            if (!component.startsWith("L") || !component.endsWith(";")) {
+                // Primitive array (e.g. "[I", "[D"); safe to allow.
+                return true;
+            }
+            className = component.substring(1, component.length() - 1);
+        }
+
+        for (String prefix : getWhitelistPackagePrefixes()) {
+            if (className.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Builds the {@link ObjectInputFilter} applied to hardened streams. The default enforces conservative limits to
+     * guard against resource-exhaustion attacks and reuses {@link #isClassAllowed(String)} as a defense-in-depth
+     * class allow-list. Subclasses may override to customize the limits.
+     *
+     * @return the filter to apply; never {@code null}
+     */
+    protected ObjectInputFilter getObjectInputFilter() {
+        return info -> {
+            Class<?> serialClass = info.serialClass();
+            if (serialClass != null && !isClassAllowed(serialClass.getName())) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            if (info.depth() > 64L
+                    || info.references() > 10_000L
+                    || info.arrayLength() > 10_000L
+                    || info.streamBytes() > MAX_DESERIALIZE_BYTES) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+            return ObjectInputFilter.Status.UNDECIDED;
+        };
     }
 
     /**
