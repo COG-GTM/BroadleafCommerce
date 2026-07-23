@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,30 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * System property used to append additional allow-list patterns (semicolon-delimited, using the
+     * {@link ObjectInputFilter} pattern grammar) that are permitted during deserialization of queue payloads.
+     * This lets deployments that place custom {@link Serializable} types on the queue extend the safe default
+     * allow-list without having to subclass this queue.
+     */
+    public static final String ADDITIONAL_ALLOWED_CLASSES_PROPERTY = "broadleaf.zookeeper.queue.deserialization.allowedClasses";
+
+    /**
+     * Default {@link ObjectInputFilter} allow-list applied when reading objects back off of the queue. Only the
+     * classes required by the built-in queue usages (Broadleaf/Solr/Lucene commands and core JDK types) are
+     * permitted; everything else is rejected. Hard limits on stream size, graph depth, references and array sizes
+     * are also applied to mitigate resource-exhaustion attacks. This is the primary mitigation for the insecure
+     * deserialization vulnerability (CWE-502) that unrestricted {@link ObjectInputStream#readObject()} exposes.
+     */
+    protected static final String DEFAULT_DESERIALIZATION_ALLOW_LIST =
+            "maxbytes=1048576;maxdepth=32;maxrefs=100000;maxarray=100000;"
+                    + "org.broadleafcommerce.**;"
+                    + "org.apache.solr.**;"
+                    + "org.apache.lucene.**;"
+                    + "java.**;"
+                    + "!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -832,6 +857,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +880,30 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} that restricts which classes are allowed to be deserialized from the
+     * queue. The default implementation builds a strict allow-list (see {@link #DEFAULT_DESERIALIZATION_ALLOW_LIST})
+     * so that untrusted data stored in Zookeeper cannot be leveraged to instantiate arbitrary classes and trigger
+     * remote code execution (CWE-502). Deployments that place additional custom {@link Serializable} types on the
+     * queue can extend the allow-list via the {@link #ADDITIONAL_ALLOWED_CLASSES_PROPERTY} system property or by
+     * overriding this method.
+     *
+     * @return the filter applied to every {@link ObjectInputStream} used to read queue payloads; never {@code null}
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        final StringBuilder pattern = new StringBuilder();
+        final String additional = System.getProperty(ADDITIONAL_ALLOWED_CLASSES_PROPERTY);
+        if (additional != null && !additional.trim().isEmpty()) {
+            // Additional patterns must precede the trailing "!*" reject-all rule so that they take effect.
+            pattern.append(additional.trim());
+            if (!additional.trim().endsWith(";")) {
+                pattern.append(';');
+            }
+        }
+        pattern.append(DEFAULT_DESERIALIZATION_ALLOW_LIST);
+        return ObjectInputFilter.Config.createFilter(pattern.toString());
     }
 
     /**
