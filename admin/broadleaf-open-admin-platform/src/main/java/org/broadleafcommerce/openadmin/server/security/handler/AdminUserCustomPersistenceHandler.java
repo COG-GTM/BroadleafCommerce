@@ -180,6 +180,7 @@ public class AdminUserCustomPersistenceHandler extends CustomPersistenceHandlerA
 
     @Override
     public void remove(PersistencePackage persistencePackage, DynamicEntityDao dynamicEntityDao, RecordHelper helper) throws ServiceException {
+        adminRemoteSecurityService.securityCheck(persistencePackage, EntityOperationType.REMOVE);
         Entity entity = persistencePackage.getEntity();
         String idValue = entity.findProperty("id").getValue();
         String userLoginToRemove = entity.findProperty("login") == null
