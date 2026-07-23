@@ -48,8 +48,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import jakarta.annotation.Resource;
@@ -133,10 +135,13 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
 
     @Override
     public void securityCheck(PersistencePackage persistencePackage, EntityOperationType operationType) throws ServiceException {
-        Set<String> ceilingNames = new HashSet<>();
-        ceilingNames.add(persistencePackage.getSecurityCeilingEntityFullyQualifiedClassname());
+        // The entity actually being mutated is the server-trusted target ceiling. Authorization must be
+        // anchored to it. The section crumbs are supplied on the request and are only allowed to satisfy
+        // the check as parent-permission inheritance for target ceilings that are not independently secured.
+        String targetCeilingName = persistencePackage.getSecurityCeilingEntityFullyQualifiedClassname();
+        Set<String> inheritedCeilingNames = new LinkedHashSet<>();
         if (!ArrayUtils.isEmpty(persistencePackage.getSectionCrumbs())) {
-            ceilingNames.addAll(CollectionUtils.transform(Arrays.asList(persistencePackage.getSectionCrumbs()),
+            inheritedCeilingNames.addAll(CollectionUtils.transform(Arrays.asList(persistencePackage.getSectionCrumbs()),
                     new Transformer() {
                         @Override
                         public Object transform(Object o) {
@@ -144,6 +149,7 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
                         }
                     }));
         }
+        inheritedCeilingNames.remove(targetCeilingName);
 
         Entity entity = persistencePackage.getEntity();
 
@@ -186,7 +192,7 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
             }
         }
 
-        securityCheck(ceilingNames.toArray(new String[ceilingNames.size()]), operationType);
+        securityCheck(targetCeilingName, inheritedCeilingNames.toArray(new String[inheritedCeilingNames.size()]), operationType);
     }
 
     @Override
@@ -198,62 +204,84 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
         if (ArrayUtils.isEmpty(ceilingNames)) {
             throw new SecurityServiceException("Security Check Failed: ceilingNames not specified");
         }
+        securityCheck(ceilingNames[0], Arrays.copyOfRange(ceilingNames, 1, ceilingNames.length), operationType);
+    }
+
+    /**
+     * Performs the authorization check for an admin persistence operation.
+     *
+     * <p>Authorization is anchored to {@code targetCeilingName} - the server-trusted ceiling of the entity that
+     * is actually being mutated. The user must be qualified for the operation on that ceiling. The
+     * {@code inheritedCeilingNames} (derived from request-supplied section crumbs) may only satisfy the check
+     * when the target ceiling is not independently secured for this operation, which preserves legitimate
+     * parent-permission inheritance for collection members that rely on their parent section while preventing
+     * a caller from authorizing an operation on a sensitive, independently-secured entity by supplying an
+     * unrelated crumb they happen to be qualified for.</p>
+     */
+    protected void securityCheck(String targetCeilingName, String[] inheritedCeilingNames, EntityOperationType operationType) throws ServiceException {
+        if (StringUtils.isBlank(targetCeilingName)) {
+            throw new SecurityServiceException("Security Check Failed: ceilingNames not specified");
+        }
         AdminUser persistentAdminUser = getPersistentAdminUser();
-        PermissionType permissionType;
-        switch (operationType) {
-            case ADD:
-                permissionType = PermissionType.CREATE;
-                break;
-            case FETCH:
-                permissionType = PermissionType.READ;
-                break;
-            case REMOVE:
-                permissionType = PermissionType.DELETE;
-                break;
-            case UPDATE:
-                permissionType = PermissionType.UPDATE;
-                break;
-            case INSPECT:
-                permissionType = PermissionType.READ;
-                break;
-            default:
-                permissionType = PermissionType.OTHER;
-                break;
+        PermissionType permissionType = getPermissionType(operationType);
+
+        List<String> allCeilingNames = new ArrayList<>();
+        allCeilingNames.add(targetCeilingName);
+        if (!ArrayUtils.isEmpty(inheritedCeilingNames)) {
+            allCeilingNames.addAll(Arrays.asList(inheritedCeilingNames));
         }
 
         final ExtensionResultStatusType resultStatusType = securityCheckExtensionManager.getProxy()
-                .handleAdminSecurityCheck(persistentAdminUser, permissionType, Arrays.asList(ceilingNames));
+                .handleAdminSecurityCheck(persistentAdminUser, permissionType, allCeilingNames);
         if (resultStatusType == ExtensionResultStatusType.HANDLED) {
             return;
         }
 
-        SecurityServiceException primaryException = null;
-        boolean isQualified = false;
-        for (String ceilingEntityFullyQualifiedName : ceilingNames) {
-            isQualified = securityService.isUserQualifiedForOperationOnCeilingEntity(
-                    persistentAdminUser, permissionType, ceilingEntityFullyQualifiedName
-            );
-            if (!isQualified) {
-                if (primaryException == null) {
-                    primaryException = new SecurityServiceException("Security Check Failed for entity operation: "
-                            + operationType.toString() + " (" + ceilingEntityFullyQualifiedName + ")");
+        //the target ceiling (the entity actually being operated on) must itself authorize the operation
+        if (securityService.isUserQualifiedForOperationOnCeilingEntity(persistentAdminUser, permissionType, targetCeilingName)) {
+            return;
+        }
+
+        //only fall back to breadcrumb-based parent-permission inheritance when the target ceiling is not
+        //independently secured; this never lets an unrelated crumb authorize a secured entity
+        if (!securityService.doesOperationExistForCeilingEntity(permissionType, targetCeilingName)
+                && !ArrayUtils.isEmpty(inheritedCeilingNames)) {
+            for (String inheritedCeilingName : inheritedCeilingNames) {
+                if (securityService.isUserQualifiedForOperationOnCeilingEntity(persistentAdminUser, permissionType, inheritedCeilingName)) {
+                    return;
                 }
-            } else {
-                break;
             }
         }
-        if (!isQualified) {
-            //check if the requested entity is not configured and warn
-            if (!securityService.doesOperationExistForCeilingEntity(permissionType, ceilingNames[0])) {
-                if (LOG.isWarnEnabled()) {
-                    LOG.warn("Detected security request for an unregistered ceiling entity (" + StringUtil.sanitize(ceilingNames[0]) + "). " +
-                            "As a result, the request failed. Please make sure to configure security for any ceiling entities " +
-                            "referenced via the admin. This is usually accomplished by adding records in the " +
-                            "BLC_ADMIN_PERMISSION_ENTITY table. Note, depending on how the entity in question is used, you " +
-                            "may need to add to BLC_ADMIN_PERMISSION, BLC_ADMIN_ROLE_PERMISSION_XREF and BLC_ADMIN_SEC_PERM_XREF.", primaryException);
-                }
+
+        SecurityServiceException primaryException = new SecurityServiceException("Security Check Failed for entity operation: "
+                + operationType.toString() + " (" + targetCeilingName + ")");
+        //check if the requested entity is not configured and warn
+        if (!securityService.doesOperationExistForCeilingEntity(permissionType, targetCeilingName)) {
+            if (LOG.isWarnEnabled()) {
+                LOG.warn("Detected security request for an unregistered ceiling entity (" + StringUtil.sanitize(targetCeilingName) + "). " +
+                        "As a result, the request failed. Please make sure to configure security for any ceiling entities " +
+                        "referenced via the admin. This is usually accomplished by adding records in the " +
+                        "BLC_ADMIN_PERMISSION_ENTITY table. Note, depending on how the entity in question is used, you " +
+                        "may need to add to BLC_ADMIN_PERMISSION, BLC_ADMIN_ROLE_PERMISSION_XREF and BLC_ADMIN_SEC_PERM_XREF.", primaryException);
             }
-            throw primaryException;
+        }
+        throw primaryException;
+    }
+
+    protected PermissionType getPermissionType(EntityOperationType operationType) {
+        switch (operationType) {
+            case ADD:
+                return PermissionType.CREATE;
+            case FETCH:
+                return PermissionType.READ;
+            case REMOVE:
+                return PermissionType.DELETE;
+            case UPDATE:
+                return PermissionType.UPDATE;
+            case INSPECT:
+                return PermissionType.READ;
+            default:
+                return PermissionType.OTHER;
         }
     }
 
