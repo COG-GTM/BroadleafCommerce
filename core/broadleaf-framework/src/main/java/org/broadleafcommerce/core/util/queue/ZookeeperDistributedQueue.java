@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.core.util.queue;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.zookeeper.CreateMode;
@@ -38,18 +39,23 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,6 +82,78 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Comma-delimited system property allowing additional package prefixes to be deserialized by this queue.  This is only
+     * required when queue elements are not part of the {@code org.broadleafcommerce} package hierarchy or of the default set of
+     * allowed JDK types.  For example: {@code -Dbroadleaf.distributed.queue.allowedDeserializationPackages=com.mycompany.commands.}
+     */
+    public static final String ALLOWED_DESERIALIZATION_PACKAGES_PROPERTY = "broadleaf.distributed.queue.allowedDeserializationPackages";
+
+    /**
+     * Package prefix that queue elements are expected to belong to, in addition to the default allowed JDK types.
+     */
+    protected static final String DEFAULT_ALLOWED_DESERIALIZATION_PACKAGE = "org.broadleafcommerce.";
+
+    /**
+     * JDK types that are commonly nested inside of queue elements.  These are all value or collection types that do not, by
+     * themselves, allow arbitrary code to be executed during deserialization.
+     */
+    protected static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_CLASSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "java.lang.Boolean",
+            "java.lang.Byte",
+            "java.lang.Character",
+            "java.lang.Double",
+            "java.lang.Enum",
+            "java.lang.Float",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Number",
+            "java.lang.Object",
+            "java.lang.Short",
+            "java.lang.String",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            "java.sql.Date",
+            "java.sql.Time",
+            "java.sql.Timestamp",
+            "java.time.Ser",
+            "java.util.ArrayDeque",
+            "java.util.ArrayList",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$EmptyList",
+            "java.util.Collections$EmptyMap",
+            "java.util.Collections$EmptySet",
+            "java.util.Collections$SingletonList",
+            "java.util.Collections$SingletonMap",
+            "java.util.Collections$SingletonSet",
+            "java.util.Collections$UnmodifiableCollection",
+            "java.util.Collections$UnmodifiableList",
+            "java.util.Collections$UnmodifiableMap",
+            "java.util.Collections$UnmodifiableRandomAccessList",
+            "java.util.Collections$UnmodifiableSet",
+            "java.util.Collections$UnmodifiableSortedMap",
+            "java.util.Collections$UnmodifiableSortedSet",
+            "java.util.Date",
+            "java.util.HashMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashMap",
+            "java.util.LinkedHashSet",
+            "java.util.LinkedList",
+            "java.util.Locale",
+            "java.util.Optional",
+            "java.util.TreeMap",
+            "java.util.TreeSet",
+            "java.util.UUID")));
+
+    /**
+     * Zookeeper has a 1MB transport limit, so queue payloads are always smaller than this.
+     */
+    protected static final long MAX_DESERIALIZATION_STREAM_BYTES = 1024L * 1024L;
+    protected static final long MAX_DESERIALIZATION_DEPTH = 32L;
+    protected static final long MAX_DESERIALIZATION_REFERENCES = 10000L;
+    protected static final long MAX_DESERIALIZATION_ARRAY_LENGTH = 10000L;
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +165,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private volatile ObjectInputFilter deserializationFilter;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -822,7 +901,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} restricted by the
+     * {@link ObjectInputFilter} returned by {@link #getDeserializationFilter()}.  Data read from Zookeeper is untrusted, so only
+     * the allowed types may be materialized; anything else causes a {@link DistributedQueueException} rather than the
+     * instantiation of an arbitrary object graph.
      *
      * @param bytes
      * @return
@@ -832,6 +914,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +937,76 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * The {@link ObjectInputFilter} that limits which types {@link #deserialize(byte[])} is allowed to materialize.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = deserializationFilter;
+        if (filter == null) {
+            synchronized (QUEUE_MONITOR) {
+                filter = deserializationFilter;
+                if (filter == null) {
+                    filter = createDeserializationFilter();
+                    deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * Creates the {@link ObjectInputFilter} used by {@link #deserialize(byte[])}.  Subclasses may override this, or
+     * {@link #getAllowedDeserializationClassNames()} / {@link #getAllowedDeserializationPackages()}, to support element types
+     * that are not covered by the defaults.
+     *
+     * @return
+     */
+    protected ObjectInputFilter createDeserializationFilter() {
+        return new AllowListObjectInputFilter(getAllowedDeserializationClassNames(), getAllowedDeserializationPackages());
+    }
+
+    /**
+     * Fully qualified names of the classes that {@link #deserialize(byte[])} is allowed to materialize.
+     *
+     * @return
+     */
+    protected Set<String> getAllowedDeserializationClassNames() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_CLASSES;
+    }
+
+    /**
+     * Package prefixes that {@link #deserialize(byte[])} is allowed to materialize.  Additional prefixes can be contributed with
+     * the {@link #ALLOWED_DESERIALIZATION_PACKAGES_PROPERTY} system property.
+     *
+     * @return
+     */
+    protected Set<String> getAllowedDeserializationPackages() {
+        return getDefaultAllowedDeserializationPackages();
+    }
+
+    /**
+     * {@link #DEFAULT_ALLOWED_DESERIALIZATION_PACKAGE} combined with any package prefixes contributed with the
+     * {@link #ALLOWED_DESERIALIZATION_PACKAGES_PROPERTY} system property.
+     *
+     * @return
+     */
+    protected static Set<String> getDefaultAllowedDeserializationPackages() {
+        final Set<String> packages = new LinkedHashSet<>();
+        packages.add(DEFAULT_ALLOWED_DESERIALIZATION_PACKAGE);
+        final String additionalPackages = System.getProperty(ALLOWED_DESERIALIZATION_PACKAGES_PROPERTY);
+        if (StringUtils.isNotBlank(additionalPackages)) {
+            for (String additionalPackage : StringUtils.split(additionalPackages, ',')) {
+                final String trimmed = StringUtils.trimToNull(additionalPackage);
+                if (trimmed != null) {
+                    packages.add(trimmed.endsWith(".") ? trimmed : trimmed + '.');
+                }
+            }
+        }
+        return packages;
     }
 
     /**
@@ -990,6 +1143,64 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new DistributedQueueException("An unexpected error occured executing a retryable operation for distributed Zookeeper queue, "
                         + getQueueFolderPath(), e);
             }
+        }
+    }
+
+    /**
+     * {@link ObjectInputFilter} that rejects everything that is not explicitly allowed, either by fully qualified class name or
+     * by package prefix.  It additionally constrains the shape of the stream so that a malicious payload cannot exhaust memory.
+     */
+    protected static class AllowListObjectInputFilter implements ObjectInputFilter {
+
+        private final Set<String> allowedClassNames;
+        private final Set<String> allowedPackages;
+
+        public AllowListObjectInputFilter(Set<String> allowedClassNames, Set<String> allowedPackages) {
+            this.allowedClassNames = Collections.unmodifiableSet(new HashSet<>(allowedClassNames));
+            this.allowedPackages = Collections.unmodifiableSet(new LinkedHashSet<>(allowedPackages));
+        }
+
+        @Override
+        public Status checkInput(FilterInfo info) {
+            if (info.depth() > MAX_DESERIALIZATION_DEPTH
+                    || info.references() > MAX_DESERIALIZATION_REFERENCES
+                    || info.streamBytes() > MAX_DESERIALIZATION_STREAM_BYTES
+                    || info.arrayLength() > MAX_DESERIALIZATION_ARRAY_LENGTH) {
+                return Status.REJECTED;
+            }
+
+            Class<?> clazz = info.serialClass();
+            if (clazz == null) {
+                //This is a stream limit check rather than a class check.
+                return Status.UNDECIDED;
+            }
+
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+
+            if (clazz.isPrimitive() || clazz.isInterface()) {
+                //Primitives and interfaces are only ever seen here as the component type of an array being allocated.  The
+                //objects that end up in that array are filtered individually, and proxy classes are checked by their generated
+                //class name rather than by their interfaces.
+                return Status.ALLOWED;
+            }
+
+            return isAllowed(clazz.getName()) ? Status.ALLOWED : Status.REJECTED;
+        }
+
+        protected boolean isAllowed(String className) {
+            if (allowedClassNames.contains(className)) {
+                return true;
+            }
+
+            for (String allowedPackage : allowedPackages) {
+                if (className.startsWith(allowedPackage)) {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 
