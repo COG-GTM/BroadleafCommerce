@@ -621,9 +621,9 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                             error.getValue()
                     );
                 }
-                List<String> subGlobalErrors = subPackage.getValue().getEntity().getGlobalValidationErrors();
-                if (CollectionUtils.isNotEmpty(subGlobalErrors)) {
-                    response.addGlobalValidationErrors(subGlobalErrors);
+                Entity subEntity = subPackage.getValue().getEntity();
+                if (subEntity != response && CollectionUtils.isNotEmpty(subEntity.getGlobalValidationErrors())) {
+                    response.addGlobalValidationErrors(subEntity.getGlobalValidationErrors());
                 }
             }
 
@@ -845,9 +845,9 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                         error.getValue()
                 );
             }
-            List<String> subGlobalErrors = subPackage.getValue().getEntity().getGlobalValidationErrors();
-            if (CollectionUtils.isNotEmpty(subGlobalErrors)) {
-                response.addGlobalValidationErrors(subGlobalErrors);
+            Entity subEntity = subPackage.getValue().getEntity();
+            if (subEntity != response && CollectionUtils.isNotEmpty(subEntity.getGlobalValidationErrors())) {
+                response.addGlobalValidationErrors(subEntity.getGlobalValidationErrors());
             }
         }
 
