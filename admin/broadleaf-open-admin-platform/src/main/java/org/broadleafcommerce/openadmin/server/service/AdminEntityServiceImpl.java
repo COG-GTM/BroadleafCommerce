@@ -167,6 +167,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
             }
 
             PersistencePackageRequest subRequest = getRequestForEntityForm(entry.getValue(), customCriteria, sectionCrumb);
+            subRequest.withSecurityCeilingEntityClassname(info.getSecurityCeilingClassName());
             ppr.addSubRequest(info.getPropertyName(), subRequest);
         }
         return add(ppr);
