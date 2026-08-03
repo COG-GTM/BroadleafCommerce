@@ -220,11 +220,10 @@ public class BroadleafRequestProcessor extends AbstractBroadleafWebRequestProces
         }
         ruleMap.put("locale", locale);
 
-        String adminUserId = request.getParameter(BroadleafRequestFilter.ADMIN_USER_ID_PARAM_NAME);
-        if (StringUtils.isNotBlank(adminUserId)) {
-            //TODO: Add token logic to secure the admin user id
-            brc.setAdminUserId(Long.parseLong(adminUserId));
-        }
+        // Intentionally do NOT populate BroadleafRequestContext.adminUserId from a storefront request
+        // parameter. Doing so allowed any anonymous request to assert an arbitrary admin identity
+        // (e.g. forging createdBy/updatedBy audit fields on CrossAppAuditable entities). Admin identity
+        // is established only from an authenticated principal by BroadleafAdminRequestProcessor.
     }
 
     protected boolean isUrlValid(String url) {
