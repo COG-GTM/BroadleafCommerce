@@ -349,8 +349,8 @@ public class BroadleafAdminRequestProcessor extends AbstractBroadleafWebRequestP
                 if (sandBox == null) {
                     SandBox approvalOrUserSandBox = sandBoxService.retrieveSandBoxManagementById(sandBoxId);
                     if (approvalOrUserSandBox != null) {
-                        if (approvalOrUserSandBox.getSandBoxType().equals(SandBoxType.USER)) {
-                            sandBox = approvalOrUserSandBox;
+                        if (SandBoxType.USER.equals(approvalOrUserSandBox.getSandBoxType())) {
+                            sandBox = isUserSandBoxOwnedBy(approvalOrUserSandBox, adminUser) ? approvalOrUserSandBox : null;
                         } else {
                             sandBox = sandBoxService.createUserSandBox(adminUser.getId(), approvalOrUserSandBox);
                         }
@@ -371,6 +371,10 @@ public class BroadleafAdminRequestProcessor extends AbstractBroadleafWebRequestP
                 }
                 if (previouslySetSandBoxId != null) {
                     sandBox = sandBoxService.retrieveSandBoxManagementById(previouslySetSandBoxId);
+                    if (sandBox != null && SandBoxType.USER.equals(sandBox.getSandBoxType())
+                            && !isUserSandBoxOwnedBy(sandBox, adminUser)) {
+                        sandBox = null;
+                    }
                 }
             }
 
@@ -419,6 +423,20 @@ public class BroadleafAdminRequestProcessor extends AbstractBroadleafWebRequestP
                     : DeployBehavior.OVERWRITE_PARENT);
             brc.getAdditionalProperties().put("adminUser", adminUser);
         }
+    }
+
+    /**
+     * A USER sandbox is a private workspace and may only be used by the admin user that authored it. Sandboxes
+     * looked up by id alone (e.g. from the {@link #SANDBOX_REQ_PARAM} request parameter) are not restricted by
+     * author, so ownership must be confirmed before the sandbox is adopted for the current request.
+     */
+    protected boolean isUserSandBoxOwnedBy(SandBox sandBox, AdminUser adminUser) {
+        boolean owned = adminUser.getId() != null && adminUser.getId().equals(sandBox.getAuthor());
+        if (!owned) {
+            LOG.warn("Admin user " + adminUser.getId() + " attempted to use user sandbox " + sandBox.getId()
+                    + " owned by admin user " + sandBox.getAuthor() + ". The request for that sandbox was ignored.");
+        }
+        return owned;
     }
 
     @Override
