@@ -116,15 +116,40 @@ public class BroadleafManageCustomerPaymentsController extends BroadleafAbstract
             throw new IllegalArgumentException("Requested customer payment does not exist.");
         }
 
+        validateCustomerOwnedData(customerPayment);
+
         customerPaymentService.setAsDefaultPayment(customerPayment);
 
         return getCustomerPaymentView();
     }
 
     public String removeCustomerPayment(HttpServletRequest request, Model model, Long customerPaymentId) {
-        customerPaymentService.deleteCustomerPaymentById(customerPaymentId);
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(customerPaymentId);
+
+        // we don't care if the payment is null on a remove
+        if (customerPayment != null) {
+            validateCustomerOwnedData(customerPayment);
+            customerPaymentService.deleteCustomerPaymentById(customerPaymentId);
+        }
 
         return getCustomerPaymentView();
+    }
+
+    /**
+     * Verifies that the given payment belongs to the customer active on the current request. The saved payment is only
+     * ever resolved from a request supplied id, so without this check any authenticated customer could read, default or
+     * delete another customer's saved payment by guessing its primary key.
+     *
+     * @param customerPayment the payment resolved from the request supplied customerPaymentId
+     */
+    protected void validateCustomerOwnedData(CustomerPayment customerPayment) {
+        Customer activeCustomer = CustomerState.getCustomer();
+
+        if (activeCustomer == null || activeCustomer.getId() == null
+                || customerPayment.getCustomer() == null
+                || !activeCustomer.getId().equals(customerPayment.getCustomer().getId())) {
+            throw new SecurityException("The active customer does not own the payment that they are trying to view, edit, or remove.");
+        }
     }
 
     public String getCustomerPaymentView() {
