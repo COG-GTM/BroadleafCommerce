@@ -29,6 +29,13 @@ public interface CustomerPaymentDao {
 
     CustomerPayment readCustomerPaymentById(Long customerPaymentId);
 
+    /**
+     * Reads the {@link CustomerPayment} with the given id only when it is owned by the customer with the given id.
+     *
+     * @return the matching payment, or null when it does not exist or belongs to a different customer
+     */
+    CustomerPayment readCustomerPaymentByIdAndCustomerId(Long customerPaymentId, Long customerId);
+
     CustomerPayment readCustomerPaymentByToken(String token);
 
     void deleteCustomerPaymentById(Long customerPaymentId);

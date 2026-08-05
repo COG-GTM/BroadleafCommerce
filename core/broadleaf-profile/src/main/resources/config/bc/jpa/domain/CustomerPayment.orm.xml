@@ -27,6 +27,12 @@
             ORDER BY cp.id</query>
     </named-query>
 
+    <named-query name="BC_READ_CUSTOMER_PAYMENT_BY_ID_AND_CUSTOMER_ID" >
+        <query>SELECT cp FROM org.broadleafcommerce.profile.core.domain.CustomerPaymentImpl cp
+            WHERE cp.id = :customerPaymentId
+            AND cp.customer.id = :customerId</query>
+    </named-query>
+
     <named-query name="BC_READ_CUSTOMER_PAYMENT_BY_TOKEN" >
         <query>SELECT cp FROM org.broadleafcommerce.profile.core.domain.CustomerPaymentImpl cp
             WHERE cp.paymentToken = :token</query>
