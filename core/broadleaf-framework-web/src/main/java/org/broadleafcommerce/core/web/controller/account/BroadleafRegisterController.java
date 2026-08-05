@@ -28,12 +28,17 @@ import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.validator.RegisterCustomerValidator;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
 import org.broadleafcommerce.profile.web.core.service.register.RegistrationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
+
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -52,6 +57,20 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author bpolster
  */
 public class BroadleafRegisterController extends BroadleafAbstractController {
+
+    /**
+     * Fields that must never be populated from request parameters when registering. The identifier in particular
+     * would otherwise let a submitted {@code customer.id} be merged over an arbitrary existing customer.
+     */
+    protected static final String[] DISALLOWED_REGISTRATION_FIELDS = {
+            "id",
+            "customer.id",
+            "customer.password",
+            "customer.registered",
+            "customer.deactivated",
+            "customer.externalId",
+            "customer.taxExemptionCode"
+    };
 
     protected static String registerSuccessView = "ajaxredirect:";
     protected static String registerView = "authentication/register";
@@ -90,6 +109,7 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
             HttpServletResponse response,
             Model model
     ) throws ServiceException, PricingException {
+        resetCustomerId(registerCustomerForm);
 
         if (useEmailForLogin) {
             Customer customer = registerCustomerForm.getCustomer();
@@ -133,6 +153,32 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     public RegisterCustomerForm initCustomerRegistrationForm() {
         return registrationService.initCustomerRegistrationForm();
+    }
+
+    @InitBinder
+    public void initRegisterCustomerBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(DISALLOWED_REGISTRATION_FIELDS);
+    }
+
+    /**
+     * Restores the identifier of the customer being registered to the one the server assigned when the form was
+     * initialized: either the anonymous customer of the current session or, for anyone else, none at all. This
+     * discards an identifier supplied as a request parameter, which would otherwise be merged over the customer
+     * it points at.
+     *
+     * @param registerCustomerForm the submitted registration form
+     */
+    protected void resetCustomerId(RegisterCustomerForm registerCustomerForm) {
+        Customer customer = registerCustomerForm.getCustomer();
+        if (customer == null) {
+            return;
+        }
+
+        Customer sessionCustomer = CustomerState.getCustomer();
+        Long registerableId = (sessionCustomer != null && sessionCustomer.isAnonymous()) ? sessionCustomer.getId() : null;
+        if (!Objects.equals(registerableId, customer.getId())) {
+            customer.setId(registerableId);
+        }
     }
 
     public boolean isUseEmailForLogin() {

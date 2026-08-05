@@ -50,6 +50,23 @@ import jakarta.servlet.http.HttpServletResponse;
  */
 public class RegisterCustomerController {
 
+    /**
+     * The only request parameters that may be bound onto the registration form. Anything else, most notably
+     * {@code customer.id}, is ignored so that a submitted identifier cannot be merged over an existing customer.
+     */
+    protected static final String[] ALLOWED_REGISTRATION_FIELDS = {
+            "customer.firstName",
+            "customer.lastName",
+            "customer.emailAddress",
+            "customer.username",
+            "customer.challengeQuestion",
+            "customer.challengeAnswer",
+            "customer.unencodedChallengeAnswer",
+            "customer.receiveEmail",
+            "password",
+            "passwordConfirm"
+    };
+
     // URLs For success and failure
     protected String displayRegistrationFormView = "/account/registration/registerCustomer";
     protected String registrationErrorView = displayRegistrationFormView;
@@ -146,6 +163,7 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        binder.setAllowedFields(ALLOWED_REGISTRATION_FIELDS);
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
