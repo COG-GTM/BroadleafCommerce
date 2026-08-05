@@ -56,6 +56,11 @@ public class CustomerPaymentServiceImpl implements CustomerPaymentService {
     }
 
     @Override
+    public CustomerPayment readCustomerPaymentByIdAndCustomerId(Long customerPaymentId, Long customerId) {
+        return customerPaymentDao.readCustomerPaymentByIdAndCustomerId(customerPaymentId, customerId);
+    }
+
+    @Override
     public CustomerPayment readCustomerPaymentByToken(String token) {
         return customerPaymentDao.readCustomerPaymentByToken(token);
     }
