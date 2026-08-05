@@ -64,9 +64,7 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     public void createCustomerPhoneFromController(PhoneNameForm phoneNameForm) {
         BindingResult errors = new BeanPropertyBindingResult(phoneNameForm, "phoneNameForm");
 
-        Customer customer = customerService.readCustomerByUsername("customer1");
         request = this.getNewServletInstance();
-        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(), customer);
 
         String view = customerPhoneController.savePhone(phoneNameForm, errors, request, null, null);
         assert (view.indexOf(SUCCESS) >= 0);
@@ -132,6 +130,30 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         assert ((phones_1_size - phones_2.size()) == 1);
     }
 
+    @Test(groups = "deleteCustomerPhoneFromControllerRequiresOwnership", dependsOnGroups = "createCustomerPhoneFromController")
+    @Transactional
+    public void deleteCustomerPhoneFromControllerRequiresOwnership() {
+        List<CustomerPhone> phones = customerPhoneService.readAllCustomerPhonesByCustomerId(userId);
+        Long victimCustomerPhoneId = phones.get(0).getId();
+
+        request = this.getNewServletInstance();
+        request.setAttribute(
+                CustomerStateRequestProcessor.getCustomerRequestAttributeName(),
+                customerService.readCustomerByUsername("customer2")
+        );
+
+        boolean rejected = false;
+
+        try {
+            customerPhoneController.deletePhone(victimCustomerPhoneId, request);
+        } catch (SecurityException e) {
+            rejected = true;
+        }
+
+        assert (rejected);
+        assert (customerPhoneService.readCustomerPhoneById(victimCustomerPhoneId) != null);
+    }
+
     @Test(groups = "viewCustomerPhoneFromController",dependsOnGroups = "readCustomer")
     public void viewCustomerPhoneFromController() {
         PhoneNameForm pnf = new PhoneNameForm();
@@ -153,9 +175,7 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
 
         BindingResult errors = new BeanPropertyBindingResult(pnf, "phoneNameForm");
 
-        Customer customer = customerService.readCustomerByUsername("customer1");
         request = this.getNewServletInstance();
-        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(), customer);
 
         String view = customerPhoneController.viewPhone(phones_1.get(0).getId(), request, pnf, errors);
         assert (view.indexOf(SUCCESS) >= 0);
@@ -165,6 +185,9 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
     private MockHttpServletRequest getNewServletInstance() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.getSession().setAttribute("customer_session", userId); //set customer on session
+
+        Customer customer = customerService.readCustomerByUsername("customer1");
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(), customer);
 
         return request;
     }
