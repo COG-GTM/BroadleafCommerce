@@ -832,7 +832,7 @@ public class OrderServiceImpl implements OrderService {
         preValidateCartOperation(findOrderById(orderId));
         try {
             OrderItem oi = orderItemService.readOrderItemById(orderItemId);
-            if (oi == null) {
+            if (!isOrderItemPartOfOrder(orderId, oi)) {
                 throw new WorkflowException(new ItemNotFoundException());
             }
             List<Long> childrenToRemove = new ArrayList<Long>();
@@ -892,10 +892,26 @@ public class OrderServiceImpl implements OrderService {
     protected Order findOrderByIdOrByOrderItemId(final Long orderId, final Long orderItemId) {
         final OrderItem orderItem = orderItemService.readOrderItemById(orderItemId);
         final String namedType = OrderStatus.NAMED.getType();
-        if (orderItem != null && orderItem.getOrder() != null && namedType.equals(orderItem.getOrder().getStatus().getType())) {
+        if (isOrderItemPartOfOrder(orderId, orderItem)
+                && namedType.equals(orderItem.getOrder().getStatus().getType())) {
             return orderItem.getOrder();
         }
         return findOrderById(orderId);
+    }
+
+    /**
+     * Determines whether the given order item belongs to the order identified by the given id. Callers resolve that
+     * order id from their own security context (the current cart, or a named order looked up for the current
+     * customer), so this comparison is what keeps an item id supplied by an end user from targeting another
+     * customer's order.
+     *
+     * @param orderId the id of the order the operation is scoped to
+     * @param orderItem the order item the operation was requested for, may be null
+     * @return true when the item is not null and is owned by the given order
+     */
+    protected boolean isOrderItemPartOfOrder(final Long orderId, final OrderItem orderItem) {
+        return orderId != null && orderItem != null && orderItem.getOrder() != null
+                && orderId.equals(orderItem.getOrder().getId());
     }
 
     @Override
