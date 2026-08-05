@@ -137,6 +137,7 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public Customer registerCustomer(Customer customer, String password, String passwordConfirm) {
+        checkRegistrationTarget(customer);
         customer.setRegistered(true);
 
         // When unencodedPassword is set the save() will encode it
@@ -148,6 +149,26 @@ public class CustomerServiceImpl implements CustomerService {
         notifyPostRegisterListeners(retCustomer);
 
         return retCustomer;
+    }
+
+    /**
+     * Registration may only create a customer or promote an anonymous one, so a customer carrying the id of an
+     * already registered customer is refused. Without this the subsequent save would merge the submitted values
+     * over that customer, handing over their account.
+     *
+     * @param customer the customer being registered
+     */
+    protected void checkRegistrationTarget(Customer customer) {
+        if (customer.getId() == null) {
+            return;
+        }
+
+        Customer existingCustomer = readCustomerById(customer.getId());
+        if (existingCustomer != null && existingCustomer.isRegistered()) {
+            throw new IllegalArgumentException("Attempting to register a customer using the id (" + customer.getId() +
+                    ") of a customer that is already registered. Registration may only create a new customer or " +
+                    "register the anonymous customer of the current session.");
+        }
     }
 
     @Override
