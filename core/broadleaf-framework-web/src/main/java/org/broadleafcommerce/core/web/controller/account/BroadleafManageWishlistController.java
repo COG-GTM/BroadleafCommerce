@@ -36,7 +36,6 @@ import org.springframework.ui.Model;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import jakarta.annotation.Resource;
@@ -114,6 +113,10 @@ public class BroadleafManageWishlistController extends AbstractAccountController
     ) throws RemoveFromCartException {
         Order wishlist = orderService.findNamedOrderForCustomer(wishlistName, CustomerState.getCustomer());
 
+        if (wishlist == null || findItemInWishlist(wishlist, itemId) == null) {
+            throw new IllegalArgumentException("The item id provided was not found in the wishlist");
+        }
+
         orderService.removeItem(wishlist.getId(), itemId, false);
 
         model.addAttribute("wishlist", wishlist);
@@ -133,15 +136,7 @@ public class BroadleafManageWishlistController extends AbstractAccountController
             model.addAttribute("invalidWishlist", true);
             return getAccountWishlistView();
         }
-        List<OrderItem> orderItems = wishlist.getOrderItems();
-
-        OrderItem orderItem = null;
-        for (OrderItem item : orderItems) {
-            if (orderItemId.equals(item.getId())) {
-                orderItem = item;
-                break;
-            }
-        }
+        OrderItem orderItem = findItemInWishlist(wishlist, orderItemId);
 
         if (orderItem != null) {
             Order cartOrder = orderService.addItemFromNamedOrder(wishlist, orderItem, false);
@@ -171,6 +166,27 @@ public class BroadleafManageWishlistController extends AbstractAccountController
         cartOrder = orderService.save(cartOrder, true);
         model.addAttribute("wishlist", wishlist);
         return getAccountWishlistRedirect();
+    }
+
+    /**
+     * Locates the item within the given wishlist. Wishlist operations are driven by an item id supplied by the
+     * client, so the item must be resolved against the wishlist that was looked up for the current customer rather
+     * than read directly by its id, otherwise an item belonging to another customer's wishlist could be targeted.
+     *
+     * @param wishlist the wishlist belonging to the current customer
+     * @param orderItemId the client supplied order item id
+     * @return the matching item, or null if the wishlist does not contain it
+     */
+    protected OrderItem findItemInWishlist(Order wishlist, Long orderItemId) {
+        if (wishlist == null || orderItemId == null) {
+            return null;
+        }
+        for (OrderItem item : wishlist.getOrderItems()) {
+            if (orderItemId.equals(item.getId())) {
+                return item;
+            }
+        }
+        return null;
     }
 
     protected boolean isWishlistValid(Order wishlist) {
