@@ -30,6 +30,15 @@ public interface CustomerPaymentService {
 
     CustomerPayment readCustomerPaymentById(Long customerPaymentId);
 
+    /**
+     * Reads the {@link CustomerPayment} with the given id only if it is owned by the customer with the given id.
+     * This should be preferred over {@link #readCustomerPaymentById(Long)} whenever the id originated from a
+     * client request, so that an id belonging to another customer cannot resolve.
+     *
+     * @return the matching payment, or null if it does not exist or belongs to a different customer
+     */
+    CustomerPayment readCustomerPaymentByIdAndCustomerId(Long customerPaymentId, Long customerId);
+
     CustomerPayment readCustomerPaymentByToken(String token);
 
     void deleteCustomerPaymentById(Long customerPaymentId);
