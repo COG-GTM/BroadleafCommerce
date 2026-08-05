@@ -35,6 +35,8 @@ import org.broadleafcommerce.core.web.checkout.validator.OrderInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.validator.ShippingInfoFormValidator;
 import org.broadleafcommerce.core.web.order.service.CartStateService;
 import org.broadleafcommerce.core.web.service.InitBinderService;
+import org.broadleafcommerce.profile.core.domain.Customer;
+import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CountrySubdivisionService;
@@ -42,6 +44,7 @@ import org.broadleafcommerce.profile.core.service.CustomerAddressService;
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.PhoneService;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.ui.Model;
@@ -59,6 +62,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * @author Joshua Skorton (jskorton)
  */
 public abstract class AbstractCheckoutController extends BroadleafAbstractController {
+
+    public static final String CUSTOMER_PAYMENT_OWNERSHIP_ERROR_MESSAGE = "The active customer does not own the customer payment that they are trying to use.";
 
     protected static String ACTIVE_STAGE = "activeStage";
 
@@ -171,6 +176,38 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
 
     protected String getConfirmationView(String orderNumber) {
         return getBaseConfirmationView() + "/" + orderNumber;
+    }
+
+    /**
+     * Reads the {@link CustomerPayment} identified by a client supplied id, scoped to the customer of the current
+     * request. An id that does not exist or that belongs to a different customer never resolves, which keeps a
+     * stored payment token and its billing address from being attached to someone else's order.
+     *
+     * @throws SecurityException if the active customer does not own the requested customer payment
+     */
+    protected CustomerPayment readCustomerPaymentForActiveCustomer(Long customerPaymentId) throws SecurityException {
+        Customer activeCustomer = CustomerState.getCustomer();
+        CustomerPayment customerPayment = null;
+
+        if (activeCustomer != null) {
+            customerPayment = customerPaymentService.readCustomerPaymentByIdAndCustomerId(
+                    customerPaymentId, activeCustomer.getId()
+            );
+        }
+
+        if (customerPayment == null) {
+            throw new SecurityException(CUSTOMER_PAYMENT_OWNERSHIP_ERROR_MESSAGE);
+        }
+
+        return customerPayment;
+    }
+
+    /**
+     * @throws SecurityException if the active customer does not own the requested customer payment
+     * @see #readCustomerPaymentForActiveCustomer(Long)
+     */
+    protected void validateCustomerPaymentOwnership(Long customerPaymentId) throws SecurityException {
+        readCustomerPaymentForActiveCustomer(customerPaymentId);
     }
 
     protected void populateModelWithReferenceData(HttpServletRequest request, Model model) {

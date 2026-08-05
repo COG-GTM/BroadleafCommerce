@@ -70,6 +70,23 @@ public class CustomerPaymentDaoImpl implements CustomerPaymentDao {
     }
 
     @Override
+    public CustomerPayment readCustomerPaymentByIdAndCustomerId(Long customerPaymentId, Long customerId) {
+        if (customerPaymentId == null || customerId == null) {
+            return null;
+        }
+        Query query = em.createNamedQuery("BC_READ_CUSTOMER_PAYMENT_BY_ID_AND_CUSTOMER_ID");
+        query.setParameter("customerPaymentId", customerPaymentId);
+        query.setParameter("customerId", customerId);
+        CustomerPayment payment = null;
+        try {
+            payment = (CustomerPayment) query.getSingleResult();
+        } catch (NoResultException e) {
+            //do nothing
+        }
+        return payment;
+    }
+
+    @Override
     public void deleteCustomerPaymentById(Long customerPaymentId) {
         CustomerPayment customerPayment = readCustomerPaymentById(customerPaymentId);
         if (customerPayment != null) {
