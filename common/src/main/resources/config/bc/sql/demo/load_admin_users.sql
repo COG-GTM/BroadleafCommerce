@@ -13,7 +13,11 @@
 --
 -- Superadmin User
 --
-INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','admin', true);
+-- The password below is the BCrypt hash of the well known default password 'admin'. It is only intended to
+-- bootstrap the admin on a fresh installation - change it immediately and disable this account before the
+-- application is exposed to anything other than a local development environment.
+--
+INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','$2b$10$b7aiji3ETJ8jlmQaTAmWDefT7wdVasMRiW2ifhmR0QoGjACcpIMFW', true);
 
 --
 -- Roles for sample admin users.

@@ -148,7 +148,9 @@ public interface CustomerService {
      * Verifies that a customer has a valid token.
      *
      * @param token    password reset token
-     * @param customer {@link Customer} who owns the token
+     * @param customer {@link Customer} who owns the token. Tokens are persisted with the salted, one way
+     *                 {@link org.springframework.security.crypto.password.PasswordEncoder PasswordEncoder}, so the
+     *                 owning customer is required in order to check the token against their outstanding tokens
      * @return Response can contain errors including (invalidToken, tokenUsed, and tokenExpired)
      */
     GenericResponse checkPasswordResetToken(String token, Customer customer);
