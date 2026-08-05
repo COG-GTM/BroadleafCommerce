@@ -79,6 +79,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
         if (!result.hasErrors()) {
             if (paymentForm.getShouldSaveNewPayment() && !paymentForm.getShouldUseCustomerPayment()) {
                 if (paymentForm.getCustomerPaymentId() != null) {
+                    validateCustomerPaymentOwnership(paymentForm.getCustomerPaymentId());
                     savedPaymentService.updateSavedPayment(customer, paymentForm);
                 } else if (paymentForm.getCustomerPaymentId() == null) {
                     Long customerPaymentId = savedPaymentService.addSavedPayment(customer, paymentForm);
@@ -89,7 +90,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
             }
 
             if (paymentForm.getShouldUseCustomerPayment()) {
-                CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
+                CustomerPayment customerPayment = readCustomerPaymentForActiveCustomer(
                         paymentForm.getCustomerPaymentId()
                 );
 
@@ -195,15 +196,13 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
     }
 
     protected void copyCustomerPaymentAddressToBillingAddress(PaymentInfoForm paymentForm) {
-        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
+        CustomerPayment customerPayment = readCustomerPaymentForActiveCustomer(
                 paymentForm.getCustomerPaymentId()
         );
 
-        if (customerPayment != null) {
-            Address address = customerPayment.getBillingAddress();
-            if (address != null) {
-                paymentForm.setAddress(addressService.copyAddress(address));
-            }
+        Address address = customerPayment.getBillingAddress();
+        if (address != null) {
+            paymentForm.setAddress(addressService.copyAddress(address));
         }
     }
 

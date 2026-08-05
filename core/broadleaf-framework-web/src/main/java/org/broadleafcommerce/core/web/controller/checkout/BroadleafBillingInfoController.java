@@ -60,7 +60,6 @@ public class BroadleafBillingInfoController extends AbstractCheckoutController {
             BindingResult result
     ) throws PricingException, ServiceException {
         Order cart = CartState.getCart();
-        CustomerPayment customerPayment = null;
 
         if (billingForm.isUseShippingAddress()) {
             copyShippingAddressToBillingAddress(cart, billingForm);
@@ -68,13 +67,11 @@ public class BroadleafBillingInfoController extends AbstractCheckoutController {
 
         Boolean useCustomerPayment = billingForm.getUseCustomerPayment();
         if (useCustomerPayment && billingForm.getCustomerPaymentId() != null) {
-            customerPayment = customerPaymentService.readCustomerPaymentById(billingForm.getCustomerPaymentId());
+            CustomerPayment customerPayment = readCustomerPaymentForActiveCustomer(billingForm.getCustomerPaymentId());
 
-            if (customerPayment != null) {
-                Address address = customerPayment.getBillingAddress();
-                if (address != null) {
-                    billingForm.setAddress(addressService.copyAddress(address));
-                }
+            Address address = customerPayment.getBillingAddress();
+            if (address != null) {
+                billingForm.setAddress(addressService.copyAddress(address));
             }
         }
 
