@@ -19,6 +19,7 @@ package org.broadleafcommerce.profile.web.controller;
 
 import org.apache.commons.validator.GenericValidator;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPhone;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.service.CustomerPhoneService;
@@ -76,18 +77,23 @@ public class CustomerPhoneController {
     private String viewPhoneSuccessView = prefix;
 
     /**
-     * Completely deletes the customerPhone with the given customerPhoneId from the database.
+     * Completely deletes the customerPhone with the given customerPhoneId from the database. The phone is only removed
+     * when it belongs to the customer active on the current request.
      *
      * @param customerPhoneId
      * @param request
      * @return
      */
-    @RequestMapping(value = "deletePhone", method = {
-            RequestMethod.GET, RequestMethod.POST}
-    )
+    @RequestMapping(value = "deletePhone", method = RequestMethod.POST)
     public String deletePhone(@RequestParam(required = true)
                               Long customerPhoneId, HttpServletRequest request) {
-        customerPhoneService.deleteCustomerPhoneById(customerPhoneId);
+        CustomerPhone customerPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
+
+        // we don't care if the phone is null on a delete
+        if (customerPhone != null) {
+            validateCustomerOwnedPhone(customerPhone, request);
+            customerPhoneService.deleteCustomerPhoneById(customerPhoneId);
+        }
 
         request.setAttribute("phone.deletedPhone", "true");
 
@@ -118,14 +124,18 @@ public class CustomerPhoneController {
      * @param request
      * @return
      */
-    @RequestMapping(value = "makePhoneDefault", method = {
-            RequestMethod.GET, RequestMethod.POST}
-    )
+    @RequestMapping(value = "makePhoneDefault", method = RequestMethod.POST)
     public String makePhoneDefault(
             @RequestParam(required = true) Long customerPhoneId,
             HttpServletRequest request
     ) {
         CustomerPhone customerPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
+
+        if (customerPhone == null) {
+            throw new IllegalArgumentException("Customer Phone not found with the specified customerPhoneId");
+        }
+
+        validateCustomerOwnedPhone(customerPhone, request);
         customerPhoneService.makeCustomerPhoneDefault(customerPhone.getId(), customerPhone.getCustomer().getId());
 
         request.setAttribute("phone.madePhoneDefault", "true");
@@ -176,6 +186,13 @@ public class CustomerPhoneController {
             customerPhone.setPhone(phoneNameForm.getPhone());
 
             if ((customerPhoneId != null) && (customerPhoneId > 0)) {
+                CustomerPhone existingCustomerPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
+
+                if (existingCustomerPhone == null) {
+                    throw new IllegalArgumentException("Customer Phone not found with the specified customerPhoneId");
+                }
+
+                validateCustomerOwnedPhone(existingCustomerPhone, request);
                 customerPhone.setId(customerPhoneId);
             }
 
@@ -190,6 +207,24 @@ public class CustomerPhoneController {
             return savePhoneSuccessView;
         } else {
             return savePhoneErrorView;
+        }
+    }
+
+    /**
+     * Verifies that the given customerPhone belongs to the customer active on the current request. Mirrors
+     * BroadleafManageCustomerAddressesController#validateCustomerOwnedData so that a phone can never be read,
+     * modified or removed across account boundaries by guessing its primary key.
+     *
+     * @param customerPhone the phone resolved from the request supplied customerPhoneId
+     * @param request
+     */
+    protected void validateCustomerOwnedPhone(CustomerPhone customerPhone, HttpServletRequest request) {
+        Customer activeCustomer = customerState.getCustomer(request);
+
+        if (activeCustomer == null || activeCustomer.getId() == null
+                || customerPhone.getCustomer() == null
+                || !activeCustomer.getId().equals(customerPhone.getCustomer().getId())) {
+            throw new SecurityException("The active customer does not own the phone that they are trying to view, edit, or remove.");
         }
     }
 
