@@ -35,6 +35,7 @@ import org.broadleafcommerce.core.order.service.call.ConfigurableOrderItemReques
 import org.broadleafcommerce.core.order.service.call.OrderItemRequestDTO;
 import org.broadleafcommerce.core.order.service.exception.AddToCartException;
 import org.broadleafcommerce.core.order.service.exception.IllegalCartOperationException;
+import org.broadleafcommerce.core.order.service.exception.ItemNotFoundException;
 import org.broadleafcommerce.core.order.service.exception.RemoveFromCartException;
 import org.broadleafcommerce.core.order.service.exception.UpdateCartException;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
@@ -133,6 +134,7 @@ public class BroadleafCartController extends AbstractCartController {
             String originalOrderItem = request.getParameter("originalOrderItem");
             if (StringUtils.isNotEmpty(originalOrderItem)) {
                 Long originalOrderItemId = Long.parseLong(originalOrderItem);
+                validateItemBelongsToCart(cart, originalOrderItemId);
                 updateAddRequestQuantities(itemRequest, originalOrderItemId);
 
                 cart = orderService.removeItem(cart.getId(), originalOrderItemId, false);
@@ -158,6 +160,23 @@ public class BroadleafCartController extends AbstractCartController {
         itemRequest.setQuantity(orderItem.getQuantity());
         for (OrderItemRequestDTO childDTO : itemRequest.getChildOrderItems()) {
             childDTO.setQuantity(childDTO.getQuantity() * orderItem.getQuantity());
+        }
+    }
+
+    /**
+     * Verifies that the given order item is part of the given cart. The item id originates from the request, while the
+     * cart comes from {@link CartState}, so this check is what prevents a caller from operating on an order item that
+     * belongs to another customer's order.
+     *
+     * @param cart the cart of the current customer
+     * @param orderItemId the request supplied id of the order item to operate on
+     * @throws RemoveFromCartException when the item does not exist or is not a member of the given cart
+     */
+    protected void validateItemBelongsToCart(Order cart, Long orderItemId) throws RemoveFromCartException {
+        OrderItem orderItem = orderItemId == null ? null : orderItemService.readOrderItemById(orderItemId);
+        if (cart == null || cart.getId() == null || orderItem == null || orderItem.getOrder() == null
+                || !cart.getId().equals(orderItem.getOrder().getId())) {
+            throw new RemoveFromCartException("Could not remove from cart", new ItemNotFoundException());
         }
     }
 
@@ -368,6 +387,8 @@ public class BroadleafCartController extends AbstractCartController {
             OrderItemRequestDTO itemRequest
     ) throws IOException, PricingException, RemoveFromCartException {
         Order cart = CartState.getCart();
+
+        validateItemBelongsToCart(cart, itemRequest.getOrderItemId());
 
         cart = orderService.removeItem(cart.getId(), itemRequest.getOrderItemId(), false);
         cart = orderService.save(cart, true);
