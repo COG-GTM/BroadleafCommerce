@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +78,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * {@link ObjectInputFilter} pattern applied to everything that is read back from Zookeeper by
+     * {@link #deserialize(byte[])}.  Anything that is not explicitly allowed is rejected, which prevents arbitrary
+     * classes from being instantiated if the data in Zookeeper is tampered with.  The allowed packages cover the
+     * queue payloads that Broadleaf itself puts on distributed queues (e.g.
+     * {@link org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand} implementations and the
+     * Solr documents they carry), along with the common JDK value and collection types those payloads are built from.
+     * <p>
+     * Applications that place their own payload types on a {@link ZookeeperDistributedQueue} should extend this class
+     * and override {@link #getDeserializationFilterPattern()}.
+     *
+     * @see ObjectInputFilter.Config#createFilter(String)
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxbytes=1048576;maxdepth=64;maxrefs=100000;maxarray=100000;"
+                    + "java.lang.*;java.util.*;java.math.*;java.time.**;"
+                    + "org.apache.solr.common.**;org.broadleafcommerce.**;"
+                    + "!*";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -822,17 +844,37 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * The pattern that restricts which classes {@link #deserialize(byte[])} is allowed to instantiate.  Override this
+     * to allow additional payload types.  Any pattern must keep a trailing reject-all ('!*') entry so that unexpected
+     * classes remain blocked.
+     *
+     * @return an {@link ObjectInputFilter} pattern
+     */
+    protected String getDeserializationFilterPattern() {
+        return DEFAULT_DESERIALIZATION_FILTER_PATTERN;
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, filtered
+     * by {@link #getDeserializationFilterPattern()}.
      *
      * @param bytes
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, ObjectInputFilter.Config.createFilter(getDeserializationFilterPattern()));
+    }
+
+    static Object deserialize(byte[] bytes, ObjectInputFilter filter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("Refused to deserialize an element from the Zookeeper queue because it "
+                    + "is not an allowed type. Override getDeserializationFilterPattern() to allow additional types.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
