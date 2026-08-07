@@ -92,6 +92,19 @@ public class StaticAssetServiceImplTest {
         assetService.validateFileExtension(file);
     }
 
+    @Test
+    public void testSanitizeFileNameStripsDirectoryComponents() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertTrue("shell.jsp".equals(assetService.sanitizeFileName("../../../opt/tomcat/webapps/ROOT/shell.jsp")));
+        assertTrue("shell.jsp".equals(assetService.sanitizeFileName("..\\..\\shell.jsp")));
+        assertTrue("image.jpg".equals(assetService.sanitizeFileName("image.jpg")));
+    }
+
+    @Test(expected = IOException.class)
+    public void testSanitizeFileNameRejectsParentDirectoryName() throws IOException {
+        new StaticAssetServiceImpl().sanitizeFileName("../..");
+    }
+
     @Test(expected = IOException.class)
     public void testWhitelistFileExtensions() throws IOException {
         StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
