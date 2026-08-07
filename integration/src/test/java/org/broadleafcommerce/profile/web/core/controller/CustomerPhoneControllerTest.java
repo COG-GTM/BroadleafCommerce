@@ -19,6 +19,8 @@ package org.broadleafcommerce.profile.web.core.controller;
 
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPhone;
+import org.broadleafcommerce.profile.core.domain.Phone;
+import org.broadleafcommerce.profile.core.domain.PhoneImpl;
 import org.broadleafcommerce.profile.core.service.CustomerPhoneService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.CustomerPhoneController;
@@ -132,6 +134,57 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         assert ((phones_1_size - phones_2.size()) == 1);
     }
 
+    @Test(groups = "updateCustomerPhoneFromControllerRequiresOwnership", dependsOnGroups = "createCustomerPhoneFromController")
+    @Transactional
+    public void updateCustomerPhoneFromControllerRequiresOwnership() {
+        CustomerPhone victimPhone = customerPhoneService.readAllCustomerPhonesByCustomerId(userId).get(0);
+        String victimPhoneNumber = victimPhone.getPhone().getPhoneNumber();
+
+        PhoneNameForm pnf = buildPhoneNameForm("attacker_phone", "999-888-7777");
+        BindingResult errors = new BeanPropertyBindingResult(pnf, "phoneNameForm");
+
+        request = this.getNewServletInstanceForCustomer("customer2");
+
+        boolean rejected = false;
+
+        try {
+            customerPhoneController.savePhone(
+                    pnf, errors, request, victimPhone.getId(), victimPhone.getPhone().getId()
+            );
+        } catch (SecurityException e) {
+            rejected = true;
+        }
+
+        assert (rejected);
+
+        CustomerPhone unchangedPhone = customerPhoneService.readCustomerPhoneById(victimPhone.getId());
+        assert (unchangedPhone.getCustomer().getId().equals(userId));
+        assert (unchangedPhone.getPhone().getPhoneNumber().equals(victimPhoneNumber));
+    }
+
+    @Test(groups = "savePhoneIgnoresRequestSuppliedPhoneId", dependsOnGroups = "createCustomerPhoneFromController")
+    @Transactional
+    public void savePhoneIgnoresRequestSuppliedPhoneId() {
+        CustomerPhone victimPhone = customerPhoneService.readAllCustomerPhonesByCustomerId(userId).get(0);
+        Long victimPhoneId = victimPhone.getPhone().getId();
+        String victimPhoneNumber = victimPhone.getPhone().getPhoneNumber();
+
+        PhoneNameForm pnf = buildPhoneNameForm("attacker_phone_no_customer_phone_id", "999-888-7777");
+        BindingResult errors = new BeanPropertyBindingResult(pnf, "phoneNameForm");
+
+        request = this.getNewServletInstanceForCustomer("customer2");
+
+        String view = customerPhoneController.savePhone(pnf, errors, request, null, victimPhoneId);
+        assert (view.indexOf(SUCCESS) >= 0);
+
+        Long savedPhoneId = (Long) request.getAttribute("phoneId");
+        assert (savedPhoneId != null);
+        assert (!savedPhoneId.equals(victimPhoneId));
+
+        CustomerPhone unchangedPhone = customerPhoneService.readCustomerPhoneById(victimPhone.getId());
+        assert (unchangedPhone.getPhone().getPhoneNumber().equals(victimPhoneNumber));
+    }
+
     @Test(groups = "viewCustomerPhoneFromController",dependsOnGroups = "readCustomer")
     public void viewCustomerPhoneFromController() {
         PhoneNameForm pnf = new PhoneNameForm();
@@ -167,5 +220,25 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         request.getSession().setAttribute("customer_session", userId); //set customer on session
 
         return request;
+    }
+
+    private MockHttpServletRequest getNewServletInstanceForCustomer(String username) {
+        Customer customer = customerService.readCustomerByUsername(username);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession().setAttribute("customer_session", customer.getId());
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(), customer);
+
+        return request;
+    }
+
+    private PhoneNameForm buildPhoneNameForm(String phoneName, String phoneNumber) {
+        Phone phone = new PhoneImpl();
+        phone.setPhoneNumber(phoneNumber);
+
+        PhoneNameForm phoneNameForm = new PhoneNameForm();
+        phoneNameForm.setPhone(phone);
+        phoneNameForm.setPhoneName(phoneName);
+
+        return phoneNameForm;
     }
 }
