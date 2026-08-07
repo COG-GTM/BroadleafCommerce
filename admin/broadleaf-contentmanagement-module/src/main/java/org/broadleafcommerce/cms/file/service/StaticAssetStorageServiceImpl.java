@@ -39,6 +39,7 @@ import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
 import org.broadleafcommerce.common.io.ConcurrentFileOutputStream;
 import org.broadleafcommerce.common.util.StreamCapableTransactionalOperationAdapter;
 import org.broadleafcommerce.common.util.StreamingTransactionCapableUtil;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.openadmin.server.service.artifact.ArtifactService;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -434,11 +435,12 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
             storage.setFileData(uploadBlob);
             save(storage);
         } else if (StorageType.FILESYSTEM.equals(staticAsset.getStorageType())) {
+            String assetUrl = validateFileSystemAssetUrl(staticAsset.getFullUrl());
             FileWorkArea tempWorkArea = broadleafFileService.initializeWorkArea();
             // Convert the given URL from the asset to a system-specific suitable file path
             String destFileName = FilenameUtils.normalize(
                     tempWorkArea.getFilePathLocation() + File.separator
-                            + FilenameUtils.separatorsToSystem(staticAsset.getFullUrl())
+                            + FilenameUtils.separatorsToSystem(assetUrl)
             );
 
             InputStream input = fileInputStream;
@@ -474,6 +476,23 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
                 broadleafFileService.closeWorkArea(tempWorkArea);
             }
         }
+    }
+
+    /**
+     * The url of an asset is used verbatim to build the file system path that the asset is written to, so it must not
+     * contain any relative path segments that would allow the write to escape the asset work area.
+     *
+     * @param fullUrl the url of the asset being stored
+     * @return the url of the asset
+     * @throws IOException if the url contains relative path segments
+     */
+    protected String validateFileSystemAssetUrl(String fullUrl) throws IOException {
+        String unixUrl = fullUrl == null ? null : FilenameUtils.separatorsToUnix(fullUrl);
+        String normalized = unixUrl == null ? null : FilenameUtils.normalize(unixUrl, true);
+        if (normalized == null || !normalized.equals(unixUrl)) {
+            throw new IOException("Invalid asset url: " + StringUtil.sanitize(fullUrl));
+        }
+        return normalized;
     }
 
     protected long getMaxUploadSizeForFile(String fileName) {
