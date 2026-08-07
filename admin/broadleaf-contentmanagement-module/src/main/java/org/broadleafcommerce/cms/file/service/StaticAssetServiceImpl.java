@@ -95,10 +95,9 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Value("${static.asset.invalid.chars.replacement}")
     protected String replacementString;
 
-    private static String normalizeFileExtension(MultipartFile file) {
-        int index = file.getOriginalFilename().lastIndexOf(".");
-        return file.getOriginalFilename().substring(0, index + 1)
-                + file.getOriginalFilename().substring(index + 1).toLowerCase();
+    private static String normalizeFileExtension(String fileName) {
+        int index = fileName.lastIndexOf(".");
+        return fileName.substring(0, index + 1) + fileName.substring(index + 1).toLowerCase();
     }
 
     private static String getFileExtension(MultipartFile file) {
@@ -228,7 +227,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         try {
             validateFileExtension(file);
             staticAssetStorageService.validateFileSize(file);
-            String fileName = normalizeFileExtension(file);
+            String fileName = normalizeFileExtension(sanitizeFileName(file.getOriginalFilename()));
             boolean b = validateFileName(fileName);
             if (b) {
                 fileName = fileName.replaceAll(
@@ -240,6 +239,25 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Reduces a client supplied upload file name to a single path segment.
+     * <p>
+     * The multipart resolver does not clean the submitted file name, so it can carry directory components that
+     * would otherwise end up in the asset url and, from there, in the path the asset is written to on the file
+     * system.
+     *
+     * @param originalFileName the file name as submitted by the client
+     * @return the file name without any directory component
+     * @throws IOException if the submitted file name does not contain a usable file name
+     */
+    protected String sanitizeFileName(String originalFileName) throws IOException {
+        String fileName = FilenameUtils.getName(StringUtils.defaultString(originalFileName));
+        if (StringUtils.isBlank(fileName) || ".".equals(fileName) || "..".equals(fileName)) {
+            throw new IOException("Invalid file name of file.");
+        }
+        return fileName;
     }
 
     protected boolean validateFileName(String fileName) {
