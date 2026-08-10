@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +78,22 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * System property that allows additional semicolon-delimited {@link ObjectInputFilter} patterns
+     * (e.g. {@code com.mycompany.queue.*;com.mycompany.model.**}) to be allowed when deserializing queue entries.
+     */
+    public static final String ADDITIONAL_ALLOWED_CLASSES_PROPERTY = "broadleaf.zookeeper.queue.deserialization.allowedClasses";
+
+    /**
+     * Baseline set of classes that a queue entry may be composed of, along with resource limits.  Anything not
+     * explicitly allowed is rejected by the trailing {@code !*} pattern.
+     */
+    protected static final String DEFAULT_ALLOWED_CLASSES =
+            "maxdepth=32;maxrefs=10000;maxbytes=1048576;maxarray=10000;"
+                    + "java.lang.*;java.lang.Enum;java.math.*;java.time.*;java.util.*;java.util.concurrent.atomic.*;"
+                    + "org.broadleafcommerce.**";
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +105,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private final Object DESERIALIZATION_FILTER_MONITOR = new Object();
+    private volatile ObjectInputFilter deserializationFilter;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -822,7 +842,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted
+     * by the {@link ObjectInputFilter} returned by {@link #getDeserializationFilter()} so that data read from Zookeeper
+     * cannot be used to instantiate arbitrary classes.
      *
      * @param bytes
      * @return
@@ -832,7 +854,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException(
+                    "An element from the Zookeeper queue was rejected because its type is not allowed by the "
+                            + "deserialization filter.  Allowed types can be extended with the '"
+                            + ADDITIONAL_ALLOWED_CLASSES_PROPERTY + "' system property.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
@@ -854,6 +882,36 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Allow list based filter applied to every object read from Zookeeper.  Subclasses may override this, or the
+     * '{@value #ADDITIONAL_ALLOWED_CLASSES_PROPERTY}' system property may be used to allow additional queue entry types.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = deserializationFilter;
+        if (filter == null) {
+            synchronized (DESERIALIZATION_FILTER_MONITOR) {
+                filter = deserializationFilter;
+                if (filter == null) {
+                    filter = ObjectInputFilter.Config.createFilter(buildDeserializationFilterPattern());
+                    deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    protected static String buildDeserializationFilterPattern() {
+        final StringBuilder sb = new StringBuilder(DEFAULT_ALLOWED_CLASSES);
+        final String additional = System.getProperty(ADDITIONAL_ALLOWED_CLASSES_PROPERTY);
+        if (additional != null && !additional.trim().isEmpty()) {
+            sb.append(';').append(additional.trim());
+        }
+
+        return sb.append(";!*").toString();
     }
 
     /**
