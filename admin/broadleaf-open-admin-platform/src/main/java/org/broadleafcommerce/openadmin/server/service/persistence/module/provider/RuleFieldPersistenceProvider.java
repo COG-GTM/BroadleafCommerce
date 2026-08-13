@@ -820,10 +820,6 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
                             quantityBasedRule = (QuantityBasedRule) memberType.newInstance();
                             quantityBasedRule.setQuantity(dto.getQuantity());
                             quantityBasedRule.setMatchRule(clearMvelString(translator, entityKey, fieldService, dto));
-                            if (StringUtils.isEmpty(quantityBasedRule.getMatchRule())
-                                    && !StringUtils.isEmpty(dw.getRawMvel())) {
-                                quantityBasedRule.setMatchRule(dw.getRawMvel());
-                            }
                             PropertyUtils.setNestedProperty(quantityBasedRule, mappedBy, parent);
                         } catch (Exception e) {
                             throw new RuntimeException(e);
