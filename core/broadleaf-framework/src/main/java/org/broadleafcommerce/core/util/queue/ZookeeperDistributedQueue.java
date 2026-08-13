@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,8 +78,23 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Pattern, in the format understood by {@link ObjectInputFilter.Config#createFilter(String)}, that restricts the types that
+     * can be read back off of the queue.  Anything that is not explicitly allowed is rejected, which prevents arbitrary
+     * (potentially malicious) types from being instantiated when data in Zookeeper cannot be fully trusted.
+     *
+     * @see #getDeserializationFilterPattern()
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxdepth=32;maxrefs=10000;"
+                    + "org.broadleafcommerce.**;"
+                    + "java.lang.*;java.util.*;java.math.*;java.time.*;"
+                    + "!*";
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final ObjectInputFilter DEFAULT_DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +839,31 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * The pattern used to build the {@link ObjectInputFilter} that guards {@link #deserialize(byte[])}.  Subclasses that place
+     * additional types on the queue should override this to extend, rather than remove, the default allow list.
+     *
+     * @return a filter pattern understood by {@link ObjectInputFilter.Config#createFilter(String)}
+     */
+    protected String getDeserializationFilterPattern() {
+        return DEFAULT_DESERIALIZATION_FILTER_PATTERN;
+    }
+
+    /**
+     * Allow list filter applied to every {@link ObjectInputStream} created by {@link #deserialize(byte[])}.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        final String pattern = getDeserializationFilterPattern();
+        if (DEFAULT_DESERIALIZATION_FILTER_PATTERN.equals(pattern)) {
+            return DEFAULT_DESERIALIZATION_FILTER;
+        }
+        return ObjectInputFilter.Config.createFilter(pattern);
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted to the
+     * types allowed by {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,7 +873,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            LOG.error("Rejected an element from the Zookeeper queue at " + getQueueFolderPath()
+                    + " because its type is not allowed by the deserialization filter.", e);
+            throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue "
+                    + "because its type is not allowed by the deserialization filter.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
