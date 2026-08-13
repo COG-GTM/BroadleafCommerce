@@ -139,7 +139,7 @@
                     <artifactId>gmavenplus-plugin</artifactId>
                     <version>4.2.0</version>
                     <configuration>
-                        <targetBytecode>17</targetBytecode>
+                        <targetBytecode>21</targetBytecode>
                     </configuration>
                     <executions>
                         <execution>
