@@ -652,6 +652,10 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
             if (fmd.getAddMethodType().equals(AddMethodType.LOOKUP_FOR_UPDATE)) {
                 ppr.setUpdateLookupType(true);
+                //the operation updates the looked up member of a collection owned by the entity currently being
+                //managed, so authorize against that owning entity's ceiling, as derived from server side metadata
+                ppr.withSecurityCeilingEntityClassname(StringUtils.isNotBlank(mainMetadata.getSecurityCeilingType())
+                        ? mainMetadata.getSecurityCeilingType() : mainMetadata.getCeilingType());
             }
 
             Property fp = new Property();
@@ -1003,12 +1007,6 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         PersistencePackage pkg = persistencePackageFactory.create(request);
         try {
             if (request.isUpdateLookupType()) {
-                if (pkg.getSectionCrumbs() != null && pkg.getSectionCrumbs().length > 0) {
-                    SectionCrumb sc = pkg.getSectionCrumbs()[0];
-                    if (StringUtils.isNotBlank(sc.getSectionIdentifier())) {
-                        pkg.setSecurityCeilingEntityFullyQualifiedClassname(sc.getSectionIdentifier());
-                    }
-                }
                 if (transactional) {
                     return service.update(pkg);
                 } else {
