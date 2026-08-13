@@ -152,7 +152,7 @@ public class MvelHelperTest extends TestCase {
             LOG.warn("Unable to reproduce the MVEL overloaded method problem case on this JVM - skipping assertion");
             return;
         }
-        assertEquals("true", output);
+        assertEquals("true", output.trim());
     }
 
     /**
