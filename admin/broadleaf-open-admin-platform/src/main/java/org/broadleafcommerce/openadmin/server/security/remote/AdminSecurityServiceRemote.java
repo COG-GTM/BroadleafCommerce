@@ -220,11 +220,13 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
         }
 
         SecurityServiceException primaryException = null;
+        String unqualifiedCeiling = null;
         for (String ceilingEntityFullyQualifiedName : ceilingNames) {
             boolean isQualified = securityService.isUserQualifiedForOperationOnCeilingEntity(
                     persistentAdminUser, permissionType, ceilingEntityFullyQualifiedName
             );
             if (!isQualified) {
+                unqualifiedCeiling = ceilingEntityFullyQualifiedName;
                 primaryException = new SecurityServiceException("Security Check Failed for entity operation: "
                         + operationType.toString() + " (" + ceilingEntityFullyQualifiedName + ")");
                 break;
@@ -232,9 +234,9 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
         }
         if (primaryException != null) {
             //check if the requested entity is not configured and warn
-            if (!securityService.doesOperationExistForCeilingEntity(permissionType, ceilingNames[0])) {
+            if (!securityService.doesOperationExistForCeilingEntity(permissionType, unqualifiedCeiling)) {
                 if (LOG.isWarnEnabled()) {
-                    LOG.warn("Detected security request for an unregistered ceiling entity (" + StringUtil.sanitize(ceilingNames[0]) + "). " +
+                    LOG.warn("Detected security request for an unregistered ceiling entity (" + StringUtil.sanitize(unqualifiedCeiling) + "). " +
                             "As a result, the request failed. Please make sure to configure security for any ceiling entities " +
                             "referenced via the admin. This is usually accomplished by adding records in the " +
                             "BLC_ADMIN_PERMISSION_ENTITY table. Note, depending on how the entity in question is used, you " +
