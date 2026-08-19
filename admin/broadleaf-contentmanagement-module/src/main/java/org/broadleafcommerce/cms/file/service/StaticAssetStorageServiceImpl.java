@@ -39,6 +39,7 @@ import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
 import org.broadleafcommerce.common.io.ConcurrentFileOutputStream;
 import org.broadleafcommerce.common.util.StreamCapableTransactionalOperationAdapter;
 import org.broadleafcommerce.common.util.StreamingTransactionCapableUtil;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.openadmin.server.service.artifact.ArtifactService;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,6 +80,7 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
     protected static final String DEFAULT_ADMIN_IMAGE_EXTENSIONS = "bmp,jpg,jpeg,png,img,tiff,gif";
     // 8kb default for the buffer for moving files around
     protected static final int DEFAULT_BUFFER_SIZE = 8096;
+    protected static final String PARENT_DIRECTORY_SEGMENT = "..";
     private static final Log LOG = LogFactory.getLog(StaticAssetStorageServiceImpl.class);
     protected String cacheDirectory;
 
@@ -434,17 +436,15 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
             storage.setFileData(uploadBlob);
             save(storage);
         } else if (StorageType.FILESYSTEM.equals(staticAsset.getStorageType())) {
+            String assetUrl = validateFileSystemAssetUrl(staticAsset.getFullUrl());
             FileWorkArea tempWorkArea = broadleafFileService.initializeWorkArea();
             // Convert the given URL from the asset to a system-specific suitable file path
-            String destFileName = FilenameUtils.normalize(
-                    tempWorkArea.getFilePathLocation() + File.separator
-                            + FilenameUtils.separatorsToSystem(staticAsset.getFullUrl())
-            );
+            File destFile = getDestinationFile(tempWorkArea, assetUrl);
+            String destFileName = destFile.getAbsolutePath();
 
             InputStream input = fileInputStream;
             byte[] buffer = new byte[getFileBufferSize()];
 
-            File destFile = new File(destFileName);
             if (!destFile.getParentFile().exists()) {
                 if (!destFile.getParentFile().mkdirs()) {
                     if (!destFile.getParentFile().exists()) {
@@ -474,6 +474,59 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
                 broadleafFileService.closeWorkArea(tempWorkArea);
             }
         }
+    }
+
+    /**
+     * The url of an asset is used verbatim to build the file system path that the asset is written to, so it must not
+     * contain any relative path segments that would allow the write to escape the asset work area.
+     *
+     * @param fullUrl the url of the asset being stored
+     * @return the url of the asset
+     * @throws IOException if the url contains relative path segments
+     */
+    protected String validateFileSystemAssetUrl(String fullUrl) throws IOException {
+        String unixUrl = fullUrl == null ? null : FilenameUtils.separatorsToUnix(fullUrl);
+        String normalized = unixUrl == null ? null : FilenameUtils.normalize(unixUrl, true);
+        if (normalized == null || !normalized.equals(unixUrl)) {
+            throw new IOException("Invalid asset url: " + StringUtil.sanitize(fullUrl));
+        }
+        return normalized;
+    }
+
+    /**
+     * Resolves the file that the asset contents will be written to within the given work area.
+     * <p>
+     * The asset url originates from a client supplied upload file name, so it is not trusted here. The resolved
+     * file is required to live underneath the work area, which means any url that escapes it - through a parent
+     * directory segment, an absolute path or a symlinked directory - is rejected rather than written.
+     *
+     * @param workArea the temporary work area the asset is staged in
+     * @param fullUrl  the url of the asset being stored
+     * @return the file within the work area that the asset contents belong in
+     * @throws IOException if the url is empty or resolves outside of the work area
+     */
+    protected File getDestinationFile(FileWorkArea workArea, String fullUrl) throws IOException {
+        if (StringUtils.isBlank(fullUrl)) {
+            throw new IOException("Unable to store an asset that does not have a url");
+        }
+
+        String assetPath = StringUtils.stripStart(FilenameUtils.separatorsToUnix(fullUrl), "/");
+        for (String segment : StringUtils.split(assetPath, '/')) {
+            if (PARENT_DIRECTORY_SEGMENT.equals(segment)) {
+                throw new IOException("Unable to store an asset whose url contains a parent directory segment: "
+                        + StringUtil.sanitize(fullUrl));
+            }
+        }
+
+        File workAreaDirectory = new File(workArea.getFilePathLocation());
+        File destFile = new File(workAreaDirectory, FilenameUtils.separatorsToSystem(assetPath));
+        String workAreaCanonicalPath = workAreaDirectory.getCanonicalPath();
+        if (!destFile.getCanonicalPath().startsWith(workAreaCanonicalPath + File.separator)) {
+            throw new IOException("Unable to store an asset whose url resolves outside of the asset work area: "
+                    + StringUtil.sanitize(fullUrl));
+        }
+
+        return destFile;
     }
 
     protected long getMaxUploadSizeForFile(String fileName) {
