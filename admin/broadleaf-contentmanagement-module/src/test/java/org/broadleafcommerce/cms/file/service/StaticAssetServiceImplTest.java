@@ -23,7 +23,10 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
+import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertTrue;
 
 /**
@@ -100,6 +103,104 @@ public class StaticAssetServiceImplTest {
         assetService.validateFileExtension(file);
         file = new MockMultipartFile("img.png", this.getClass().getResourceAsStream("/testfile/img.png"));
         assetService.validateFileExtension(file);
+    }
+
+    @Test(expected = IOException.class)
+    public void testThrowWhenStoredExtensionIsDisabled() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("jsp");
+        MockMultipartFile file = new MockMultipartFile("file", "shell.jsp", "image/png",
+                this.getClass().getResourceAsStream("/testfile/img.png"));
+        assetService.validateFileExtension(file);
+    }
+
+    @Test(expected = IOException.class)
+    public void testThrowWhenStoredExtensionIsNotAllowed() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        MockMultipartFile file = new MockMultipartFile("file", "shell.jsp", "image/png",
+                this.getClass().getResourceAsStream("/testfile/img.png"));
+        assetService.validateFileExtension(file);
+    }
+
+    @Test
+    public void testOkWhenStoredExtensionMatchesContent() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("jsp");
+        MockMultipartFile file = new MockMultipartFile("file", "img.png", "image/png",
+                this.getClass().getResourceAsStream("/testfile/img.png"));
+        assetService.validateFileExtension(file);
+    }
+
+    @Test
+    public void testBuildAssetURL() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("/product/100/img.png", assetService.buildAssetURL(assetProperties("product", "100"), "img.png"));
+    }
+
+    @Test
+    public void testBuildAssetURLStripsPathFromFileName() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        Map<String, String> properties = assetProperties("product", "100");
+
+        assertEquals("/product/100/passwd", assetService.buildAssetURL(properties, "../../../../etc/passwd"));
+        assertEquals("/product/100/evil.png", assetService.buildAssetURL(properties, "..\\..\\evil.png"));
+        assertEquals("/product/100/img.png", assetService.buildAssetURL(properties, "/etc/img.png"));
+        assertEquals("/product/100/img.png", assetService.buildAssetURL(properties, "..\u0000/img.png"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testBuildAssetURLRejectsTraversalOnlyFileName() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.buildAssetURL(assetProperties("product", "100"), "../..");
+    }
+
+    @Test
+    public void testBuildAssetURLSanitizesEntitySegments() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        Map<String, String> properties = assetProperties("../../product", "../100");
+
+        assertEquals("/product/100/img.png", assetService.buildAssetURL(properties, "img.png"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testBuildAssetURLRejectsTraversalOnlyEntityType() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.buildAssetURL(assetProperties("..", "100"), "img.png");
+    }
+
+    @Test
+    public void testBuildAssetURLKeepsExplicitFileNameProperty() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        Map<String, String> properties = assetProperties("product", "100");
+        properties.put("fileName", "folder/img.png");
+
+        assertEquals("/product/100/folder/img.png", assetService.buildAssetURL(properties, "other.png"));
+    }
+
+    @Test
+    public void testBuildAssetURLStripsProtocolFromFileNameProperty() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        Map<String, String> properties = assetProperties("product", "100");
+        properties.put("fileName", "http://images.mysite.com/folder/img.png");
+
+        assertEquals("/product/100/images.mysite.com/folder/img.png", assetService.buildAssetURL(properties, "other.png"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testBuildAssetURLRejectsTraversalInFileNameProperty() {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        Map<String, String> properties = assetProperties("product", "100");
+        properties.put("fileName", "folder/../../../etc/passwd");
+
+        assetService.buildAssetURL(properties, "img.png");
+    }
+
+    private Map<String, String> assetProperties(String entityType, String entityId) {
+        Map<String, String> properties = new HashMap<>();
+        properties.put("entityType", entityType);
+        properties.put("entityId", entityId);
+        return properties;
     }
 
 }
