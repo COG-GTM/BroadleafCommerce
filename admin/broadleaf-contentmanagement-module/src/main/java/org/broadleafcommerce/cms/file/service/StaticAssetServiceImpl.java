@@ -55,6 +55,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.regex.Pattern;
 
 import jakarta.annotation.Resource;
 
@@ -66,6 +67,8 @@ public class StaticAssetServiceImpl implements StaticAssetService {
 
     private static final Log LOG = LogFactory.getLog(StaticAssetServiceImpl.class);
     private static final String UPLOAD_FILE_EXTENSION_EXCEPTION = "java.io.IOException: Invalid extension type of file.";
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
+    private static final String PATH_SEPARATORS = "[/\\\\]";
     private final Random random = new Random();
     private final String FILE_NAME_CHARS = "0123456789abcdef";
     @Resource(name = "blImageArtifactProcessor")
@@ -96,9 +99,28 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     protected String replacementString;
 
     private static String normalizeFileExtension(MultipartFile file) {
-        int index = file.getOriginalFilename().lastIndexOf(".");
-        return file.getOriginalFilename().substring(0, index + 1)
-                + file.getOriginalFilename().substring(index + 1).toLowerCase();
+        String originalFilename = StringUtils.isNotBlank(file.getOriginalFilename()) ? file.getOriginalFilename() : file.getName();
+        String fileName = stripPathInformation(originalFilename);
+        int index = fileName.lastIndexOf(".");
+        return fileName.substring(0, index + 1) + fileName.substring(index + 1).toLowerCase();
+    }
+
+    /**
+     * Reduces a client supplied name to a single path segment. Any directory information, control characters and
+     * relative path segments are removed, leaving only the name of the file itself.
+     *
+     * @param fileName the name to strip, may be null
+     * @return the last path segment of the given name, or an empty String if nothing usable remains
+     */
+    protected static String stripPathInformation(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        String name = FilenameUtils.getName(CONTROL_CHARS.matcher(fileName).replaceAll(""));
+        if (".".equals(name) || "..".equals(name)) {
+            return "";
+        }
+        return name;
     }
 
     private static String getFileExtension(MultipartFile file) {
@@ -181,12 +203,12 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         String entityId = assetProperties.get("entityId");
         String fileName = assetProperties.get("fileName");
 
-        if (entityType != null && !"null".equals(entityType)) {
-            path = path.append(entityType).append("/");
+        if (StringUtils.isNotBlank(entityType) && !"null".equals(entityType)) {
+            path = path.append(sanitizePathSegment(entityType)).append("/");
         }
 
-        if (entityId != null && !"null".equals(entityId)) {
-            path = path.append(entityId).append("/");
+        if (StringUtils.isNotBlank(entityId) && !"null".equals(entityId)) {
+            path = path.append(sanitizePathSegment(entityId)).append("/");
         }
 
         if (fileName != null) {
@@ -197,26 +219,122 @@ public class StaticAssetServiceImpl implements StaticAssetService {
                 }
                 fileName = fileName.substring(pos + 1);
             }
+            fileName = sanitizeAssetPath(fileName);
         } else {
-            fileName = originalFilename;
+            fileName = sanitizeFileName(originalFilename);
         }
 
-        return path.append(fileName).toString();
+        return validateAssetURL(path.append(fileName).toString());
+    }
+
+    /**
+     * Sanitizes a single path segment (for example the entity type or the entity id) of an asset url. Directory
+     * separators and relative path segments are not allowed in a segment.
+     *
+     * @param segment the segment to sanitize
+     * @return the sanitized segment
+     * @throws IllegalArgumentException if nothing usable remains after sanitization
+     */
+    protected String sanitizePathSegment(String segment) {
+        String sanitized = stripPathInformation(segment);
+        if (StringUtils.isBlank(sanitized)) {
+            throw new IllegalArgumentException("Invalid asset path segment: " + StringUtil.sanitize(segment));
+        }
+        return sanitized;
+    }
+
+    /**
+     * Sanitizes a client supplied file name so that it can safely be used as the last segment of an asset url and,
+     * ultimately, as a file system path. Any directory information the client sent along is discarded.
+     *
+     * @param fileName the file name to sanitize
+     * @return the sanitized file name
+     * @throws IllegalArgumentException if nothing usable remains after sanitization
+     */
+    protected String sanitizeFileName(String fileName) {
+        String sanitized = stripPathInformation(fileName);
+        if (StringUtils.isBlank(sanitized)) {
+            throw new IllegalArgumentException("Invalid asset file name: " + StringUtil.sanitize(fileName));
+        }
+        return sanitized;
+    }
+
+    /**
+     * Sanitizes a multi-segment asset path, as may be given through the optional <code>fileName</code> property.
+     * Empty and current-directory segments are dropped and parent-directory segments are rejected, so that the
+     * resulting path can never escape the asset namespace.
+     *
+     * @param assetPath the path to sanitize
+     * @return the sanitized path, without a leading separator
+     * @throws IllegalArgumentException if the path traverses out of the asset namespace or nothing usable remains
+     */
+    protected String sanitizeAssetPath(String assetPath) {
+        StringBuilder sanitized = new StringBuilder();
+        for (String segment : assetPath.split(PATH_SEPARATORS)) {
+            String cleanedSegment = CONTROL_CHARS.matcher(segment).replaceAll("");
+            if (StringUtils.isEmpty(cleanedSegment) || ".".equals(cleanedSegment)) {
+                continue;
+            }
+            if ("..".equals(cleanedSegment)) {
+                throw new IllegalArgumentException("Invalid asset path: " + StringUtil.sanitize(assetPath));
+            }
+            if (sanitized.length() > 0) {
+                sanitized.append("/");
+            }
+            sanitized.append(cleanedSegment);
+        }
+        if (sanitized.length() == 0) {
+            throw new IllegalArgumentException("Invalid asset path: " + StringUtil.sanitize(assetPath));
+        }
+        return sanitized.toString();
+    }
+
+    /**
+     * Final guard on an assembled asset url. The url is persisted on the {@link StaticAsset} and is used verbatim by
+     * {@link StaticAssetStorageService} to build a file system path, so it must be an already normalized absolute
+     * path that does not contain any relative segments.
+     *
+     * @param assetUrl the assembled url
+     * @return the asset url
+     * @throws IllegalArgumentException if the url is not a normalized absolute asset path
+     */
+    protected String validateAssetURL(String assetUrl) {
+        String normalized = FilenameUtils.normalize(assetUrl, true);
+        if (normalized == null || !normalized.equals(assetUrl) || !normalized.startsWith("/")) {
+            throw new IllegalArgumentException("Invalid asset url: " + StringUtil.sanitize(assetUrl));
+        }
+        return normalized;
     }
 
     public void validateFileExtension(MultipartFile file) throws IOException {
-        final String extension = getFileExtension(file);
+        //the content based extension detected by tika as well as the extension the file will actually be stored
+        //under both have to pass validation, otherwise a .jsp could be uploaded as long as its content looks benign
+        validateExtension(getFileExtension(file), file.getName());
+        validateExtension(FilenameUtils.getExtension(stripPathInformation(
+                StringUtils.isNotBlank(file.getOriginalFilename()) ? file.getOriginalFilename() : file.getName()
+        )).toLowerCase(), file.getName());
+    }
+
+    /**
+     * Validates a single extension against the configured allow list, or, when no allow list is configured, against
+     * the configured deny list.
+     *
+     * @param extension the extension to validate, without the leading dot
+     * @param fileName  the name of the file being uploaded, used for logging only
+     * @throws IOException if the extension is not allowed
+     */
+    protected void validateExtension(String extension, String fileName) throws IOException {
         //if we have whitelist, don't care about blacklist
         if (StringUtils.isNotEmpty(allowedFileExtensions)) {
             final List<String> extensions = Arrays.asList(allowedFileExtensions.toLowerCase().split("\\s*,\\s*"));
             if (!extensions.contains(extension)) {
-                LOG.error("Invalid extension type of file " + file.getName() + ". Only following is allowed:" + allowedFileExtensions);
+                LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + ". Only following is allowed:" + allowedFileExtensions);
                 throw new IOException("Not allowed extension type of file.");
             }
-        } else if (disabledFileExtensions != null && !disabledFileExtensions.isEmpty()) {
+        } else if (StringUtils.isNotEmpty(extension) && StringUtils.isNotEmpty(disabledFileExtensions)) {
             final List<String> extensions = Arrays.asList(disabledFileExtensions.toLowerCase().split("\\s*,\\s*"));
             if (extensions.contains(extension)) {
-                LOG.error("Invalid extension type of file " + file.getName() + ". Disabled files:" + disabledFileExtensions);
+                LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + ". Disabled files:" + disabledFileExtensions);
                 throw new IOException("Invalid extension type of file.");
             }
         }
@@ -228,7 +346,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         try {
             validateFileExtension(file);
             staticAssetStorageService.validateFileSize(file);
-            String fileName = normalizeFileExtension(file);
+            String fileName = sanitizeFileName(normalizeFileExtension(file));
             boolean b = validateFileName(fileName);
             if (b) {
                 fileName = fileName.replaceAll(
@@ -262,6 +380,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             properties = new HashMap<>();
         }
 
+        fileName = sanitizeFileName(fileName);
         String fullUrl = buildAssetURL(properties, fileName);
         StringBuilder urlBuilder = new StringBuilder();
         urlBuilder.append(fullUrl);
