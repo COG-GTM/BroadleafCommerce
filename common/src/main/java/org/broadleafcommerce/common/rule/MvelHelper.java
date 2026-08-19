@@ -179,6 +179,8 @@ public class MvelHelper {
             }
             if (exp == null) {
                 ParserContext context = new ParserContext();
+                context.getParserConfiguration().setClassLoader(
+                        MvelSandbox.getSandboxClassLoader(MvelHelper.class.getClassLoader()));
                 context.addImport("MVEL", MVEL.class);
                 context.addImport("MvelHelper", MvelHelper.class);
                 context.addImport("CollectionUtils", SelectizeCollectionUtils.class);
@@ -189,6 +191,18 @@ public class MvelHelper {
                 }
 
                 String modifiedRule = modifyExpression(rule, ruleParameters, context);
+
+                try {
+                    MvelSandbox.validate(rule);
+                    MvelSandbox.validate(modifiedRule);
+                } catch (MvelSandboxException e) {
+                    //The rule reaches outside of the supported rule DSL and is never compiled or executed
+                    if (!TEST_MODE) {
+                        LOG.error("Refusing to evaluate the mvel expression (" + StringUtil.sanitize(rule)
+                                + ") because it is not allowed by the rule sandbox: " + e.getMessage());
+                    }
+                    return false;
+                }
 
                 synchronized (expressionCache) {
                     exp = MVEL.compileExpression(modifiedRule, context);
