@@ -20,6 +20,7 @@ package org.broadleafcommerce.common.security;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.security.util.RedirectUrlUtils;
 import org.springframework.security.web.RedirectStrategy;
 
 import java.io.IOException;
@@ -50,11 +51,10 @@ public class LocalRedirectStrategy implements RedirectStrategy {
      */
     @Override
     public void sendRedirect(HttpServletRequest request, HttpServletResponse response, String url) throws IOException {
-        if (!url.startsWith("/")) {
-            if (StringUtils.equals(request.getParameter("successUrl"), url)
-                    || StringUtils.equals(request.getParameter("failureUrl"), url)) {
-                validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
-            }
+        // Anything that is not local to the application (external hosts, protocol relative '//host' targets, etc) must
+        // be an absolute url pointing back at this application
+        if (!RedirectUrlUtils.isLocalRedirectUrl(url)) {
+            validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
         }
         String redirectUrl = calculateRedirectUrl(request.getContextPath(), url);
         redirectUrl = response.encodeRedirectURL(redirectUrl);
