@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +78,22 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Name of the system property that can be used to replace {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}.  The value must be a valid
+     * pattern for {@link ObjectInputFilter.Config#createFilter(String)}.
+     */
+    public static final String DESERIALIZATION_FILTER_PROPERTY = "broadleaf.zookeeper.queue.deserialization.filter";
+
+    /**
+     * Allow list applied to every object read from Zookeeper.  Anything that is not explicitly allowed is rejected, which prevents
+     * arbitrary gadget classes on the classpath from being instantiated during deserialization (CWE-502).
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxdepth=32;maxrefs=10000;maxbytes=1048576;maxarray=10000;"
+                    + "java.lang.*;java.math.*;java.time.*;java.util.*;java.util.concurrent.*;"
+                    + "org.broadleafcommerce.**;"
+                    + "!*";
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -86,6 +104,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private volatile ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -822,7 +841,33 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Creates the {@link ObjectInputFilter} that restricts the types that may be deserialized from the queue.  Subclasses may override
+     * this to further restrict, or to widen, the set of allowed types.
+     *
+     * @return
+     */
+    protected ObjectInputFilter createDeserializationFilter() {
+        String pattern = System.getProperty(DESERIALIZATION_FILTER_PROPERTY, DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+        return ObjectInputFilter.Config.createFilter(pattern);
+    }
+
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = deserializationFilter;
+        if (filter == null) {
+            synchronized (this) {
+                filter = deserializationFilter;
+                if (filter == null) {
+                    filter = createDeserializationFilter();
+                    deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted to the types
+     * allowed by {@link #createDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,7 +877,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("An element from the Zookeeper queue was rejected because its type is not allowed by the "
+                    + "deserialization filter for queue: " + getQueueFolderPath(), e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
