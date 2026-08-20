@@ -19,11 +19,15 @@ package org.broadleafcommerce.openadmin.security;
 
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.security.LocalRedirectStrategy;
+import org.broadleafcommerce.common.security.util.RedirectUrlUtils;
 import org.broadleafcommerce.common.util.StringUtil;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,15 +35,19 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthenticationFailureHandler {
 
+    protected static final String SUCCESS_URL_PARAM = "successUrl=";
+
     private String defaultFailureUrl;
 
     public BroadleafAdminAuthenticationFailureHandler() {
         super();
+        setRedirectStrategy(new LocalRedirectStrategy());
     }
 
     public BroadleafAdminAuthenticationFailureHandler(String defaultFailureUrl) {
         super(defaultFailureUrl);
         this.defaultFailureUrl = defaultFailureUrl;
+        setRedirectStrategy(new LocalRedirectStrategy());
     }
 
     @Override
@@ -48,9 +56,12 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
             HttpServletResponse response,
             AuthenticationException exception
     ) throws IOException, ServletException {
-        String failureUrlParam = StringUtil.cleanseUrlString(request.getParameter("failureUrl"));
-        String successUrlParam = StringUtil.cleanseUrlString(request.getParameter("successUrl"));
-        String failureUrl = (failureUrlParam != null) ? failureUrlParam.trim() : null;
+        // Only local targets are honored, otherwise the login failure could be used to redirect to an external site
+        String failureUrlParam = RedirectUrlUtils.sanitizeRedirectUrl(
+                StringUtil.cleanseUrlString(request.getParameter("failureUrl")));
+        String successUrlParam = RedirectUrlUtils.sanitizeRedirectUrl(
+                StringUtil.cleanseUrlString(request.getParameter("successUrl")));
+        String failureUrl = failureUrlParam;
         Boolean sessionTimeout = (Boolean) request.getAttribute("sessionTimeout");
 
         if (StringUtils.isEmpty(failureUrl) && BooleanUtils.isNotTrue(sessionTimeout)) {
@@ -63,23 +74,17 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
 
         if (StringUtils.isEmpty(successUrlParam)) {
             //Grab url the user, was redirected from
-            successUrlParam = request.getHeader("referer");
+            successUrlParam = extractSuccessUrlFromReferer(request);
         }
 
         if (failureUrl != null) {
             if (!StringUtils.isEmpty(successUrlParam)) {
-                //Preserve the original successUrl from the referer.  If there is one, it must be the last url segment
-                int successUrlPos = successUrlParam.indexOf("successUrl");
-                if (successUrlPos >= 0) {
-                    successUrlParam = successUrlParam.substring(successUrlPos);
-                } else {
-                    successUrlParam = "successUrl=" + successUrlParam;
-                }
+                String successUrlSegment = SUCCESS_URL_PARAM + URLEncoder.encode(successUrlParam, StandardCharsets.UTF_8);
 
                 if (!failureUrl.contains("?")) {
-                    failureUrl += "?" + successUrlParam;
+                    failureUrl += "?" + successUrlSegment;
                 } else {
-                    failureUrl += "&" + successUrlParam;
+                    failureUrl += "&" + successUrlSegment;
                 }
             }
 
@@ -88,6 +93,29 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         } else {
             super.onAuthenticationFailure(request, response, exception);
         }
+    }
+
+    /**
+     * Preserves the original successUrl from the referer. Only targets local to the application are honored so that a
+     * crafted referer cannot turn the login flow into a redirect to an external site.
+     */
+    protected String extractSuccessUrlFromReferer(HttpServletRequest request) {
+        String referer = StringUtil.cleanseUrlString(request.getHeader("referer"));
+        if (StringUtils.isEmpty(referer)) {
+            return null;
+        }
+
+        String candidate = referer;
+        int successUrlPos = referer.indexOf(SUCCESS_URL_PARAM);
+        if (successUrlPos >= 0) {
+            candidate = referer.substring(successUrlPos + SUCCESS_URL_PARAM.length());
+            int nextParamPos = candidate.indexOf('&');
+            if (nextParamPos >= 0) {
+                candidate = candidate.substring(0, nextParamPos);
+            }
+        }
+
+        return RedirectUrlUtils.sanitizeRedirectUrl(candidate, request);
     }
 
 }
