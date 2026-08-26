@@ -38,10 +38,12 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -51,6 +53,7 @@ import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 /**
  * Represents a {@link Queue} that is distributed (used by multiple JVMs or nodes) and managed by Zookeeper.  This queue uses distributed locks, also backed by Zookeeper.
@@ -76,6 +79,36 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Package name prefixes whose classes may be instantiated while deserializing queue entries.  Anything else is
+     * rejected before it is loaded.  Override {@link #isDeserializationAllowed(Class)} to queue entries from other packages.
+     */
+    protected static final List<String> ALLOWED_DESERIALIZATION_PACKAGES = Collections.unmodifiableList(Arrays.asList(
+            "org.broadleafcommerce.",
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "java.time."
+    ));
+
+    /**
+     * Package name prefixes that are always rejected, even when nested inside an otherwise allowed package.  These are
+     * the building blocks of the common deserialization gadget chains.
+     */
+    protected static final List<String> DENIED_DESERIALIZATION_PACKAGES = Collections.unmodifiableList(Arrays.asList(
+            "java.lang.reflect.",
+            "java.lang.invoke."
+    ));
+
+    protected static final int MAX_DESERIALIZATION_DEPTH = 32;
+    protected static final int MAX_DESERIALIZATION_REFERENCES = 10000;
+    protected static final int MAX_DESERIALIZATION_ARRAY_LENGTH = 10000;
+
+    /**
+     * Zookeeper's default transport limit is 1MB, so no legitimate entry can exceed it.
+     */
+    protected static final long MAX_DESERIALIZATION_BYTES = 1000000L;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -806,7 +839,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                             }
                                         }
 
-                                    }, null));
+                                    }, null),
+                                    createTypeRestrictedDeserializationFilter(Integer.class));
                             seMaxCapacity(size);
                         }
                         return null;
@@ -822,17 +856,37 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted
+     * to the classes accepted by {@link #createDeserializationFilter()}.
      *
      * @param bytes
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, createDeserializationFilter());
+    }
+
+    /**
+     * Reads an object from the given bytes, rejecting any class that the given filter does not accept.  Data on a queue
+     * is written by other nodes, so it must be treated as untrusted input: an unrestricted {@link ObjectInputStream}
+     * allows arbitrary classes to be instantiated, which is remotely exploitable (CWE-502).
+     *
+     * @param bytes
+     * @param filter
+     * @return
+     */
+    protected Object deserialize(byte[] bytes, ObjectInputFilter filter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
-            return ois.readObject();
+            ois.setObjectInputFilter(filter);
+            Object result = ois.readObject();
+            if (filter instanceof TypeRestrictedDeserializationFilter
+                    && !((TypeRestrictedDeserializationFilter) filter).isResultAllowed(result)) {
+                throw new DistributedQueueException("The deserialized object type is not allowed on the Zookeeper queue.");
+            }
+            return result;
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
@@ -853,6 +907,120 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayInputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * The filter applied when reading queue entries.  Override this, or {@link #isDeserializationAllowed(Class)}, to
+     * allow entry types outside of {@link #ALLOWED_DESERIALIZATION_PACKAGES}.
+     *
+     * @return
+     */
+    protected ObjectInputFilter createDeserializationFilter() {
+        return createDeserializationFilter(this::isDeserializationAllowed);
+    }
+
+    /**
+     * A filter that accepts only the given types, for reading data whose type is known up front.
+     *
+     * @param allowedTypes
+     * @return
+     */
+    protected ObjectInputFilter createTypeRestrictedDeserializationFilter(final Class<?>... allowedTypes) {
+        final List<Class<?>> allowed = Arrays.asList(allowedTypes);
+        return new TypeRestrictedDeserializationFilter(
+                allowed,
+                createDeserializationFilter(clazz -> allowed.stream().anyMatch(allowedType ->
+                        allowedType.isAssignableFrom(clazz) || clazz.isAssignableFrom(allowedType)))
+        );
+    }
+
+    /**
+     * Indicates whether the given class may be instantiated while reading a queue entry.
+     *
+     * @param clazz
+     * @return
+     */
+    protected boolean isDeserializationAllowed(Class<?> clazz) {
+        final String className = clazz.getName();
+        for (String deniedPackage : DENIED_DESERIALIZATION_PACKAGES) {
+            if (className.startsWith(deniedPackage)) {
+                return false;
+            }
+        }
+
+        for (String allowedPackage : ALLOWED_DESERIALIZATION_PACKAGES) {
+            if (className.startsWith(allowedPackage)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Builds a filter that enforces the stream limits and delegates the class check to the given predicate.  Array
+     * classes are checked against their base component type.
+     *
+     * @param classAllowed
+     * @return
+     */
+    protected ObjectInputFilter createDeserializationFilter(final Predicate<Class<?>> classAllowed) {
+        return new ObjectInputFilter() {
+            @Override
+            public Status checkInput(FilterInfo info) {
+                if (info.depth() > MAX_DESERIALIZATION_DEPTH
+                        || info.references() > MAX_DESERIALIZATION_REFERENCES
+                        || info.arrayLength() > MAX_DESERIALIZATION_ARRAY_LENGTH
+                        || info.streamBytes() > MAX_DESERIALIZATION_BYTES) {
+                    return Status.REJECTED;
+                }
+
+                Class<?> clazz = info.serialClass();
+                if (clazz == null) {
+                    return Status.UNDECIDED;
+                }
+
+                while (clazz.isArray()) {
+                    clazz = clazz.getComponentType();
+                }
+
+                if (clazz.isPrimitive()) {
+                    return Status.ALLOWED;
+                }
+
+                if (classAllowed.test(clazz)) {
+                    return Status.ALLOWED;
+                }
+
+                LOG.warn("Rejected an attempt to deserialize the class "
+                        + clazz.getName()
+                        + " from the Zookeeper queue "
+                        + getQueueFolderPath()
+                        + ". If this type is expected on this queue, allow it by overriding isDeserializationAllowed.");
+
+                return Status.REJECTED;
+            }
+        };
+    }
+
+    private static class TypeRestrictedDeserializationFilter implements ObjectInputFilter {
+
+        private final List<Class<?>> allowedTypes;
+        private final ObjectInputFilter delegate;
+
+        private TypeRestrictedDeserializationFilter(List<Class<?>> allowedTypes, ObjectInputFilter delegate) {
+            this.allowedTypes = allowedTypes;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Status checkInput(FilterInfo info) {
+            return delegate.checkInput(info);
+        }
+
+        private boolean isResultAllowed(Object result) {
+            return result != null && allowedTypes.contains(result.getClass());
         }
     }
 
