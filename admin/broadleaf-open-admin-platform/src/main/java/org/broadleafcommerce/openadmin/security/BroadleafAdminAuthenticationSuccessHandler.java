@@ -30,6 +30,8 @@ import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.ServletException;
@@ -102,10 +104,76 @@ public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthent
 
         // Remove the login URI so we don't continuously redirect to the login page
         targetUrl = removeLoginSegment(targetUrl);
+        if (!StringUtils.hasText(targetUrl)) {
+            targetUrl = "/";
+        }
+
+        // The url has been mutated since it was validated above (successUrl extraction, sessionTimeout removal,
+        // login segment removal), so the exact value being redirected to must be validated again
+        try {
+            validateFinalRedirectUrl(targetUrl, request);
+        } catch (IOException e) {
+            logger.error("SECURITY FAILURE Bad redirect location: " + StringUtil.sanitize(targetUrl), e);
+            response.sendError(403);
+            return;
+        }
 
         logger.debug("Redirecting to DefaultSavedRequest Url: " + StringUtil.sanitize(targetUrl));
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
+    }
+
+    /**
+     * Validates the exact url that will be emitted in the redirect. The url must resolve to this host: an optional
+     * same origin prefix is removed and the remainder must be a host relative path that satisfies the ESAPI redirect
+     * allowlist. The url encoded form is checked as well so that encoded schemes or authorities cannot slip through.
+     *
+     * @param url the final redirect target
+     * @param request the current request
+     * @throws IOException if the url is not a valid redirect location
+     */
+    protected void validateFinalRedirectUrl(String url, HttpServletRequest request) throws IOException {
+        if (!StringUtils.hasText(url)) {
+            throw new IOException("Redirect failed");
+        }
+        validateHostRelativePath(url, request);
+        String decodedUrl = URLDecoder.decode(url, StandardCharsets.UTF_8);
+        if (!decodedUrl.equals(url)) {
+            validateHostRelativePath(decodedUrl, request);
+        }
+    }
+
+    protected void validateHostRelativePath(String url, HttpServletRequest request) throws IOException {
+        String path = stripSameOriginPrefix(url, request);
+        if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+            throw new IOException("Redirect failed");
+        }
+        UrlUtil.validateUrl(path, request);
+    }
+
+    /**
+     * Removes a leading scheme and authority from the given url when they match the current request, resulting in a
+     * host relative path. Urls that carry a scheme or authority for a different origin are returned unchanged so that
+     * they are subsequently rejected as non relative.
+     *
+     * @param url the url to normalize
+     * @param request the current request
+     * @return the host relative path when the url targets this origin, otherwise the url unchanged
+     */
+    protected String stripSameOriginPrefix(String url, HttpServletRequest request) {
+        String sameOrigin = request.getScheme() + "://" + request.getServerName();
+        if (!url.regionMatches(true, 0, sameOrigin, 0, sameOrigin.length())) {
+            return url;
+        }
+        String remainder = url.substring(sameOrigin.length());
+        String port = ":" + request.getServerPort();
+        if (remainder.startsWith(port)) {
+            remainder = remainder.substring(port.length());
+        }
+        if (remainder.isEmpty()) {
+            return "/";
+        }
+        return remainder;
     }
 
     /**
