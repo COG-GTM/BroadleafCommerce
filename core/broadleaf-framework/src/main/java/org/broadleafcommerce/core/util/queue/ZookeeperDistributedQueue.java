@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +80,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    /**
+     * Allowlisted class patterns; the {@code ;!*} terminator is appended by {@link #buildDeserializationFilter(String)}.
+     */
+    protected static final String DEFAULT_ALLOWED_CLASS_PATTERNS = "maxdepth=16;maxrefs=10000;maxbytes=1000000;maxarray=10000;java.lang.Boolean;java.lang.Byte;java.lang.Character;java.lang.Short;java.lang.Integer;java.lang.Long;java.lang.Float;java.lang.Double;java.lang.String;java.lang.Number;java.lang.Enum;java.math.BigDecimal;java.math.BigInteger;java.util.Date;java.util.UUID;java.util.ArrayList;java.util.LinkedList;java.util.HashMap;java.util.LinkedHashMap;java.util.TreeMap;java.util.HashSet;java.util.LinkedHashSet;java.util.TreeSet;java.util.Optional;java.time.*;org.broadleafcommerce.**;java.lang.Object;java.util.Map$Entry";
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -86,6 +92,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private String additionalAllowedClassPatterns;
+    private volatile ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -822,7 +830,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}. Only classes
+     * included in the deserialization allowlist are accepted.
      *
      * @param bytes
      * @return
@@ -832,7 +841,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            String message = "A class was rejected by the Zookeeper queue deserialization allowlist. "
+                    + "Use setAdditionalAllowedClassPatterns(String) to allow additional classes.";
+            LOG.error(message, e);
+            throw new DistributedQueueException(message, e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
@@ -854,6 +869,41 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Gets additional class patterns to allow during deserialization.
+     *
+     * @return additional class patterns
+     */
+    public String getAdditionalAllowedClassPatterns() {
+        return additionalAllowedClassPatterns;
+    }
+
+    /**
+     * Sets additional class patterns to allow during deserialization.
+     *
+     * @param additionalAllowedClassPatterns additional class patterns
+     */
+    public void setAdditionalAllowedClassPatterns(String additionalAllowedClassPatterns) {
+        this.additionalAllowedClassPatterns = additionalAllowedClassPatterns;
+        this.deserializationFilter = null;
+    }
+
+    protected static ObjectInputFilter buildDeserializationFilter(String additionalPatterns) {
+        String effectivePatterns = DEFAULT_ALLOWED_CLASS_PATTERNS;
+        if (additionalPatterns != null && !additionalPatterns.trim().isEmpty()) {
+            effectivePatterns += ";" + additionalPatterns;
+        }
+        effectivePatterns += ";!*";
+        return ObjectInputFilter.Config.createFilter(effectivePatterns);
+    }
+
+    protected ObjectInputFilter getDeserializationFilter() {
+        if (deserializationFilter == null) {
+            deserializationFilter = buildDeserializationFilter(additionalAllowedClassPatterns);
+        }
+        return deserializationFilter;
     }
 
     /**
