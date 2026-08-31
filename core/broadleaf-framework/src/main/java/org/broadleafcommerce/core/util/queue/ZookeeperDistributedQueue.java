@@ -38,7 +38,9 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
+import java.io.ObjectInputFilter;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -78,6 +80,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    protected static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN = "maxdepth=32;maxrefs=10000;maxbytes=1048576;org.broadleafcommerce.**;java.lang.Object;java.lang.Boolean;java.lang.Byte;java.lang.Character;java.lang.Short;java.lang.Integer;java.lang.Long;java.lang.Float;java.lang.Double;java.lang.Number;java.lang.String;java.lang.Enum;java.util.*;java.time.**;java.math.BigDecimal;java.math.BigInteger;java.sql.Date;java.sql.Timestamp;!*";
+    static final ObjectInputFilter DEFAULT_DESERIALIZATION_FILTER =
+            ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -828,11 +833,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, getDeserializationFilter());
+    }
+
+    /**
+     * Deserialization filter that subclasses may override to allow additional element types. Keep the terminating {@code !*} reject-all pattern.
+     *
+     * @return the deserialization filter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return DEFAULT_DESERIALIZATION_FILTER;
+    }
+
+    static Object deserialize(byte[] bytes, ObjectInputFilter filter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("Refused to deserialize an element from the Zookeeper queue because its class is not allowed by the deserialization filter.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
