@@ -39,6 +39,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.ObjectInputFilter;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -50,6 +51,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +80,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final Set<String> DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES = Set.of(
+            "java.lang.",
+            "java.util.",
+            "java.math.",
+            "java.time.",
+            "org.broadleafcommerce.",
+            "org.apache.solr.common."
+    );
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +832,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Converts a byte array to an object using {@link ObjectInputStream} with a configured {@link ObjectInputFilter}.
      *
      * @param bytes
      * @return
@@ -832,6 +842,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +865,46 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Package prefixes (trailing '.') whose classes may be deserialized from Zookeeper. Override to extend.
+     */
+    protected Set<String> getAllowedDeserializationPackages() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES;
+    }
+
+    protected ObjectInputFilter getDeserializationFilter() {
+        return createDeserializationFilter(getAllowedDeserializationPackages());
+    }
+
+    protected static ObjectInputFilter createDeserializationFilter(Set<String> allowedPackages) {
+        return info -> {
+            if (info.depth() > 64 || info.references() > 100_000 || info.arrayLength() > 100_000) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> clazz = info.serialClass();
+            if (clazz == null) {
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            for (String allowedPackage : allowedPackages) {
+                if (clazz.getName().startsWith(allowedPackage)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
