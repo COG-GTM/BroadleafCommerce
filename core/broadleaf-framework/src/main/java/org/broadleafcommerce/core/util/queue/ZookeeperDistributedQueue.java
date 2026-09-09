@@ -38,6 +38,8 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +80,16 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Default {@link ObjectInputFilter} pattern applied when deserializing queue elements. Only JDK value/collection
+     * types, Broadleaf classes and Solr common types (used by {@code SolrUpdateCommand} payloads) are permitted;
+     * every other class is rejected. See {@link ObjectInputFilter.Config#createFilter(String)} for the syntax.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN =
+            "maxdepth=64;maxarray=100000;maxrefs=100000;maxbytes=1048576;"
+            + "java.lang.*;java.util.*;java.math.*;java.time.*;java.sql.Timestamp;java.sql.Date;"
+            + "org.broadleafcommerce.**;org.apache.solr.common.**;!*";
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +834,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Returns the {@link ObjectInputFilter} applied to every {@link ObjectInputStream} used by {@link #deserialize(byte[])}.
+     * The default is built from {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}. Subclasses that queue element types
+     * outside of that allowlist should override this method to return a filter permitting those types.
+     *
+     * @return a non-null filter
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} guarded by
+     * {@link #getDeserializationFilter()} so that only allowlisted classes can be instantiated from Zookeeper data.
      *
      * @param bytes
      * @return
@@ -832,7 +856,12 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ObjectInputFilter filter = getDeserializationFilter();
+            Assert.notNull(filter, "The deserialization filter cannot be null.");
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("Rejected an element from the Zookeeper queue because it contains a class that is not allowed to be deserialized.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
