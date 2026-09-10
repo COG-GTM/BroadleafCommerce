@@ -38,18 +38,29 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -78,6 +89,38 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final Set<String> ALLOWED_DESERIALIZATION_CLASSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            String.class.getName(),
+            Boolean.class.getName(),
+            Byte.class.getName(),
+            Character.class.getName(),
+            Short.class.getName(),
+            Integer.class.getName(),
+            Long.class.getName(),
+            Float.class.getName(),
+            Double.class.getName(),
+            Number.class.getName(),
+            Enum.class.getName(),
+            Object.class.getName(),
+            BigDecimal.class.getName(),
+            BigInteger.class.getName(),
+            java.util.Date.class.getName(),
+            ArrayList.class.getName(),
+            LinkedList.class.getName(),
+            HashMap.class.getName(),
+            LinkedHashMap.class.getName(),
+            TreeMap.class.getName(),
+            HashSet.class.getName(),
+            LinkedHashSet.class.getName(),
+            TreeSet.class.getName(),
+            Collections.class.getName(),
+            java.util.UUID.class.getName()
+    )));
+    private static final Set<String> ALLOWED_DESERIALIZATION_PACKAGE_PREFIXES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "org.broadleafcommerce.",
+            "java.util.Collections$",
+            "java.util.ImmutableCollections$"
+    )));
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +865,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object using an allowlist. Subclasses can extend the allowlist
+     * through {@link #getAllowedDeserializationClasses()} and {@link #getAllowedDeserializationPackagePrefixes()}.
      *
      * @param bytes
      * @return
@@ -832,6 +876,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +899,49 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    protected ObjectInputFilter getDeserializationFilter() {
+        return buildDeserializationFilter(getAllowedDeserializationClasses(), getAllowedDeserializationPackagePrefixes());
+    }
+
+    protected Set<String> getAllowedDeserializationClasses() {
+        return ALLOWED_DESERIALIZATION_CLASSES;
+    }
+
+    protected Set<String> getAllowedDeserializationPackagePrefixes() {
+        return ALLOWED_DESERIALIZATION_PACKAGE_PREFIXES;
+    }
+
+    static ObjectInputFilter buildDeserializationFilter(Set<String> allowedClasses, Set<String> allowedPrefixes) {
+        return filterInfo -> {
+            if (filterInfo.depth() > 64 || filterInfo.references() > 10000 || filterInfo.arrayLength() > 100000) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> clazz = filterInfo.serialClass();
+            if (clazz == null) {
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            String className = clazz.getName();
+            if (allowedClasses.contains(className)) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+            for (String prefix : allowedPrefixes) {
+                if (className.startsWith(prefix)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+            return ObjectInputFilter.Status.REJECTED;
+        };
     }
 
     /**
