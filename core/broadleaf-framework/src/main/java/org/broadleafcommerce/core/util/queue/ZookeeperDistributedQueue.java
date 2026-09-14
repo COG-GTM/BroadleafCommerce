@@ -37,11 +37,14 @@ import org.springframework.util.Assert;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InvalidClassException;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -51,6 +54,7 @@ import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Represents a {@link Queue} that is distributed (used by multiple JVMs or nodes) and managed by Zookeeper.  This queue uses distributed locks, also backed by Zookeeper.
@@ -78,6 +82,68 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Class name patterns permitted to be deserialized from Zookeeper. Anything not matching is rejected
+     * before instantiation to mitigate deserialization attacks (CWE-502). Subclasses may override
+     * {@link #getAllowedDeserializationClassPatterns()} to permit additional element types.
+     */
+    protected static final List<Pattern> DEFAULT_ALLOWED_DESERIALIZATION_CLASS_PATTERNS = Collections.unmodifiableList(Arrays.asList(
+            Pattern.compile("java\\.lang\\.(Boolean|Byte|Character|Double|Float|Integer|Long|Number|Short|String|Enum|StringBuilder|StringBuffer|Object)"),
+            Pattern.compile("java\\.math\\.(BigDecimal|BigInteger)"),
+            Pattern.compile("java\\.util\\.(ArrayList|LinkedList|HashMap|LinkedHashMap|TreeMap|HashSet|LinkedHashSet|TreeSet|Date|UUID|Locale|Currency|Map\\$Entry|Collections\\$.*|Arrays\\$ArrayList|Optional)"),
+            Pattern.compile("java\\.time\\..*"),
+            Pattern.compile("java\\.sql\\.(Date|Time|Timestamp)"),
+            Pattern.compile("org\\.broadleafcommerce\\..*")
+    ));
+
+    protected static final long MAX_DESERIALIZATION_DEPTH = 50L;
+    protected static final long MAX_DESERIALIZATION_REFERENCES = 100000L;
+    protected static final long MAX_DESERIALIZATION_ARRAY_LENGTH = 100000L;
+
+    protected List<Pattern> getAllowedDeserializationClassPatterns() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_CLASS_PATTERNS;
+    }
+
+    protected ObjectInputFilter createDeserializationFilter() {
+        return new AllowListObjectInputFilter(getAllowedDeserializationClassPatterns());
+    }
+
+    static class AllowListObjectInputFilter implements ObjectInputFilter {
+
+        private final List<Pattern> allowedClassPatterns;
+
+        AllowListObjectInputFilter(List<Pattern> allowedClassPatterns) {
+            this.allowedClassPatterns = allowedClassPatterns;
+        }
+
+        @Override
+        public Status checkInput(FilterInfo info) {
+            if (info.depth() > MAX_DESERIALIZATION_DEPTH
+                    || info.references() > MAX_DESERIALIZATION_REFERENCES
+                    || info.arrayLength() > MAX_DESERIALIZATION_ARRAY_LENGTH) {
+                return Status.REJECTED;
+            }
+            Class<?> clazz = info.serialClass();
+            if (clazz == null) {
+                return Status.UNDECIDED;
+            }
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+            if (clazz.isPrimitive()) {
+                return Status.ALLOWED;
+            }
+            final String name = clazz.getName();
+            for (Pattern pattern : allowedClassPatterns) {
+                if (pattern.matcher(name).matches()) {
+                    return Status.ALLOWED;
+                }
+            }
+            LOG.warn("Rejected deserialization of disallowed class from Zookeeper queue: " + name);
+            return Status.REJECTED;
+        }
+    }
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +888,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object using an {@link ObjectInputFilter}; rejected classes cause an {@link InvalidClassException}.
      *
      * @param bytes
      * @return
@@ -832,6 +898,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(createDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
