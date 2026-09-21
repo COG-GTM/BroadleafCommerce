@@ -38,10 +38,13 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -76,6 +79,21 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Classes in these packages, along with primitives and arrays thereof, may be deserialized from Zookeeper by default.
+     * Additional packages can be permitted via {@link #setAllowedDeserializationPackages(List)}.
+     */
+    public static final List<String> DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES = Collections.unmodifiableList(
+            Arrays.asList("java.lang.", "java.math.", "java.time.", "java.util.", "org.broadleafcommerce."));
+    public static final int DEFAULT_MAX_DESERIALIZATION_DEPTH = 32;
+    public static final long DEFAULT_MAX_DESERIALIZATION_REFERENCES = 10000L;
+
+    /**
+     * Zookeeper's default transport limit is 1MB, so no legitimate queue entry can be larger than that.
+     */
+    public static final long DEFAULT_MAX_DESERIALIZATION_BYTES = 1048576L;
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -87,6 +105,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private volatile List<String> allowedDeserializationPackages = DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -822,7 +841,69 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * The packages whose classes are allowed to be deserialized from Zookeeper.  Entries are matched as fully qualified
+     * name prefixes, so they should typically end with a '.'.
+     *
+     * @return
+     */
+    public List<String> getAllowedDeserializationPackages() {
+        return allowedDeserializationPackages;
+    }
+
+    /**
+     * Replaces the packages whose classes are allowed to be deserialized from Zookeeper.  Queue entry types that are not
+     * in {@link #DEFAULT_ALLOWED_DESERIALIZATION_PACKAGES} must be declared here, including the default packages if they
+     * are still needed.
+     *
+     * @param allowedDeserializationPackages
+     */
+    public void setAllowedDeserializationPackages(List<String> allowedDeserializationPackages) {
+        Assert.notEmpty(allowedDeserializationPackages, "At least one allowed deserialization package must be provided.");
+        this.allowedDeserializationPackages = Collections.unmodifiableList(new ArrayList<>(allowedDeserializationPackages));
+    }
+
+    /**
+     * Filter that constrains which classes, and how much data, can be read by {@link #deserialize(byte[])}.  Data stored in
+     * Zookeeper is untrusted input, and unconstrained Java deserialization of it allows remote code execution via gadget
+     * chains (CWE-502).
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return filterInfo -> {
+            if (filterInfo.depth() > DEFAULT_MAX_DESERIALIZATION_DEPTH
+                    || filterInfo.references() > DEFAULT_MAX_DESERIALIZATION_REFERENCES
+                    || filterInfo.streamBytes() > DEFAULT_MAX_DESERIALIZATION_BYTES) {
+                return ObjectInputFilter.Status.REJECTED;
+            }
+
+            Class<?> clazz = filterInfo.serialClass();
+            if (clazz == null) {
+                return ObjectInputFilter.Status.UNDECIDED;
+            }
+
+            while (clazz.isArray()) {
+                clazz = clazz.getComponentType();
+            }
+
+            if (clazz.isPrimitive()) {
+                return ObjectInputFilter.Status.ALLOWED;
+            }
+
+            final String className = clazz.getName();
+            for (String allowedPackage : getAllowedDeserializationPackages()) {
+                if (className.startsWith(allowedPackage)) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+            }
+
+            return ObjectInputFilter.Status.REJECTED;
+        };
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted by
+     * {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,7 +913,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("An element from the Zookeeper queue was rejected because its type is not "
+                    + "allowed to be deserialized.  Allowed packages: " + getAllowedDeserializationPackages() + ".", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
