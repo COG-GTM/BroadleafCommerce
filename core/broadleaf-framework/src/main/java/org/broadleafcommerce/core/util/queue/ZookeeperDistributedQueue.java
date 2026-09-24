@@ -38,18 +38,23 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,8 +81,37 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Classes that are always permitted when reading queue data back from Zookeeper.  Any additional element type has to be
+     * registered with {@link #addAllowedClass(Class)} or {@link #setAllowedClasses(Collection)}.
+     */
+    public static final Set<String> DEFAULT_ALLOWED_CLASS_NAMES = Collections.unmodifiableSet(
+            new LinkedHashSet<>(Arrays.asList(
+                    "java.lang.Boolean",
+                    "java.lang.Byte",
+                    "java.lang.Character",
+                    "java.lang.Double",
+                    "java.lang.Float",
+                    "java.lang.Integer",
+                    "java.lang.Long",
+                    "java.lang.Number",
+                    "java.lang.Short",
+                    "java.lang.String",
+                    "java.math.BigDecimal",
+                    "java.math.BigInteger",
+                    "java.time.Duration",
+                    "java.time.Instant",
+                    "java.time.LocalDate",
+                    "java.time.LocalDateTime",
+                    //java.time types are serialized through this package private proxy class.
+                    "java.time.Ser",
+                    "java.util.Date")));
+
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+    private static final int MAX_DESERIALIZATION_DEPTH = 16;
+    private static final int MAX_DESERIALIZATION_REFS = 1000;
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -86,6 +120,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final Set<String> allowedClassNames = new LinkedHashSet<>(DEFAULT_ALLOWED_CLASS_NAMES);
+    private volatile ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -822,7 +858,99 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Replaces the element types that this queue will deserialize.  The classes in {@link #DEFAULT_ALLOWED_CLASS_NAMES} remain allowed.
+     *
+     * @param classes
+     */
+    public void setAllowedClasses(Collection<Class<? extends Serializable>> classes) {
+        Assert.notNull(classes, "The collection of allowed classes cannot be null.");
+        synchronized (allowedClassNames) {
+            allowedClassNames.clear();
+            allowedClassNames.addAll(DEFAULT_ALLOWED_CLASS_NAMES);
+            for (Class<? extends Serializable> clazz : classes) {
+                Assert.notNull(clazz, "An allowed class cannot be null.");
+                allowedClassNames.add(clazz.getName());
+            }
+            deserializationFilter = null;
+        }
+    }
+
+    /**
+     * Permits an additional element type to be deserialized by this queue.
+     *
+     * @param clazz
+     */
+    public void addAllowedClass(Class<? extends Serializable> clazz) {
+        Assert.notNull(clazz, "An allowed class cannot be null.");
+        synchronized (allowedClassNames) {
+            if (allowedClassNames.add(clazz.getName())) {
+                deserializationFilter = null;
+            }
+        }
+    }
+
+    /**
+     * Permits additional types to be deserialized by this queue.  Patterns follow the syntax of
+     * {@link ObjectInputFilter.Config#createFilter(String)}, e.g. <code>org.apache.solr.common.*</code>, and may not
+     * contain a semicolon or start with an exclamation point.
+     *
+     * @param patterns
+     */
+    public void addAllowedClassPatterns(String... patterns) {
+        Assert.notNull(patterns, "The allowed class patterns cannot be null.");
+        synchronized (allowedClassNames) {
+            for (String pattern : patterns) {
+                Assert.hasText(pattern, "An allowed class pattern cannot be empty.");
+                Assert.isTrue(pattern.indexOf(';') < 0 && !pattern.startsWith("!"),
+                        "An allowed class pattern cannot contain a semicolon or be an exclusion.");
+                if (allowedClassNames.add(pattern)) {
+                    deserializationFilter = null;
+                }
+            }
+        }
+    }
+
+    /**
+     * Allow list filter that restricts {@link #deserialize(byte[])} to the types registered on this queue.  Everything else,
+     * including gadget classes that lead to remote code execution, is rejected before it is instantiated.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = deserializationFilter;
+        if (filter == null) {
+            synchronized (allowedClassNames) {
+                filter = deserializationFilter;
+                if (filter == null) {
+                    filter = createDeserializationFilter(allowedClassNames);
+                    deserializationFilter = filter;
+                }
+            }
+        }
+        return filter;
+    }
+
+    /**
+     * Builds an allow list {@link ObjectInputFilter} for the given class names, rejecting every other type as well as
+     * object graphs that are too deep or too large.
+     *
+     * @param classNames
+     * @return
+     */
+    protected static ObjectInputFilter createDeserializationFilter(Collection<String> classNames) {
+        StringBuilder pattern = new StringBuilder();
+        pattern.append("maxdepth=").append(MAX_DESERIALIZATION_DEPTH).append(';');
+        pattern.append("maxrefs=").append(MAX_DESERIALIZATION_REFS).append(';');
+        for (String className : classNames) {
+            pattern.append(className).append(';');
+        }
+        pattern.append("!*");
+        return ObjectInputFilter.Config.createFilter(pattern.toString());
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} restricted to the
+     * allowed element types, see {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,7 +960,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DistributedQueueException("Refused to deserialize a disallowed type from the Zookeeper queue. "
+                    + "Register the expected element type with addAllowedClass or setAllowedClasses.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {

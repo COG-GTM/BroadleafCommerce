@@ -145,7 +145,14 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     }
 
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
-        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue =
+                new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        queue.addAllowedClassPatterns(
+                SolrUpdateCommand.class.getPackage().getName() + ".*",
+                "java.util.*",
+                "org.apache.solr.common.SolrInputDocument",
+                "org.apache.solr.common.SolrInputField");
+        return queue;
     }
 
     protected Lock createLocalLock(String lockName) {
