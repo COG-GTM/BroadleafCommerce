@@ -21,14 +21,17 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.solr.common.SolrInputDocument;
 import org.apache.zookeeper.ZooKeeper;
 import org.broadleafcommerce.core.util.lock.ReentrantDistributedZookeeperLock;
 import org.broadleafcommerce.core.util.queue.ZookeeperDistributedQueue;
 import org.springframework.core.env.Environment;
 import org.springframework.util.Assert;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -57,6 +60,14 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     public static final int MAX_QUEUE_SIZE = 500;
     public static final String LOCK_PATH = "/solr-index/command-lock";
     public static final String QUEUE_PATH = "/solr-index/command-queue";
+    /**
+     * Classes, beyond {@link ZookeeperDistributedQueue#DEFAULT_ALLOWED_CLASS_PATTERNS}, that may be deserialized from the
+     * distributed command queue: the {@link SolrUpdateCommand} implementations and the {@link SolrInputDocument} graph.
+     */
+    public static final List<String> DISTRIBUTED_QUEUE_ALLOWED_CLASS_PATTERNS = Collections.unmodifiableList(Arrays.asList(
+            SolrUpdateCommand.class.getPackage().getName() + ".*",
+            SolrInputDocument.class.getPackage().getName() + ".*"
+    ));
     protected static final Map<String, BlockingQueue<? super SolrUpdateCommand>> QUEUE_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     protected static final Map<String, Lock> LOCK_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     private static final Log LOG = LogFactory.getLog(DefaultSolrIndexQueueProvider.class);
@@ -145,7 +156,18 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     }
 
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
-        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE, true, null,
+                getDistributedQueueAllowedClassPatterns());
+    }
+
+    /**
+     * Class patterns permitted when deserializing entries from the distributed queue.  Override to add custom
+     * {@link SolrUpdateCommand} implementations that live outside of this package, or custom Solr field value types.
+     *
+     * @return
+     */
+    protected List<String> getDistributedQueueAllowedClassPatterns() {
+        return DISTRIBUTED_QUEUE_ALLOWED_CLASS_PATTERNS;
     }
 
     protected Lock createLocalLock(String lockName) {
