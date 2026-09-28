@@ -38,10 +38,12 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -76,6 +78,45 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+    /**
+     * {@link ObjectInputFilter} patterns for the JDK types that are always permitted when deserializing queue entries.
+     * Everything not matched by these patterns, or by the additional patterns supplied to the constructor, is rejected.
+     */
+    public static final List<String> DEFAULT_ALLOWED_CLASS_PATTERNS = Collections.unmodifiableList(Arrays.asList(
+            "java.lang.Object",
+            "java.lang.String",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "java.lang.Number",
+            "java.lang.Byte",
+            "java.lang.Short",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.lang.Enum",
+            "java.math.BigInteger",
+            "java.math.BigDecimal",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.ArrayDeque",
+            "java.util.Map$Entry",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.TreeMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.TreeSet",
+            "java.util.Date",
+            "java.util.UUID",
+            "java.util.Locale",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$*",
+            "java.util.ImmutableCollections$*",
+            "java.util.CollSer",
+            "java.time.*"
+    ));
+    public static final int DEFAULT_MAX_DESERIALIZATION_DEPTH = 100;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -86,6 +127,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -129,11 +171,34 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param acls
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls) {
+        this(queuePath, zk, maxQueueSize, useDefaultBasePath, acls, null);
+    }
+
+    /**
+     * Same as {@link #ZookeeperDistributedQueue(String, ZooKeeper, int, boolean, List)}, but additionally permits the classes
+     * matched by allowedClassPatterns to be deserialized from Zookeeper, on top of {@link #DEFAULT_ALLOWED_CLASS_PATTERNS}.
+     * Queue elements are only deserialized if every class in their object graph is permitted, so the element type (and
+     * the types of its fields) must be covered by these patterns.
+     * <p>
+     * Patterns use the {@link ObjectInputFilter.Config#createFilter(String)} class name syntax, e.g.
+     * <code>com.example.MyCommand</code>, <code>com.example.commands.*</code> (package) or <code>com.example.**</code>
+     * (package and sub-packages).  Rejection patterns (starting with '!') and resource limits are not accepted.
+     *
+     * @param queuePath
+     * @param zk
+     * @param maxQueueSize
+     * @param useDefaultBasePath
+     * @param acls
+     * @param allowedClassPatterns
+     */
+    public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls,
+            Collection<String> allowedClassPatterns) {
         Assert.notNull(zk, "The SolrZkClient cannot be null.");
         Assert.notNull(queuePath, "The queuePath cannot be null and must be a Unix-style path (e.g. '/solr-index/command-queue').");
         Assert.hasText(queuePath.trim(), "The queuePath must not be empty and should not contain white spaces.");
         Assert.isTrue(maxQueueSize > 0, "maxQueueSize must be greater than 0.");
 
+        this.deserializationFilter = createDeserializationFilter(allowedClassPatterns);
         this.zk = zk;
         if (acls == null || acls.isEmpty()) {
             this.acls = ZooDefs.Ids.OPEN_ACL_UNSAFE;
@@ -822,16 +887,56 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} restricted by
+     * {@link #getDeserializationFilter()}, so only allow-listed classes can be instantiated.
      *
      * @param bytes
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, getDeserializationFilter());
+    }
+
+    /**
+     * Returns the filter applied to every {@link ObjectInputStream} used to read entries from Zookeeper.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
+    }
+
+    /**
+     * Builds an allow-list {@link ObjectInputFilter} from {@link #DEFAULT_ALLOWED_CLASS_PATTERNS} plus the supplied patterns.
+     * Any class not matched is rejected.
+     *
+     * @param additionalAllowedClassPatterns
+     * @return
+     */
+    protected static ObjectInputFilter createDeserializationFilter(Collection<String> additionalAllowedClassPatterns) {
+        List<String> patterns = new ArrayList<>();
+        patterns.add("maxdepth=" + DEFAULT_MAX_DESERIALIZATION_DEPTH);
+        patterns.addAll(DEFAULT_ALLOWED_CLASS_PATTERNS);
+        if (additionalAllowedClassPatterns != null) {
+            for (String pattern : additionalAllowedClassPatterns) {
+                Assert.hasText(pattern, "Allowed class patterns must not be empty.");
+                String trimmed = pattern.trim();
+                Assert.isTrue(!trimmed.startsWith("!") && trimmed.indexOf(';') < 0 && trimmed.indexOf('=') < 0,
+                        "Allowed class patterns must be class, package or module patterns: " + pattern);
+                patterns.add(trimmed);
+            }
+        }
+        patterns.add("!*");
+        return ObjectInputFilter.Config.createFilter(String.join(";", patterns));
+    }
+
+    static Object deserialize(byte[] bytes, ObjectInputFilter filter) {
+        Assert.notNull(filter, "The deserialization filter cannot be null.");
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
