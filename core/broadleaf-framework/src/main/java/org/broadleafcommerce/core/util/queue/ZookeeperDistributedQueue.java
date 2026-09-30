@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -76,6 +77,17 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final String QUEUE_LOCKS_FOLDER = "/locks";
     public static final String QUEUE_CONFIGS_FOLDER = "/configs";
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+    /**
+     * Default {@link ObjectInputFilter} pattern applied when reading entries from Zookeeper.  Only JDK value types,
+     * collections, Solr input documents and the Broadleaf Solr update commands are accepted; everything else is rejected.
+     * To allow additional types, prepend patterns to this value (the first matching pattern wins) and pass the resulting
+     * filter to {@link #ZookeeperDistributedQueue(String, ZooKeeper, int, boolean, List, ObjectInputFilter)}.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN = "maxdepth=20;maxrefs=10000;maxarray=100000;maxbytes=1048576;"
+            + "java.lang.*;java.math.*;java.time.*;java.util.*;"
+            + "org.apache.solr.common.*;"
+            + "org.broadleafcommerce.core.search.service.solr.indexer.*;"
+            + "!*";
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
@@ -86,6 +98,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -129,12 +142,34 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param acls
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls) {
+        this(queuePath, zk, maxQueueSize, useDefaultBasePath, acls, null);
+    }
+
+    /**
+     * Same as {@link #ZookeeperDistributedQueue(String, ZooKeeper, int, boolean, List)}, but allows a custom {@link ObjectInputFilter}
+     * to restrict which classes may be deserialized from Zookeeper.  If deserializationFilter is null, a filter built from
+     * {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN} is used.
+     *
+     * @param queuePath
+     * @param zk
+     * @param maxQueueSize
+     * @param useDefaultBasePath
+     * @param acls
+     * @param deserializationFilter
+     */
+    public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls,
+            ObjectInputFilter deserializationFilter) {
         Assert.notNull(zk, "The SolrZkClient cannot be null.");
         Assert.notNull(queuePath, "The queuePath cannot be null and must be a Unix-style path (e.g. '/solr-index/command-queue').");
         Assert.hasText(queuePath.trim(), "The queuePath must not be empty and should not contain white spaces.");
         Assert.isTrue(maxQueueSize > 0, "maxQueueSize must be greater than 0.");
 
         this.zk = zk;
+        if (deserializationFilter == null) {
+            this.deserializationFilter = ObjectInputFilter.Config.createFilter(DEFAULT_DESERIALIZATION_FILTER_PATTERN);
+        } else {
+            this.deserializationFilter = deserializationFilter;
+        }
         if (acls == null || acls.isEmpty()) {
             this.acls = ZooDefs.Ids.OPEN_ACL_UNSAFE;
         } else {
@@ -822,7 +857,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted by
+     * {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,6 +868,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +891,15 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * The {@link ObjectInputFilter} applied to every element read from Zookeeper.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
     }
 
     /**
