@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,52 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Allow-list applied by {@link #deserialize(byte[])} via {@link ObjectInputFilter}. Any class not matched here is rejected.
+     * Covers the Broadleaf queue entries (e.g. Solr update commands), the Solr documents they carry, and common JDK value and
+     * collection types. Subclasses that queue other types should override {@link #getDeserializationFilterPattern()}.
+     */
+    public static final String DEFAULT_DESERIALIZATION_FILTER_PATTERN = String.join(";",
+            "maxdepth=50",
+            "maxarray=1048576",
+            "java.lang.Object",
+            "java.lang.String",
+            "java.lang.Number",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Short",
+            "java.lang.Byte",
+            "java.lang.Double",
+            "java.lang.Float",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "java.lang.Enum",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            "java.util.Map$Entry",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.TreeMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.TreeSet",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$*",
+            "java.util.ImmutableCollections$*",
+            "java.util.CollSer",
+            "java.util.Date",
+            "java.util.UUID",
+            "java.sql.Date",
+            "java.sql.Timestamp",
+            "java.time.Ser",
+            "org.apache.solr.common.SolrDocumentBase",
+            "org.apache.solr.common.SolrInputDocument",
+            "org.apache.solr.common.SolrInputField",
+            "org.broadleafcommerce.**",
+            "!*");
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -822,7 +869,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted by
+     * {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,6 +880,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +903,31 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} used by {@link #deserialize(byte[])}. When a JVM-wide filter is configured
+     * (e.g. via {@code jdk.serialFilter}), it is merged with this queue's filter so that a rejection by either one wins.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = ObjectInputFilter.Config.createFilter(getDeserializationFilterPattern());
+        ObjectInputFilter jvmFilter = ObjectInputFilter.Config.getSerialFilter();
+        if (jvmFilter != null) {
+            return ObjectInputFilter.merge(filter, jvmFilter);
+        }
+        return filter;
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter.Config#createFilter(String)} pattern used to restrict which classes may be
+     * deserialized from Zookeeper.  Defaults to {@link #DEFAULT_DESERIALIZATION_FILTER_PATTERN}.
+     *
+     * @return
+     */
+    protected String getDeserializationFilterPattern() {
+        return DEFAULT_DESERIALIZATION_FILTER_PATTERN;
     }
 
     /**
