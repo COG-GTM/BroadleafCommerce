@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
@@ -78,6 +79,21 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Classes that may be deserialized from Zookeeper by default: JDK value types and collections, Solr input documents,
+     * and the Solr update commands queued by {@link org.broadleafcommerce.core.search.service.solr.indexer.DefaultSolrIndexQueueProvider}.
+     * Anything not matched is rejected (CWE-502). Subclasses can extend this via {@link #getAdditionalAllowedClassPatterns()}.
+     */
+    public static final List<String> DEFAULT_ALLOWED_CLASS_PATTERNS = Collections.unmodifiableList(List.of(
+            "java.lang.*",
+            "java.math.*",
+            "java.time.*",
+            "java.util.*",
+            "org.apache.solr.common.*",
+            "org.broadleafcommerce.core.search.service.solr.indexer.*"
+    ));
+    public static final String DESERIALIZATION_LIMITS = "maxdepth=64;maxrefs=1000000;maxarray=1000000;maxbytes=16777216";
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -832,6 +848,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -854,6 +871,33 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 }
             }
         }
+    }
+
+    /**
+     * Allow-list filter applied to every class read by {@link #deserialize(byte[])}. Any class not matching
+     * {@link #DEFAULT_ALLOWED_CLASS_PATTERNS} or {@link #getAdditionalAllowedClassPatterns()} is rejected. A JVM-wide
+     * filter ({@code jdk.serialFilter}), if configured, is also enforced.
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        StringBuilder spec = new StringBuilder(DESERIALIZATION_LIMITS);
+        for (String pattern : DEFAULT_ALLOWED_CLASS_PATTERNS) {
+            spec.append(';').append(pattern);
+        }
+        for (String pattern : getAdditionalAllowedClassPatterns()) {
+            spec.append(';').append(pattern);
+        }
+        spec.append(";!*");
+        ObjectInputFilter filter = ObjectInputFilter.Config.createFilter(spec.toString());
+        ObjectInputFilter jvmFilter = ObjectInputFilter.Config.getSerialFilter();
+        return jvmFilter == null ? filter : ObjectInputFilter.merge(filter, jvmFilter);
+    }
+
+    /**
+     * Additional {@link ObjectInputFilter} class patterns (e.g. {@code com.mycompany.queue.MyMessage} or {@code com.mycompany.queue.*})
+     * to allow when queueing custom element types. Patterns must not start with '!' or contain ';'.
+     */
+    protected List<String> getAdditionalAllowedClassPatterns() {
+        return Collections.emptyList();
     }
 
     /**
