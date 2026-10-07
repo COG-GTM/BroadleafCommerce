@@ -38,10 +38,14 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -78,6 +82,24 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
+
+    /**
+     * Classes that may be deserialized from queue entries by default. Everything else is rejected.
+     */
+    public static final List<String> DEFAULT_ALLOWED_DESERIALIZATION_PATTERNS = Collections.unmodifiableList(Arrays.asList(
+            "java.lang.*",
+            "java.util.*",
+            "java.math.*",
+            "java.time.*",
+            "java.sql.Date",
+            "java.sql.Timestamp",
+            "org.broadleafcommerce.**",
+            "org.apache.solr.common.**"
+    ));
+    public static final int MAX_DESERIALIZATION_DEPTH = 50;
+    public static final int MAX_DESERIALIZATION_REFS = 100_000;
+    public static final int MAX_DESERIALIZATION_ARRAY_LENGTH = 100_000;
+    public static final int MAX_DESERIALIZATION_BYTES = 1024 * 1024;
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -648,8 +670,17 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                                     null
                                             );
 
-                                            @SuppressWarnings("unchecked")
-                                            T deserialized = (T) deserialize(data);
+                                            T deserialized;
+                                            try {
+                                                @SuppressWarnings("unchecked")
+                                                T candidate = (T) deserialize(data);
+                                                deserialized = candidate;
+                                            } catch (DisallowedQueueEntryException e) {
+                                                LOG.error("Discarding Zookeeper queue entry " + getQueueEntryFolder() + '/' + entryName
+                                                        + " because it contains a class that is not allowed to be deserialized.", e);
+                                                getZookeeperClient().delete(getQueueEntryFolder() + '/' + entryName, -1);
+                                                return null;
+                                            }
 
                                             if (remove) {
                                                 getZookeeperClient().delete(
@@ -822,7 +853,35 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Returns the class name patterns (in {@link ObjectInputFilter.Config#createFilter(String)} syntax) that may be
+     * deserialized from this queue. Subclasses that queue other types should extend this list rather than replace it
+     * with a wildcard.
+     */
+    protected List<String> getAllowedDeserializationPatterns() {
+        return DEFAULT_ALLOWED_DESERIALIZATION_PATTERNS;
+    }
+
+    /**
+     * Builds the allowlist filter applied to every {@link ObjectInputStream} used by {@link #deserialize(byte[])}.
+     * Any class not matching {@link #getAllowedDeserializationPatterns()} is rejected (CWE-502), as are streams that
+     * exceed the depth, reference, array-length or size limits.
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        StringBuilder spec = new StringBuilder()
+                .append("maxdepth=").append(MAX_DESERIALIZATION_DEPTH)
+                .append(";maxrefs=").append(MAX_DESERIALIZATION_REFS)
+                .append(";maxarray=").append(MAX_DESERIALIZATION_ARRAY_LENGTH)
+                .append(";maxbytes=").append(MAX_DESERIALIZATION_BYTES);
+        for (String pattern : getAllowedDeserializationPatterns()) {
+            spec.append(';').append(pattern);
+        }
+        spec.append(";!*");
+        return ObjectInputFilter.Config.createFilter(spec.toString());
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} restricted
+     * by {@link #getDeserializationFilter()}.
      *
      * @param bytes
      * @return
@@ -832,7 +891,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(getDeserializationFilter());
             return ois.readObject();
+        } catch (InvalidClassException e) {
+            throw new DisallowedQueueEntryException("Rejected a disallowed class while deserializing an element from the Zookeeper queue.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
@@ -991,6 +1053,20 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                         + getQueueFolderPath(), e);
             }
         }
+    }
+
+    /**
+     * Thrown when a queue entry contains a class rejected by {@link #getDeserializationFilter()}.
+     */
+    public static class DisallowedQueueEntryException extends DistributedQueueException {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        public DisallowedQueueEntryException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
     }
 
 }
