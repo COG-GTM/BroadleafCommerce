@@ -19,6 +19,9 @@ package org.broadleafcommerce.core.util.queue;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.solr.common.SolrDocumentBase;
+import org.apache.solr.common.SolrInputDocument;
+import org.apache.solr.common.SolrInputField;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
@@ -29,6 +32,11 @@ import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 import org.broadleafcommerce.common.util.GenericOperation;
 import org.broadleafcommerce.common.util.GenericOperationUtil;
+import org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand;
+import org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand;
+import org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand;
+import org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand;
+import org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand;
 import org.broadleafcommerce.core.util.ZookeeperUtil;
 import org.broadleafcommerce.core.util.lock.DistributedLock;
 import org.broadleafcommerce.core.util.lock.DistributedLock.DistributedLockException;
@@ -84,7 +92,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
     /**
-     * Classes that may be deserialized from queue entries by default. Everything else is rejected.
+     * Classes that may be deserialized from queue entries by default: JDK value/collection types plus the Solr index
+     * commands queued by {@code DefaultSolrIndexQueueProvider}. Everything else is rejected.
      */
     public static final List<String> DEFAULT_ALLOWED_DESERIALIZATION_PATTERNS = Collections.unmodifiableList(Arrays.asList(
             "java.lang.*",
@@ -93,8 +102,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "java.time.*",
             "java.sql.Date",
             "java.sql.Timestamp",
-            "org.broadleafcommerce.**",
-            "org.apache.solr.common.**"
+            SolrUpdateCommand.class.getName(),
+            FullReindexCommand.class.getName(),
+            CatalogReindexCommand.class.getName(),
+            SiteReindexCommand.class.getName(),
+            IncrementalUpdateCommand.class.getName(),
+            SolrDocumentBase.class.getName(),
+            SolrInputDocument.class.getName(),
+            SolrInputField.class.getName()
     ));
     public static final int MAX_DESERIALIZATION_DEPTH = 50;
     public static final int MAX_DESERIALIZATION_REFS = 100_000;
@@ -718,24 +733,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                 }
                             }
 
-                            return out;
-                        } else {
-                            //Unlock here so that we're not holding the lock while we wait...
-                            lock.unlock();
-                            locked = false;
-
-                            if (timeout < 0L) {
-                                //Wait forever
-                                QUEUE_MONITOR.wait();
-                            } else if (timeout > 0L && waitTime > 0L) {
-                                //Wait for a period of time
-                                long start = System.currentTimeMillis();
-                                QUEUE_MONITOR.wait(waitTime);
-                                long end = System.currentTimeMillis();
-                                waitTime -= (end - start);  //Keep track of how long we waited.
-                            } else {
+                            if (!out.isEmpty()) {
                                 return out;
                             }
+                        }
+
+                        //Nothing usable (empty queue, or every entry was discarded). Unlock here so that we're not holding the lock while we wait...
+                        lock.unlock();
+                        locked = false;
+
+                        if (timeout < 0L) {
+                            //Wait forever
+                            QUEUE_MONITOR.wait();
+                        } else if (timeout > 0L && waitTime > 0L) {
+                            //Wait for a period of time
+                            long start = System.currentTimeMillis();
+                            QUEUE_MONITOR.wait(waitTime);
+                            long end = System.currentTimeMillis();
+                            waitTime -= (end - start);  //Keep track of how long we waited.
+                        } else {
+                            return out;
                         }
                     } finally {
                         if (locked) {
@@ -889,12 +906,23 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     protected Object deserialize(byte[] bytes) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
+        final boolean[] rejected = {false};
         try {
             ois = new ObjectInputStream(bais);
-            ois.setObjectInputFilter(getDeserializationFilter());
+            ObjectInputFilter filter = getDeserializationFilter();
+            ois.setObjectInputFilter(info -> {
+                ObjectInputFilter.Status status = filter.checkInput(info);
+                if (status == ObjectInputFilter.Status.REJECTED) {
+                    rejected[0] = true;
+                }
+                return status;
+            });
             return ois.readObject();
         } catch (InvalidClassException e) {
-            throw new DisallowedQueueEntryException("Rejected a disallowed class while deserializing an element from the Zookeeper queue.", e);
+            if (rejected[0]) {
+                throw new DisallowedQueueEntryException("Rejected a disallowed class while deserializing an element from the Zookeeper queue.", e);
+            }
+            throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {

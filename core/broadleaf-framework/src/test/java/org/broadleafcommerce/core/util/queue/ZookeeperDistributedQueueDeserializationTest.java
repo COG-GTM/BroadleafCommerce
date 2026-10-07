@@ -42,7 +42,10 @@ import java.io.InvalidClassException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -164,6 +167,55 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    public void blockingPollWaitsPastRejectedEntries() throws Exception {
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>("/blocking", zk);
+        writeRawEntry("/blocking", new EvilPayload());
+
+        Thread producer = new Thread(() -> {
+            try {
+                Thread.sleep(500);
+                queue.put(new FullReindexCommand());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        producer.start();
+
+        long start = System.currentTimeMillis();
+        SolrUpdateCommand taken = queue.poll(10, TimeUnit.SECONDS);
+        producer.join();
+
+        assertTrue("Timed poll must keep waiting after discarding a rejected entry", taken instanceof FullReindexCommand);
+        assertTrue(System.currentTimeMillis() - start >= 400);
+        assertFalse(EvilPayload.readObjectInvoked);
+    }
+
+    @Test
+    public void nonAllowlistedBroadleafClassIsRejected() throws Exception {
+        ZookeeperDistributedQueue<Serializable> queue = new ZookeeperDistributedQueue<>("/broadleaf-class", zk);
+
+        assertRejected(queue, new DistributedBlockingQueue.DistributedQueueException("not a queue command"));
+    }
+
+    @Test
+    public void incompatibleClassVersionIsNotDiscarded() throws Exception {
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>("/version-mismatch", zk);
+        byte[] data = withSerialVersionUid(serialize(new FullReindexCommand()), FullReindexCommand.class.getName(), 99L);
+        zk.create(ZookeeperDistributedQueue.DEFAULT_BASE_FOLDER + "/version-mismatch" + ZookeeperDistributedQueue.QUEUE_ENTRY_FOLDER
+                + "/dz-queue-entry", data, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+
+        try {
+            queue.poll();
+            fail("Expected an incompatible class version to fail deserialization");
+        } catch (DisallowedQueueEntryException e) {
+            fail("A serialVersionUID mismatch must not be treated as a disallowed class");
+        } catch (DistributedBlockingQueue.DistributedQueueException e) {
+            assertTrue(e.getCause() instanceof InvalidClassException);
+        }
+        assertEquals("Entry must be left for a node that can read it", 1, queue.size());
+    }
+
+    @Test
     public void subclassCanExtendAllowlist() throws Exception {
         ZookeeperDistributedQueue<Serializable> queue = new ZookeeperDistributedQueue<Serializable>("/extended", zk) {
             @Override
@@ -191,6 +243,17 @@ public class ZookeeperDistributedQueueDeserializationTest {
     private static void writeRawEntry(String queuePath, Serializable payload) throws Exception {
         zk.create(ZookeeperDistributedQueue.DEFAULT_BASE_FOLDER + queuePath + ZookeeperDistributedQueue.QUEUE_ENTRY_FOLDER
                         + "/dz-queue-entry", serialize(payload), ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+    }
+
+    private static byte[] withSerialVersionUid(byte[] data, String className, long uid) {
+        byte[] name = className.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i <= data.length - name.length - 8; i++) {
+            if (Arrays.equals(Arrays.copyOfRange(data, i, i + name.length), name)) {
+                ByteBuffer.wrap(data, i + name.length, 8).putLong(uid);
+                return data;
+            }
+        }
+        throw new IllegalStateException("Class descriptor not found");
     }
 
     private static byte[] serialize(Serializable payload) throws Exception {
