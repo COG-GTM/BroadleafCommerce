@@ -149,7 +149,31 @@ public class ZookeeperDistributedQueueDeserializationTest {
             current.add(next);
             current = next;
         }
-        assertRejected(serialize((Serializable) root), "stream limits exceeded");
+        assertRejected(serialize((Serializable) root), "depth=" + (ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_DEPTH + 1));
+    }
+
+    @Test
+    public void rejectsOversizedArrays() {
+        assertRejected(serialize(new byte[ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH + 1]),
+                "arrayLength=" + (ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH + 1));
+        assertEquals(1024, ((byte[]) queue.deserialize(serialize(new byte[1024]))).length);
+    }
+
+    @Test
+    public void offerRejectsEntriesConsumersWouldDiscardBeforeTouchingZookeeper() throws Exception {
+        EasyMock.replay(zk);
+        HashMap<String, Object> map = new HashMap<>();
+        map.put("uri", new java.net.URI("https://example.org"));
+        for (Serializable entry : Arrays.<Serializable>asList(new Gadget(), map, new NotAllowed())) {
+            try {
+                queue.offer(entry);
+                fail("Expected IllegalArgumentException for " + entry);
+            } catch (IllegalArgumentException e) {
+                assertTrue(e.getCause() instanceof RejectedQueueEntryException);
+            }
+        }
+        assertFalse(Gadget.triggered);
+        EasyMock.verify(zk);
     }
 
     @Test
