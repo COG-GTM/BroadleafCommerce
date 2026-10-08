@@ -101,6 +101,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "org.apache.solr.common.SolrInputField"
     ));
     public static final int DEFAULT_DESERIALIZATION_MAX_DEPTH = 64;
+    /**
+     * Zookeeper's default transport limit is about 1MB, so no legitimate entry can contain a larger array. Bounding it
+     * stops a tiny payload from declaring a huge array length and forcing a large allocation on consumers.
+     */
+    public static final int DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH = 1_000_000;
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -529,6 +534,12 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             return 0;
         }
 
+        //Validate every entry before writing anything, so consumers never receive (and discard) an entry we accepted.
+        final List<byte[]> payloads = new ArrayList<>(entries.size());
+        for (T entry : entries) {
+            payloads.add(serializeForQueue(entry));
+        }
+
         int entryCount = 0;
         long waitTime = timeout;
         synchronized (QUEUE_MONITOR) {
@@ -555,13 +566,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                         int remainingCapacity = remainingCapacity();
                         if (remainingCapacity > 0) {
                             ListIterator<? extends T> itr = entries.listIterator();
+                            Iterator<byte[]> payloadItr = payloads.iterator();
                             while (itr.hasNext()) {
-                                final T entry = itr.next();
+                                itr.next();
+                                final byte[] data = payloadItr.next();
                                 if (remainingCapacity > 0) {
                                     executeOperation(new GenericOperation<Void>() {
                                         @Override
                                         public Void execute() throws Exception {
-                                            byte[] data = serialize(entry);
                                             ZookeeperUtil.makePath(
                                                     getQueueEntryFolder() + '/' + getQueueEntryName(),
                                                     data,
@@ -575,6 +587,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                     remainingCapacity--;
                                     entryCount++;
                                     itr.remove();
+                                    payloadItr.remove();
 
                                 } else {
                                     break;
@@ -933,13 +946,32 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
+     * Serializes an entry for the queue and checks that {@link #deserialize(byte[])} will accept it, so the producer
+     * gets an {@link IllegalArgumentException} (per the {@link java.util.concurrent.BlockingQueue} contract) instead of
+     * consumers silently discarding it later.
+     */
+    protected byte[] serializeForQueue(T entry) {
+        byte[] data = serialize(entry);
+        try {
+            deserialize(data);
+        } catch (RejectedQueueEntryException e) {
+            throw new IllegalArgumentException("Entry of type " + (entry == null ? "null" : entry.getClass().getName())
+                    + " cannot be added to Zookeeper queue " + getQueueFolderPath()
+                    + " because consumers would reject it. Override getDeserializationAllowlist() to allow its classes.", e);
+        }
+        return data;
+    }
+
+    /**
      * Returns the filter applied to every {@link ObjectInputStream} created by {@link #deserialize(byte[])}.
-     * Built from {@link #getDeserializationAllowlist()} and {@link #getDeserializationMaxDepth()}.
+     * Built from {@link #getDeserializationAllowlist()}, {@link #getDeserializationMaxDepth()} and
+     * {@link #getDeserializationMaxArrayLength()}.
      */
     protected ObjectInputFilter getDeserializationFilter() {
         ObjectInputFilter filter = deserializationFilter;
         if (filter == null) {
-            StringBuilder pattern = new StringBuilder("maxdepth=").append(getDeserializationMaxDepth());
+            StringBuilder pattern = new StringBuilder("maxdepth=").append(getDeserializationMaxDepth())
+                    .append(";maxarray=").append(getDeserializationMaxArrayLength());
             for (String allowed : getDeserializationAllowlist()) {
                 pattern.append(';').append(allowed);
             }
@@ -960,6 +992,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     protected int getDeserializationMaxDepth() {
         return DEFAULT_DESERIALIZATION_MAX_DEPTH;
+    }
+
+    protected int getDeserializationMaxArrayLength() {
+        return DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH;
     }
 
     /**
@@ -1109,9 +1145,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             }
             if (status == Status.REJECTED && rejectionReason == null) {
                 Class<?> clazz = filterInfo.serialClass();
-                rejectionReason = clazz != null
-                        ? "class " + clazz.getName() + " is not allowed"
-                        : "stream limits exceeded (depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
+                rejectionReason = "rejected " + (clazz != null ? "class " + clazz.getName() : "stream")
+                        + " (depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
                         + ", arrayLength=" + filterInfo.arrayLength() + ", bytes=" + filterInfo.streamBytes() + ")";
             }
             return status;
