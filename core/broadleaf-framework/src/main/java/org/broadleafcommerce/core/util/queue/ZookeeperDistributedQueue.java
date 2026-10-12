@@ -1145,8 +1145,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             }
             if (status == Status.REJECTED && rejectionReason == null) {
                 Class<?> clazz = filterInfo.serialClass();
-                rejectionReason = "rejected " + (clazz != null ? "class " + clazz.getName() : "stream")
-                        + " (depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
+                rejectionReason = "filter rejected input (serialClass=" + (clazz != null ? clazz.getName() : "none")
+                        + ", depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
                         + ", arrayLength=" + filterInfo.arrayLength() + ", bytes=" + filterInfo.streamBytes() + ")";
             }
             return status;
