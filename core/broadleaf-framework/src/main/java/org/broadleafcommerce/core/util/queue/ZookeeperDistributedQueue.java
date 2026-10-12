@@ -38,10 +38,12 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -79,6 +81,84 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
+    /**
+     * Default classes that may be deserialized from Zookeeper. Anything not listed here is rejected ({@code !*}).
+     * Entries are exact class names (java.time aside), limited to the JDK value/collection types and the
+     * Solr command/document types that the Solr index queue actually carries, so the gadget surface stays minimal.
+     */
+    public static final List<String> DEFAULT_DESERIALIZATION_ALLOWLIST = Collections.unmodifiableList(Arrays.asList(
+            "java.lang.Object",
+            "java.io.Serializable",
+            "java.lang.Comparable",
+            "java.lang.CharSequence",
+            "java.lang.String",
+            "java.lang.Enum",
+            "java.lang.Number",
+            "java.lang.Boolean",
+            "java.lang.Byte",
+            "java.lang.Character",
+            "java.lang.Short",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            //java.time values are written via java.time.Ser and resolved back to their own (immutable) class, which is
+            //also filtered, so the top-level java.time package is allowed (sub-packages are not matched).
+            "java.time.*",
+            "java.util.Date",
+            "java.sql.Date",
+            "java.sql.Timestamp",
+            "java.util.UUID",
+            "java.util.Locale",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.Map$Entry",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.TreeMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.TreeSet",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$EmptyList",
+            "java.util.Collections$EmptyMap",
+            "java.util.Collections$EmptySet",
+            "java.util.Collections$SingletonList",
+            "java.util.Collections$SingletonMap",
+            "java.util.Collections$SingletonSet",
+            "java.util.Collections$UnmodifiableCollection",
+            "java.util.Collections$UnmodifiableList",
+            "java.util.Collections$UnmodifiableRandomAccessList",
+            "java.util.Collections$UnmodifiableSet",
+            "java.util.Collections$UnmodifiableMap",
+            "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand",
+            "org.apache.solr.common.SolrDocumentBase",
+            "org.apache.solr.common.SolrInputDocument",
+            "org.apache.solr.common.SolrInputField"
+    ));
+    /**
+     * Legitimate entries (command -> document list -> document -> field map -> field -> value list) are under 10 deep.
+     * A low cap also bounds hash-collision graphs of nested sets ("SerialDOS"), whose cost grows exponentially with depth.
+     */
+    public static final int DEFAULT_DESERIALIZATION_MAX_DEPTH = 20;
+    /**
+     * Zookeeper's default transport limit is about 1MB, so no legitimate entry can contain a larger array. Bounding it
+     * stops a tiny payload from declaring a huge array length and forcing a large allocation on consumers.
+     */
+    public static final int DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH = 1_000_000;
+    /**
+     * Upper bounds on the total object references and bytes read per entry, so a payload that stays within the depth
+     * and array limits still cannot request an arbitrarily large graph. 1MB matches Zookeeper's default znode limit.
+     */
+    public static final long DEFAULT_DESERIALIZATION_MAX_REFERENCES = 200_000L;
+    public static final long DEFAULT_DESERIALIZATION_MAX_BYTES = 1_048_576L;
+
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
     private final ZooKeeper zk;
@@ -87,6 +167,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
     private int capacity;
+    private volatile ObjectInputFilter deserializationFilter;
 
     /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
@@ -505,6 +586,12 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             return 0;
         }
 
+        //Validate every entry before writing anything, so consumers never receive (and discard) an entry we accepted.
+        //Payloads are not retained here, so memory use doesn't grow with the size of the batch.
+        for (T entry : entries) {
+            serializeForQueue(entry);
+        }
+
         int entryCount = 0;
         long waitTime = timeout;
         synchronized (QUEUE_MONITOR) {
@@ -642,20 +729,21 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                     T entry = executeOperation(new GenericOperation<T>() {
                                         @Override
                                         public T execute() throws Exception {
-                                            byte[] data = getZookeeperClient().getData(
-                                                    getQueueEntryFolder() + '/' + entryName,
-                                                    null,
-                                                    null
-                                            );
+                                            final String entryPath = getQueueEntryFolder() + '/' + entryName;
+                                            byte[] data = getZookeeperClient().getData(entryPath, null, null);
 
-                                            @SuppressWarnings("unchecked")
-                                            T deserialized = (T) deserialize(data);
+                                            final T deserialized;
+                                            try {
+                                                @SuppressWarnings("unchecked")
+                                                T value = (T) deserialize(data);
+                                                deserialized = value;
+                                            } catch (RejectedQueueEntryException e) {
+                                                discardRejectedEntry(entryPath, e);
+                                                return null;
+                                            }
 
                                             if (remove) {
-                                                getZookeeperClient().delete(
-                                                        getQueueEntryFolder() + '/' + entryName,
-                                                        0
-                                                );
+                                                getZookeeperClient().delete(entryPath, 0);
                                             }
 
                                             return deserialized;
@@ -687,24 +775,27 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                 }
                             }
 
-                            return out;
-                        } else {
-                            //Unlock here so that we're not holding the lock while we wait...
-                            lock.unlock();
-                            locked = false;
-
-                            if (timeout < 0L) {
-                                //Wait forever
-                                QUEUE_MONITOR.wait();
-                            } else if (timeout > 0L && waitTime > 0L) {
-                                //Wait for a period of time
-                                long start = System.currentTimeMillis();
-                                QUEUE_MONITOR.wait(waitTime);
-                                long end = System.currentTimeMillis();
-                                waitTime -= (end - start);  //Keep track of how long we waited.
-                            } else {
+                            if (!out.isEmpty()) {
                                 return out;
                             }
+                            //Every entry we saw was rejected or removed by another thread, so treat the queue as empty.
+                        }
+
+                        //Unlock here so that we're not holding the lock while we wait...
+                        lock.unlock();
+                        locked = false;
+
+                        if (timeout < 0L) {
+                            //Wait forever
+                            QUEUE_MONITOR.wait();
+                        } else if (timeout > 0L && waitTime > 0L) {
+                            //Wait for a period of time
+                            long start = System.currentTimeMillis();
+                            QUEUE_MONITOR.wait(waitTime);
+                            long end = System.currentTimeMillis();
+                            waitTime -= (end - start);  //Keep track of how long we waited.
+                        } else {
+                            return out;
                         }
                     } finally {
                         if (locked) {
@@ -822,18 +913,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream} restricted
+     * by {@link #getDeserializationFilter()}, so only allowlisted classes can be instantiated (CWE-502).
      *
      * @param bytes
      * @return
+     * @throws RejectedQueueEntryException if the data contains a class or graph that the filter rejects
      */
     protected Object deserialize(byte[] bytes) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
+        RejectionTrackingFilter filter = new RejectionTrackingFilter(getDeserializationFilter());
         try {
             ois = new ObjectInputStream(bais);
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
+            if (filter.isRejected()) {
+                throw new RejectedQueueEntryException("Refusing to deserialize an element from the Zookeeper queue, "
+                        + getQueueFolderPath() + ": " + filter.getRejectionReason(), e);
+            }
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
             if (ois != null) {
@@ -893,6 +992,81 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     LOG.trace("Error occured closing the ByteArrayOutputStream.", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Serializes an entry for the queue and checks that {@link #deserialize(byte[])} will accept it, so the producer
+     * gets an {@link IllegalArgumentException} (per the {@link java.util.concurrent.BlockingQueue} contract) instead of
+     * consumers silently discarding it later.
+     */
+    protected byte[] serializeForQueue(T entry) {
+        byte[] data = serialize(entry);
+        try {
+            deserialize(data);
+        } catch (RejectedQueueEntryException e) {
+            throw new IllegalArgumentException("Entry of type " + (entry == null ? "null" : entry.getClass().getName())
+                    + " cannot be added to Zookeeper queue " + getQueueFolderPath()
+                    + " because consumers would reject it. Override getDeserializationAllowlist() to allow its classes.", e);
+        }
+        return data;
+    }
+
+    /**
+     * Returns the filter applied to every {@link ObjectInputStream} created by {@link #deserialize(byte[])}.
+     * Built from {@link #getDeserializationAllowlist()} and the depth, array length, reference and byte limits.
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        ObjectInputFilter filter = deserializationFilter;
+        if (filter == null) {
+            StringBuilder pattern = new StringBuilder("maxdepth=").append(getDeserializationMaxDepth())
+                    .append(";maxarray=").append(getDeserializationMaxArrayLength())
+                    .append(";maxrefs=").append(getDeserializationMaxReferences())
+                    .append(";maxbytes=").append(getDeserializationMaxBytes());
+            for (String allowed : getDeserializationAllowlist()) {
+                pattern.append(';').append(allowed);
+            }
+            pattern.append(";!*");
+            filter = ObjectInputFilter.Config.createFilter(pattern.toString());
+            deserializationFilter = filter;
+        }
+        return filter;
+    }
+
+    /**
+     * Class name patterns (see {@link ObjectInputFilter.Config#createFilter(String)}) that may be read from the queue.
+     * Subclasses that put other types on the queue should override this and append their exact class names.
+     */
+    protected List<String> getDeserializationAllowlist() {
+        return DEFAULT_DESERIALIZATION_ALLOWLIST;
+    }
+
+    protected int getDeserializationMaxDepth() {
+        return DEFAULT_DESERIALIZATION_MAX_DEPTH;
+    }
+
+    protected int getDeserializationMaxArrayLength() {
+        return DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH;
+    }
+
+    protected long getDeserializationMaxReferences() {
+        return DEFAULT_DESERIALIZATION_MAX_REFERENCES;
+    }
+
+    protected long getDeserializationMaxBytes() {
+        return DEFAULT_DESERIALIZATION_MAX_BYTES;
+    }
+
+    /**
+     * Deletes a queue entry whose payload was rejected by the deserialization filter. Leaving it in place would
+     * block the head of the queue forever.
+     */
+    protected void discardRejectedEntry(String entryPath, RejectedQueueEntryException cause) throws Exception {
+        LOG.error("Discarding Zookeeper queue entry " + entryPath + " because its payload was rejected by the deserialization filter.", cause);
+        try {
+            getZookeeperClient().delete(entryPath, -1);
+        } catch (KeeperException.NoNodeException e) {
+            //Already removed by another consumer.
         }
     }
 
@@ -990,6 +1164,59 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new DistributedQueueException("An unexpected error occured executing a retryable operation for distributed Zookeeper queue, "
                         + getQueueFolderPath(), e);
             }
+        }
+    }
+
+    /**
+     * Thrown by {@link #deserialize(byte[])} when the deserialization filter rejects the payload.
+     */
+    public static class RejectedQueueEntryException extends DistributedQueueException {
+
+        private static final long serialVersionUID = 1L;
+
+        public RejectedQueueEntryException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * Per-stream filter that delegates to the queue's allowlist, also honours any JVM-wide {@code jdk.serialFilter},
+     * and records whether a rejection actually happened. That lets callers tell a filter rejection apart from other
+     * {@link java.io.InvalidClassException}s such as a serialVersionUID mismatch during a rolling deploy.
+     */
+    protected static class RejectionTrackingFilter implements ObjectInputFilter {
+
+        private final ObjectInputFilter delegate;
+        private final ObjectInputFilter jvmWideFilter;
+        private volatile String rejectionReason;
+
+        public RejectionTrackingFilter(ObjectInputFilter delegate) {
+            this.delegate = delegate;
+            this.jvmWideFilter = ObjectInputFilter.Config.getSerialFilter();
+        }
+
+        @Override
+        public Status checkInput(FilterInfo filterInfo) {
+            Status status = delegate.checkInput(filterInfo);
+            if (status != Status.REJECTED && jvmWideFilter != null
+                    && jvmWideFilter.checkInput(filterInfo) == Status.REJECTED) {
+                status = Status.REJECTED;
+            }
+            if (status == Status.REJECTED && rejectionReason == null) {
+                Class<?> clazz = filterInfo.serialClass();
+                rejectionReason = "filter rejected input (serialClass=" + (clazz != null ? clazz.getName() : "none")
+                        + ", depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
+                        + ", arrayLength=" + filterInfo.arrayLength() + ", bytes=" + filterInfo.streamBytes() + ")";
+            }
+            return status;
+        }
+
+        public boolean isRejected() {
+            return rejectionReason != null;
+        }
+
+        public String getRejectionReason() {
+            return rejectionReason;
         }
     }
 
