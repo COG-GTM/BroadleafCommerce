@@ -40,13 +40,20 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
@@ -138,6 +145,55 @@ public class ZookeeperDistributedQueueDeserializationTest {
     @Test
     public void rejectsNonAllowlistedApplicationClass() {
         assertRejected(serialize(new NotAllowed()), NotAllowed.class.getName());
+    }
+
+    @Test
+    public void roundTripsAllowlistedCollectionWrappersAndValueTypes() {
+        LinkedHashMap<String, Object> map = new LinkedHashMap<>();
+        map.put("unmodifiable", Collections.unmodifiableList(new ArrayList<>(Arrays.asList("a", "b"))));
+        map.put("asList", Arrays.asList(1, 2.5d, 3.5f, (short) 4, (byte) 5, 'c', true));
+        map.put("empty", Collections.emptyList());
+        map.put("singleton", Collections.singletonMap("k", "v"));
+        map.put("sorted", new TreeSet<>(Arrays.asList("z", "y")));
+        map.put("uuid", UUID.fromString("00000000-0000-0000-0000-000000000001"));
+        map.put("locale", Locale.CANADA_FRENCH);
+        map.put("localDate", LocalDate.of(2026, 1, 2));
+        map.put("timestamp", new Timestamp(0L));
+        assertEquals(map, queue.deserialize(serialize(map)));
+    }
+
+    @Test
+    public void rejectsJdkClassesOutsideTheAllowlist() {
+        assertRejected(serialize(new PriorityQueue<>(Arrays.asList(1, 2))), PriorityQueue.class.getName());
+        assertRejected(serialize(new StringBuilder("x")), StringBuilder.class.getName());
+        assertRejected(serialize(java.util.concurrent.TimeUnit.SECONDS), java.util.concurrent.TimeUnit.class.getName());
+    }
+
+    @Test
+    public void rejectsPayloadsLargerThanByteLimit() {
+        int half = (int) (ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_BYTES / 2) + 1024;
+        // The filter checks the running byte count at each callback, so the third array trips the limit.
+        ArrayList<byte[]> chunks = new ArrayList<>(Arrays.asList(new byte[half], new byte[half], new byte[1]));
+        assertRejected(serialize(chunks), "bytes=");
+    }
+
+    @Test
+    public void rejectsGraphsWithTooManyReferences() {
+        ZookeeperDistributedQueue<Serializable> limited = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("getQueueFolderPath", "getDeserializationMaxReferences")
+                .createMock();
+        EasyMock.expect(limited.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(limited.getDeserializationMaxReferences()).andReturn(1000L).anyTimes();
+        EasyMock.replay(limited);
+
+        ArrayList<Integer> refs = new ArrayList<>(Collections.nCopies(2000, 7));
+        try {
+            limited.deserialize(serialize(refs));
+            fail("Expected RejectedQueueEntryException");
+        } catch (RejectedQueueEntryException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("references=1001"));
+        }
+        assertEquals(refs, queue.deserialize(serialize(refs)));
     }
 
     @Test
