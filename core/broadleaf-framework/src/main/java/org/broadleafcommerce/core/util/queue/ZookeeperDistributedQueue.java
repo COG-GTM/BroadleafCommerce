@@ -83,14 +83,56 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     /**
      * Default classes that may be deserialized from Zookeeper. Anything not listed here is rejected ({@code !*}).
-     * JDK value/collection packages are allowed by wildcard (sub-packages are not included); application and Solr
-     * types are listed individually so that arbitrary classes on the classpath cannot be used as gadgets.
+     * Entries are exact class names (java.time aside), limited to the JDK value/collection types and the
+     * Solr command/document types that the Solr index queue actually carries, so the gadget surface stays minimal.
      */
     public static final List<String> DEFAULT_DESERIALIZATION_ALLOWLIST = Collections.unmodifiableList(Arrays.asList(
-            "java.lang.*",
-            "java.util.*",
-            "java.math.*",
+            "java.lang.Object",
+            "java.io.Serializable",
+            "java.lang.Comparable",
+            "java.lang.CharSequence",
+            "java.lang.String",
+            "java.lang.Enum",
+            "java.lang.Number",
+            "java.lang.Boolean",
+            "java.lang.Byte",
+            "java.lang.Character",
+            "java.lang.Short",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            //java.time values are written via java.time.Ser and resolved back to their own (immutable) class, which is
+            //also filtered, so the top-level java.time package is allowed (sub-packages are not matched).
             "java.time.*",
+            "java.util.Date",
+            "java.sql.Date",
+            "java.sql.Timestamp",
+            "java.util.UUID",
+            "java.util.Locale",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            "java.util.Map$Entry",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.TreeMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.TreeSet",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$EmptyList",
+            "java.util.Collections$EmptyMap",
+            "java.util.Collections$EmptySet",
+            "java.util.Collections$SingletonList",
+            "java.util.Collections$SingletonMap",
+            "java.util.Collections$SingletonSet",
+            "java.util.Collections$UnmodifiableCollection",
+            "java.util.Collections$UnmodifiableList",
+            "java.util.Collections$UnmodifiableRandomAccessList",
+            "java.util.Collections$UnmodifiableSet",
+            "java.util.Collections$UnmodifiableMap",
             "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
             "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
             "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
@@ -100,12 +142,22 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "org.apache.solr.common.SolrInputDocument",
             "org.apache.solr.common.SolrInputField"
     ));
-    public static final int DEFAULT_DESERIALIZATION_MAX_DEPTH = 64;
+    /**
+     * Legitimate entries (command -> document list -> document -> field map -> field -> value list) are under 10 deep.
+     * A low cap also bounds hash-collision graphs of nested sets ("SerialDOS"), whose cost grows exponentially with depth.
+     */
+    public static final int DEFAULT_DESERIALIZATION_MAX_DEPTH = 20;
     /**
      * Zookeeper's default transport limit is about 1MB, so no legitimate entry can contain a larger array. Bounding it
      * stops a tiny payload from declaring a huge array length and forcing a large allocation on consumers.
      */
     public static final int DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH = 1_000_000;
+    /**
+     * Upper bounds on the total object references and bytes read per entry, so a payload that stays within the depth
+     * and array limits still cannot request an arbitrarily large graph. 1MB matches Zookeeper's default znode limit.
+     */
+    public static final long DEFAULT_DESERIALIZATION_MAX_REFERENCES = 200_000L;
+    public static final long DEFAULT_DESERIALIZATION_MAX_BYTES = 1_048_576L;
 
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
@@ -535,9 +587,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         }
 
         //Validate every entry before writing anything, so consumers never receive (and discard) an entry we accepted.
-        final List<byte[]> payloads = new ArrayList<>(entries.size());
+        //Payloads are not retained here, so memory use doesn't grow with the size of the batch.
         for (T entry : entries) {
-            payloads.add(serializeForQueue(entry));
+            serializeForQueue(entry);
         }
 
         int entryCount = 0;
@@ -566,14 +618,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                         int remainingCapacity = remainingCapacity();
                         if (remainingCapacity > 0) {
                             ListIterator<? extends T> itr = entries.listIterator();
-                            Iterator<byte[]> payloadItr = payloads.iterator();
                             while (itr.hasNext()) {
-                                itr.next();
-                                final byte[] data = payloadItr.next();
+                                final T entry = itr.next();
                                 if (remainingCapacity > 0) {
                                     executeOperation(new GenericOperation<Void>() {
                                         @Override
                                         public Void execute() throws Exception {
+                                            byte[] data = serialize(entry);
                                             ZookeeperUtil.makePath(
                                                     getQueueEntryFolder() + '/' + getQueueEntryName(),
                                                     data,
@@ -587,7 +638,6 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                     remainingCapacity--;
                                     entryCount++;
                                     itr.remove();
-                                    payloadItr.remove();
 
                                 } else {
                                     break;
@@ -964,14 +1014,15 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     /**
      * Returns the filter applied to every {@link ObjectInputStream} created by {@link #deserialize(byte[])}.
-     * Built from {@link #getDeserializationAllowlist()}, {@link #getDeserializationMaxDepth()} and
-     * {@link #getDeserializationMaxArrayLength()}.
+     * Built from {@link #getDeserializationAllowlist()} and the depth, array length, reference and byte limits.
      */
     protected ObjectInputFilter getDeserializationFilter() {
         ObjectInputFilter filter = deserializationFilter;
         if (filter == null) {
             StringBuilder pattern = new StringBuilder("maxdepth=").append(getDeserializationMaxDepth())
-                    .append(";maxarray=").append(getDeserializationMaxArrayLength());
+                    .append(";maxarray=").append(getDeserializationMaxArrayLength())
+                    .append(";maxrefs=").append(getDeserializationMaxReferences())
+                    .append(";maxbytes=").append(getDeserializationMaxBytes());
             for (String allowed : getDeserializationAllowlist()) {
                 pattern.append(';').append(allowed);
             }
@@ -996,6 +1047,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
     protected int getDeserializationMaxArrayLength() {
         return DEFAULT_DESERIALIZATION_MAX_ARRAY_LENGTH;
+    }
+
+    protected long getDeserializationMaxReferences() {
+        return DEFAULT_DESERIALIZATION_MAX_REFERENCES;
+    }
+
+    protected long getDeserializationMaxBytes() {
+        return DEFAULT_DESERIALIZATION_MAX_BYTES;
     }
 
     /**
