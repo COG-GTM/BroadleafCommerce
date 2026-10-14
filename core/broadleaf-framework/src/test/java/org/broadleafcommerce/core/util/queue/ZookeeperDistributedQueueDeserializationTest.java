@@ -233,6 +233,59 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void writeRevalidatesTheSnapshotItWritesInsteadOfTrustingEarlierValidation() throws Exception {
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("getZookeeperClient", "getQueueAccessLock", "getQueueEntryFolder", "getQueueFolderPath",
+                        "remainingCapacity", "serializeForQueue")
+                .createMock();
+        CatalogReindexCommand entry = new CatalogReindexCommand(1L);
+        EasyMock.expect(q.getZookeeperClient()).andReturn(zk).anyTimes();
+        EasyMock.expect(q.getQueueAccessLock()).andReturn(lock).anyTimes();
+        EasyMock.expect(q.getQueueEntryFolder()).andReturn(ENTRY_FOLDER).anyTimes();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(q.remainingCapacity()).andReturn(1).anyTimes();
+        // Valid when first offered, rejected by the time it is written (e.g. mutated while waiting for capacity).
+        EasyMock.expect(q.serializeForQueue(entry)).andReturn(serialize(entry));
+        EasyMock.expect(q.serializeForQueue(entry)).andThrow(new IllegalArgumentException("changed"));
+        EasyMock.replay(q, zk);
+        Field monitor = ZookeeperDistributedQueue.class.getDeclaredField("QUEUE_MONITOR");
+        monitor.setAccessible(true);
+        monitor.set(q, new Object());
+
+        try {
+            q.offer(entry);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertEquals("changed", e.getMessage());
+        }
+        EasyMock.verify(q, zk);
+    }
+
+    @Test
+    public void configValueUsesFixedFilterIndependentOfSubclassAllowlist() {
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("getDeserializationAllowlist", "getQueueFolderPath")
+                .createMock();
+        EasyMock.expect(q.getDeserializationAllowlist()).andThrow(new NullPointerException("subclass field not initialized")).anyTimes();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.replay(q);
+
+        assertEquals(42, q.deserializeConfigValue(serialize(42)));
+        try {
+            q.deserializeConfigValue(serialize(new Gadget()));
+            fail("Expected RejectedQueueEntryException");
+        } catch (RejectedQueueEntryException e) {
+            assertFalse(Gadget.triggered);
+        }
+        try {
+            q.deserializeConfigValue(serialize(new ArrayList<>(Collections.singletonList(42))));
+            fail("Expected RejectedQueueEntryException");
+        } catch (RejectedQueueEntryException expected) {
+        }
+    }
+
+    @Test
     public void corruptDataIsNotReportedAsRejection() {
         try {
             queue.deserialize(new byte[] {1, 2, 3, 4});
