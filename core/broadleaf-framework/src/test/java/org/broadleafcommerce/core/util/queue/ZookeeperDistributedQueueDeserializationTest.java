@@ -286,6 +286,34 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    public void configValueEncodingIsIndependentOfSerializeOverride() {
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("serialize", "deserialize", "getQueueFolderPath")
+                .createMock();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        // A subclass with a custom wire format; config must not go through it.
+        EasyMock.expect(q.serialize(EasyMock.anyObject(Serializable.class))).andReturn(new byte[] {1, 2, 3}).anyTimes();
+        EasyMock.replay(q);
+
+        assertEquals(Integer.valueOf(500), q.readConfiguredCapacity(q.serializeConfigValue(500)));
+        EasyMock.verify(q);
+    }
+
+    @Test
+    public void legacyCustomFormatConfigFallsBackToQueueDeserializer() {
+        byte[] custom = new byte[] {1, 2, 3};
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("deserialize", "getQueueFolderPath")
+                .createMock();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(q.deserialize(custom)).andReturn(500);
+        EasyMock.replay(q);
+
+        assertEquals(Integer.valueOf(500), q.readConfiguredCapacity(custom));
+        EasyMock.verify(q);
+    }
+
+    @Test
     public void corruptDataIsNotReportedAsRejection() {
         try {
             queue.deserialize(new byte[] {1, 2, 3, 4});

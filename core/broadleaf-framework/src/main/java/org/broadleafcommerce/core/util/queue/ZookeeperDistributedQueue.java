@@ -883,14 +883,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                             final int size = getRequestedMaxQueueSize();
                             ZookeeperUtil.makePath(
                                     getConfigsFolder() + "/maxCapacity",
-                                    serialize(size),
+                                    serializeConfigValue(size),
                                     getZookeeperClient(),
                                     CreateMode.EPHEMERAL,
                                     getAcls()
                             );
                             seMaxCapacity(size);
                         } else {
-                            final Integer size = (Integer) deserializeConfigValue(
+                            final Integer size = readConfiguredCapacity(
                                     getZookeeperClient().getData(getConfigsFolder() + "/maxCapacity", new Watcher() {
                                         @Override
                                         public void process(WatchedEvent event) {
@@ -935,8 +935,38 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     /**
      * Deserializes one of the queue's internal config values using {@link #CONFIG_DESERIALIZATION_FILTER}.
      */
-    protected Object deserializeConfigValue(byte[] bytes) {
+    protected final Object deserializeConfigValue(byte[] bytes) {
         return deserialize(bytes, CONFIG_DESERIALIZATION_FILTER);
+    }
+
+    /**
+     * Serializes one of the queue's internal config values with plain Java serialization, independent of any
+     * {@link #serialize(Serializable)} override, so it always pairs with {@link #deserializeConfigValue(byte[])}.
+     */
+    protected final byte[] serializeConfigValue(Integer value) {
+        return javaSerialize(value);
+    }
+
+    /**
+     * Reads the persisted max capacity. Falls back to {@link #deserialize(byte[])} for config written by an older
+     * instance through an overridden {@link #serialize(Serializable)} in a custom format.
+     */
+    protected Integer readConfiguredCapacity(byte[] bytes) {
+        Object value;
+        try {
+            value = deserializeConfigValue(bytes);
+        } catch (RejectedQueueEntryException e) {
+            throw e;
+        } catch (DistributedQueueException e) {
+            LOG.warn("Max capacity config for Zookeeper queue " + getQueueFolderPath()
+                    + " is not in the standard format; reading it with the queue's deserializer.");
+            value = deserialize(bytes);
+        }
+        if (!(value instanceof Integer)) {
+            throw new DistributedQueueException("Unexpected max capacity config type for Zookeeper queue "
+                    + getQueueFolderPath() + ": " + (value == null ? "null" : value.getClass().getName()));
+        }
+        return (Integer) value;
     }
 
     private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter) {
@@ -981,6 +1011,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @return
      */
     protected byte[] serialize(Serializable obj) {
+        return javaSerialize(obj);
+    }
+
+    private byte[] javaSerialize(Serializable obj) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ObjectOutputStream oos = null;
         try {
