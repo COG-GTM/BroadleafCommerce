@@ -170,6 +170,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private volatile ObjectInputFilter deserializationFilter;
 
     /**
+     * Fixed filter for the queue's own config znodes (the max capacity {@link Integer}). Independent of the overridable
+     * entry allowlist, since config is read from the constructor before subclass fields are initialized.
+     */
+    protected static final ObjectInputFilter CONFIG_DESERIALIZATION_FILTER = ObjectInputFilter.Config.createFilter(
+            "maxdepth=2;maxrefs=4;maxarray=0;maxbytes=1024;java.lang.Integer;java.lang.Number;!*");
+
+    /**
      * Constructs a folder structure in Zookeeper for managing a queue and queue state..  The argument, queuePath, should start with a forward slash ('/') and should not
      * end with a slash.  This argument should not contain whitespaces or other special characters.
      * <p>
@@ -621,10 +628,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                             while (itr.hasNext()) {
                                 final T entry = itr.next();
                                 if (remainingCapacity > 0) {
+                                    //Re-validate the snapshot actually written, since the entry may have changed while we waited.
+                                    final byte[] data = serializeForQueue(entry);
                                     executeOperation(new GenericOperation<Void>() {
                                         @Override
                                         public Void execute() throws Exception {
-                                            byte[] data = serialize(entry);
                                             ZookeeperUtil.makePath(
                                                     getQueueEntryFolder() + '/' + getQueueEntryName(),
                                                     data,
@@ -882,7 +890,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                             );
                             seMaxCapacity(size);
                         } else {
-                            final Integer size = (Integer) deserialize(
+                            final Integer size = (Integer) deserializeConfigValue(
                                     getZookeeperClient().getData(getConfigsFolder() + "/maxCapacity", new Watcher() {
                                         @Override
                                         public void process(WatchedEvent event) {
@@ -921,9 +929,20 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @throws RejectedQueueEntryException if the data contains a class or graph that the filter rejects
      */
     protected Object deserialize(byte[] bytes) {
+        return deserialize(bytes, getDeserializationFilter());
+    }
+
+    /**
+     * Deserializes one of the queue's internal config values using {@link #CONFIG_DESERIALIZATION_FILTER}.
+     */
+    protected Object deserializeConfigValue(byte[] bytes) {
+        return deserialize(bytes, CONFIG_DESERIALIZATION_FILTER);
+    }
+
+    private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
-        RejectionTrackingFilter filter = new RejectionTrackingFilter(getDeserializationFilter());
+        RejectionTrackingFilter filter = new RejectionTrackingFilter(streamFilter);
         try {
             ois = new ObjectInputStream(bais);
             ois.setObjectInputFilter(filter);
