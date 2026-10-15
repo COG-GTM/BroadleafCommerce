@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamConstants;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -133,6 +134,15 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "java.util.Collections$UnmodifiableRandomAccessList",
             "java.util.Collections$UnmodifiableSet",
             "java.util.Collections$UnmodifiableMap",
+            //List.of/Set.of/Map.of (and copyOf/toUnmodifiableList) serialize through the CollSer proxy, whose
+            //readResolve rebuilds the immutable collection; its elements are still filtered individually.
+            "java.util.CollSer",
+            "java.util.ImmutableCollections$List12",
+            "java.util.ImmutableCollections$ListN",
+            "java.util.ImmutableCollections$Set12",
+            "java.util.ImmutableCollections$SetN",
+            "java.util.ImmutableCollections$Map1",
+            "java.util.ImmutableCollections$MapN",
             "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
             "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
             "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
@@ -948,8 +958,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Reads the persisted max capacity. Falls back to {@link #deserialize(byte[])} for config written by an older
-     * instance through an overridden {@link #serialize(Serializable)} in a custom format.
+     * Reads the persisted max capacity. Falls back to {@link #deserialize(byte[])} only for config written by an older
+     * instance through an overridden {@link #serialize(Serializable)} in a non-Java-serialization format. Java
+     * serialization streams are only ever read with the fixed config filter, so an unfiltered {@code deserialize}
+     * override never sees a Java object stream from the config znode.
      */
     protected Integer readConfiguredCapacity(byte[] bytes) {
         Object value;
@@ -958,6 +970,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         } catch (RejectedQueueEntryException e) {
             throw e;
         } catch (DistributedQueueException e) {
+            if (isJavaSerializationStream(bytes)) {
+                throw e;
+            }
             LOG.warn("Max capacity config for Zookeeper queue " + getQueueFolderPath()
                     + " is not in the standard format; reading it with the queue's deserializer.");
             value = deserialize(bytes);
@@ -967,6 +982,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     + getQueueFolderPath() + ": " + (value == null ? "null" : value.getClass().getName()));
         }
         return (Integer) value;
+    }
+
+    private static boolean isJavaSerializationStream(byte[] bytes) {
+        return bytes != null && bytes.length >= 2
+                && (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF)) == (ObjectStreamConstants.STREAM_MAGIC & 0xFFFF);
     }
 
     private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter) {
