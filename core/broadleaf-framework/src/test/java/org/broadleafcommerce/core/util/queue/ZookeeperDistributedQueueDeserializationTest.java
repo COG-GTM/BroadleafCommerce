@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -128,6 +129,30 @@ public class ZookeeperDistributedQueueDeserializationTest {
         assertEquals(new BigDecimal("9.99"), readDoc.getFieldValue("price"));
         assertEquals("sku-1", readDoc.getChildDocuments().get(0).getFieldValue("id"));
         assertEquals(Collections.singletonList("id:old"), read.getDeleteQueries());
+    }
+
+    @Test
+    public void acceptsImmutableCollectionFactoriesIncludingIndexUpdates() {
+        assertEquals(List.of(), queue.deserialize(serialize((Serializable) List.of())));
+        assertEquals(List.of(1, "two", 3L), queue.deserialize(serialize((Serializable) List.of(1, "two", 3L))));
+        assertEquals(Set.of("a"), queue.deserialize(serialize((Serializable) Set.of("a"))));
+        assertEquals(Set.of("a", "b", "c"), queue.deserialize(serialize((Serializable) Set.of("a", "b", "c"))));
+        assertEquals(Map.of("k", 1), queue.deserialize(serialize((Serializable) Map.of("k", 1))));
+        assertEquals(Map.of("k", 1, "j", 2), queue.deserialize(serialize((Serializable) Map.of("k", 1, "j", 2))));
+
+        SolrInputDocument doc = new SolrInputDocument();
+        doc.addField("id", "product-1");
+        IncrementalUpdateCommand cmd = new IncrementalUpdateCommand(List.of(doc), List.of("id:old"));
+        byte[] data = queue.serializeForQueue(cmd);
+        IncrementalUpdateCommand read = (IncrementalUpdateCommand) queue.deserialize(data);
+        assertEquals("product-1", read.getSolrInputDocuments().get(0).getFieldValue("id"));
+        assertEquals(List.of("id:old"), read.getDeleteQueries());
+    }
+
+    @Test
+    public void rejectsGadgetInsideImmutableCollection() {
+        assertRejected(serialize((Serializable) List.of(new Gadget())), Gadget.class.getName());
+        assertRejected(serialize((Serializable) Map.of("k", new Gadget())), Gadget.class.getName());
     }
 
     @Test
@@ -310,6 +335,27 @@ public class ZookeeperDistributedQueueDeserializationTest {
         EasyMock.replay(q);
 
         assertEquals(Integer.valueOf(500), q.readConfiguredCapacity(custom));
+        EasyMock.verify(q);
+    }
+
+    @Test
+    public void malformedJavaStreamConfigIsNeverPassedToQueueDeserializer() {
+        byte[] full = serialize(500);
+        byte[] truncated = Arrays.copyOf(full, full.length - 2);
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("deserialize", "getQueueFolderPath")
+                .createMock();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        // No deserialize expectation: an (unfiltered) override must not be handed a Java object stream.
+        EasyMock.replay(q);
+
+        try {
+            q.readConfiguredCapacity(truncated);
+            fail("Expected DistributedQueueException");
+        } catch (RejectedQueueEntryException e) {
+            fail("Truncated data must not be treated as a filter rejection");
+        } catch (DistributedQueueException expected) {
+        }
         EasyMock.verify(q);
     }
 
