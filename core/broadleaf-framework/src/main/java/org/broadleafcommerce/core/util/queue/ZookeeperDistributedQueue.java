@@ -1071,16 +1071,26 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     /**
      * Serializes an entry for the queue and checks that {@link #deserialize(byte[])} will accept it, so the producer
      * gets an {@link IllegalArgumentException} (per the {@link java.util.concurrent.BlockingQueue} contract) instead of
-     * consumers silently discarding it later.
+     * consumers silently discarding it later. Null entries are rejected with a {@link NullPointerException}, since a
+     * null read from the queue is indistinguishable from an empty queue.
      */
     protected byte[] serializeForQueue(T entry) {
+        if (entry == null) {
+            throw new NullPointerException("Null entries cannot be added to Zookeeper queue " + getQueueFolderPath());
+        }
         byte[] data = serialize(entry);
+        Object roundTrip;
         try {
-            deserialize(data);
+            roundTrip = deserialize(data);
         } catch (RejectedQueueEntryException e) {
-            throw new IllegalArgumentException("Entry of type " + (entry == null ? "null" : entry.getClass().getName())
+            throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()
                     + " cannot be added to Zookeeper queue " + getQueueFolderPath()
                     + " because consumers would reject it. Override getDeserializationAllowlist() to allow its classes.", e);
+        }
+        if (roundTrip == null) {
+            throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()
+                    + " cannot be added to Zookeeper queue " + getQueueFolderPath()
+                    + " because it deserializes to null, which consumers cannot tell apart from an empty queue.");
         }
         return data;
     }
