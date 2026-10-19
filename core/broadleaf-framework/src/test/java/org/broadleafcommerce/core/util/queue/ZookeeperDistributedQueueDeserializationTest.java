@@ -241,6 +241,39 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    public void nullEntriesAreRejectedBeforeTouchingZookeeper() throws Exception {
+        EasyMock.replay(zk);
+        try {
+            queue.offer(null);
+            fail("Expected NullPointerException");
+        } catch (NullPointerException expected) {
+        }
+        try {
+            queue.addAll(Arrays.<Serializable>asList("first", null));
+            fail("Expected NullPointerException");
+        } catch (NullPointerException expected) {
+        }
+        EasyMock.verify(zk);
+    }
+
+    @Test
+    public void entriesThatDeserializeToNullAreRejected() {
+        ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("deserialize", "getQueueFolderPath")
+                .createMock();
+        EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(q.deserialize(EasyMock.anyObject(byte[].class))).andReturn(null);
+        EasyMock.replay(q);
+        try {
+            q.serializeForQueue("resolves-to-null");
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("deserializes to null"));
+        }
+        EasyMock.verify(q);
+    }
+
+    @Test
     public void offerRejectsEntriesConsumersWouldDiscardBeforeTouchingZookeeper() throws Exception {
         EasyMock.replay(zk);
         HashMap<String, Object> map = new HashMap<>();
