@@ -358,16 +358,17 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
-    public void legacyCustomFormatConfigFallsBackToQueueDeserializer() {
+    public void nonStandardConfigIsNeverPassedToQueueDeserializer() {
         byte[] custom = new byte[] {1, 2, 3};
         ZookeeperDistributedQueue<Serializable> q = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
-                .addMockedMethods("deserialize", "getQueueFolderPath")
+                .addMockedMethods("deserialize", "getQueueFolderPath", "getRequestedMaxQueueSize")
                 .createMock();
         EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
-        EasyMock.expect(q.deserialize(custom)).andReturn(500);
+        EasyMock.expect(q.getRequestedMaxQueueSize()).andReturn(250);
+        // No deserialize expectation: a (possibly unfiltered) override must never see config bytes.
         EasyMock.replay(q);
 
-        assertEquals(Integer.valueOf(500), q.readConfiguredCapacity(custom));
+        assertEquals(Integer.valueOf(250), q.readConfiguredCapacity(custom));
         EasyMock.verify(q);
     }
 
