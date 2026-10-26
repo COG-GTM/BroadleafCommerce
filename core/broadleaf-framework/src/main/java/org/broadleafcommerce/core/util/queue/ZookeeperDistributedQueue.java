@@ -961,8 +961,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * Reads the persisted max capacity using only {@link #CONFIG_DESERIALIZATION_FILTER}. Config bytes are never handed
      * to the overridable {@link #deserialize(byte[])}, so an unfiltered subclass deserializer can't be reached through
      * the config znode. Config that isn't a standard Java-serialized {@code Integer} (e.g. written by an older instance
-     * through an overridden {@link #serialize(Serializable)}) is ignored in favour of the locally requested size; the
-     * node is ephemeral, so it is replaced with the standard format once that instance's session ends.
+     * through an overridden {@link #serialize(Serializable)}) is rejected rather than replaced with a node-local value,
+     * so every node keeps enforcing one shared capacity. The node is ephemeral, so the standard format is written once
+     * that older instance's session ends.
      */
     protected final Integer readConfiguredCapacity(byte[] bytes) {
         Object value;
@@ -974,10 +975,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             if (isJavaSerializationStream(bytes)) {
                 throw e;
             }
-            int requested = getRequestedMaxQueueSize();
-            LOG.warn("Max capacity config for Zookeeper queue " + getQueueFolderPath()
-                    + " is not in the standard format; using the locally requested max capacity (" + requested + ").");
-            return requested;
+            throw new DistributedQueueException("Max capacity config for Zookeeper queue " + getQueueFolderPath()
+                    + " is not a standard Java-serialized Integer; refusing to substitute a node-local capacity.", e);
         }
         if (!(value instanceof Integer)) {
             throw new DistributedQueueException("Unexpected max capacity config type for Zookeeper queue "
