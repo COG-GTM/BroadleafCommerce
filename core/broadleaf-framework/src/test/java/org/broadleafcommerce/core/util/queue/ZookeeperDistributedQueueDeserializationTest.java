@@ -364,11 +364,17 @@ public class ZookeeperDistributedQueueDeserializationTest {
                 .addMockedMethods("deserialize", "getQueueFolderPath", "getRequestedMaxQueueSize")
                 .createMock();
         EasyMock.expect(q.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
-        EasyMock.expect(q.getRequestedMaxQueueSize()).andReturn(250);
-        // No deserialize expectation: a (possibly unfiltered) override must never see config bytes.
+        // No deserialize or getRequestedMaxQueueSize expectation: a (possibly unfiltered) override must never see
+        // config bytes, and a node-local capacity must never replace the shared one.
         EasyMock.replay(q);
 
-        assertEquals(Integer.valueOf(250), q.readConfiguredCapacity(custom));
+        try {
+            q.readConfiguredCapacity(custom);
+            fail("Expected DistributedQueueException");
+        } catch (RejectedQueueEntryException e) {
+            fail("Non-standard config must not be treated as a filter rejection");
+        } catch (DistributedQueueException expected) {
+        }
         EasyMock.verify(q);
     }
 
