@@ -551,7 +551,15 @@ $(document).ready(function() {
                 url: dupUrl,
                 type: "POST",
                 data: $form.serializeArray(),
-                complete: BLCAdmin.entityForm.hideActionSpinner()
+                complete: BLCAdmin.entityForm.hideActionSpinner(),
+                error: function (jqXHR) {
+                    if (jqXHR.responseJSON && jqXHR.responseJSON.errors) {
+                        $("#headerFlashAlertBoxContainer").removeClass("hidden");
+                        BLCAdmin.entityForm.showErrors(jqXHR.responseJSON, BLCAdmin.messages.problemDuplicating);
+                    } else {
+                        BLC.defaultErrorHandler(jqXHR);
+                    }
+                }
             }, function (data) {
                 $("#headerFlashAlertBoxContainer").removeClass("hidden");
                 $(".errors, .error, .tab-error-indicator, .tabError").remove();
