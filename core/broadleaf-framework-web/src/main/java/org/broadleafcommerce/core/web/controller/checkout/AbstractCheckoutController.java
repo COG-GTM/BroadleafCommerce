@@ -35,6 +35,8 @@ import org.broadleafcommerce.core.web.checkout.validator.OrderInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.validator.ShippingInfoFormValidator;
 import org.broadleafcommerce.core.web.order.service.CartStateService;
 import org.broadleafcommerce.core.web.service.InitBinderService;
+import org.broadleafcommerce.profile.core.domain.Customer;
+import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CountrySubdivisionService;
@@ -171,6 +173,24 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
 
     protected String getConfirmationView(String orderNumber) {
         return getBaseConfirmationView() + "/" + orderNumber;
+    }
+
+    /**
+     * Reads a saved {@link CustomerPayment} by a client-supplied id, but only if it belongs to the given customer.
+     *
+     * @throws SecurityException if the customer is anonymous, or the payment does not exist or is not owned by the customer
+     */
+    protected CustomerPayment readOwnedCustomerPayment(Customer customer, Long customerPaymentId) {
+        if (customer == null || customer.isAnonymous()) {
+            throw new SecurityException("Anonymous customers cannot use saved payments.");
+        }
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByIdForCustomer(
+                customerPaymentId, customer
+        );
+        if (customerPayment == null) {
+            throw new SecurityException("The active customer does not own the saved payment that they are trying to use.");
+        }
+        return customerPayment;
     }
 
     protected void populateModelWithReferenceData(HttpServletRequest request, Model model) {
