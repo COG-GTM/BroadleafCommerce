@@ -1,4 +1,4 @@
-<div class="entity-form-actions">
+<div class="entity-form-actions" th:if="${canUploadAsset == null or canUploadAsset}">
     <div class="uploadFileFormContainer">
 
         <blc:form method="post" class="uploadFileForm"

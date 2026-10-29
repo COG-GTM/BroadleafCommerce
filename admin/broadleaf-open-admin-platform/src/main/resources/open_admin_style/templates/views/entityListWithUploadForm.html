@@ -1,4 +1,4 @@
-<blc:form method="post" class="uploadFileForm entityListWithUpload hidden"
+<blc:form th:if="${canUploadAsset == null or canUploadAsset}" method="post" class="uploadFileForm entityListWithUpload hidden"
     enctype="multipart/form-data"  
     th:action="@{${'/asset/uploadAsset'}}"
     id="assetUploadForm">
