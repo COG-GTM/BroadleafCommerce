@@ -21,13 +21,17 @@ import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.util.BLCRequestUtils;
+import org.broadleafcommerce.common.web.BaseUrlResolver;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.validator.ResetPasswordValidator;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
+import org.springframework.core.env.Environment;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.context.request.ServletWebRequest;
+
+import java.net.URI;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,6 +49,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class BroadleafLoginController extends BroadleafAbstractController {
 
     protected static final String CHANGE_PASSWORD_USERNAME_REQUEST_ATTR = "change_password_request_username";
+    protected static final String RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY = "resetPassword.allowedBaseUrls";
     protected static String loginView = "authentication/login";
     protected static String forgotPasswordView = "authentication/forgotPassword";
     protected static String forgotUsernameView = "authentication/forgotUsername";
@@ -61,6 +66,10 @@ public class BroadleafLoginController extends BroadleafAbstractController {
     protected ResetPasswordValidator resetPasswordValidator;
     @Resource(name = "blLoginService")
     protected LoginService loginService;
+    @Resource(name = "blBaseUrlResolver")
+    protected BaseUrlResolver baseUrlResolver;
+    @Resource
+    protected Environment environment;
 
     /**
      * Redirects to the login view.
@@ -345,16 +354,41 @@ public class BroadleafLoginController extends BroadleafAbstractController {
         return "";  // no port required
     }
 
+    /**
+     * Builds the link that is emailed to the customer. The scheme, host and port are never taken from the
+     * request (they are derived from the attacker-controllable Host header); they come from
+     * {@link #getResetPasswordBaseUrl(HttpServletRequest)} instead.
+     */
     public String getResetPasswordUrl(HttpServletRequest request) {
-        String url = request.getScheme() + "://" + request.getServerName()
-                + getResetPasswordPort(request, request.getScheme());
+        String view = getResetPasswordView();
+        return getResetPasswordBaseUrl(request) + (view.startsWith("/") ? view : "/" + view);
+    }
 
-        if (request.getContextPath() != null && !"".equals(request.getContextPath())) {
-            url = url + request.getContextPath() + getResetPasswordView();
-        } else {
-            url = url + getResetPasswordView();
+    /**
+     * Returns the configured base URL whose host matches the request's server name from the comma-separated
+     * {@code resetPassword.allowedBaseUrls} property (for multi-domain installs), otherwise {@code site.baseurl}.
+     * The returned value never contains a trailing slash.
+     */
+    protected String getResetPasswordBaseUrl(HttpServletRequest request) {
+        String serverName = request.getServerName();
+        String allowedBaseUrls = environment.getProperty(RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY);
+        if (StringUtils.isNotBlank(serverName) && StringUtils.isNotBlank(allowedBaseUrls)) {
+            for (String allowedBaseUrl : StringUtils.split(allowedBaseUrls, ',')) {
+                allowedBaseUrl = StringUtils.removeEnd(allowedBaseUrl.trim(), "/");
+                if (serverName.equalsIgnoreCase(getHost(allowedBaseUrl))) {
+                    return allowedBaseUrl;
+                }
+            }
         }
-        return url;
+        return baseUrlResolver.getSiteBaseUrl();
+    }
+
+    protected String getHost(String url) {
+        try {
+            return URI.create(url).getHost();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**
