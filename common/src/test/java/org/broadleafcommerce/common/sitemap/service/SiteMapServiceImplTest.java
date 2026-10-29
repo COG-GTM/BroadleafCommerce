@@ -18,9 +18,12 @@
 package org.broadleafcommerce.common.sitemap.service;
 
 import org.broadleafcommerce.common.file.service.BroadleafFileServiceImpl;
+import org.broadleafcommerce.common.site.domain.Site;
+import org.broadleafcommerce.common.site.domain.SiteImpl;
 import org.broadleafcommerce.common.sitemap.domain.SiteMapConfiguration;
 import org.broadleafcommerce.common.sitemap.domain.SiteMapConfigurationImpl;
 import org.broadleafcommerce.common.sitemap.exception.SiteMapException;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -53,13 +56,14 @@ public class SiteMapServiceImplTest {
         siteMapService.broadleafFileService = new BroadleafFileServiceImpl() {
             @Override
             public File getResource(String name, Long localTimeout) {
-                return new File(siteMapDir, name.replaceFirst("^/+", ""));
+                return new File(siteMapDir, siteDirectoryPrefix() + name.replaceFirst("^/+", ""));
             }
         };
     }
 
     @After
     public void cleanup() {
+        BroadleafRequestContext.setBroadleafRequestContext(null);
         File[] files = siteMapDir.listFiles();
         if (files != null) {
             for (File file : files) {
@@ -139,6 +143,23 @@ public class SiteMapServiceImplTest {
     }
 
     @Test
+    public void testThrottleIsTrackedPerSite() throws Exception {
+        siteMapService.filesToCreate = new String[] { "sitemap.xml" };
+
+        useSite(1L);
+        Assert.assertTrue(siteMapService.getSiteMapFile("/sitemap.xml").exists());
+        Assert.assertFalse(siteMapService.getSiteMapFile("/sitemap7.xml").exists());
+        Assert.assertEquals(1, siteMapService.generationCount.get());
+
+        useSite(2L);
+        Assert.assertTrue(siteMapService.getSiteMapFile("/sitemap.xml").exists());
+        Assert.assertEquals(2, siteMapService.generationCount.get());
+
+        Assert.assertFalse(siteMapService.getSiteMapFile("/sitemap7.xml").exists());
+        Assert.assertEquals(2, siteMapService.generationCount.get());
+    }
+
+    @Test
     public void testFailedGenerationIsAlsoThrottled() throws Exception {
         siteMapService.failGeneration = true;
         try {
@@ -198,6 +219,19 @@ public class SiteMapServiceImplTest {
         Assert.assertEquals(1, siteMapService.generationCount.get());
     }
 
+    protected void useSite(Long siteId) {
+        Site site = new SiteImpl();
+        site.setId(siteId);
+        BroadleafRequestContext brc = new BroadleafRequestContext();
+        brc.setSite(site);
+        BroadleafRequestContext.setBroadleafRequestContext(brc);
+    }
+
+    protected String siteDirectoryPrefix() {
+        BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
+        return brc == null || brc.getSite() == null ? "" : "site-" + brc.getSite().getId() + "-";
+    }
+
     protected class TestSiteMapService extends SiteMapServiceImpl {
 
         protected final AtomicInteger generationCount = new AtomicInteger();
@@ -225,7 +259,7 @@ public class SiteMapServiceImplTest {
                 throw new SiteMapException("generation failed");
             }
             for (String fileName : filesToCreate) {
-                File file = new File(siteMapDir, fileName);
+                File file = new File(siteMapDir, siteDirectoryPrefix() + fileName);
                 file.createNewFile();
                 file.setLastModified(System.currentTimeMillis());
             }

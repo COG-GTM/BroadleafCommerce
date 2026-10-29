@@ -26,11 +26,13 @@ import org.broadleafcommerce.common.config.service.ModuleConfigurationService;
 import org.broadleafcommerce.common.config.service.type.ModuleConfigurationType;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 import org.broadleafcommerce.common.file.service.BroadleafFileService;
+import org.broadleafcommerce.common.site.domain.Site;
 import org.broadleafcommerce.common.sitemap.domain.SiteMapConfiguration;
 import org.broadleafcommerce.common.sitemap.domain.SiteMapGeneratorConfiguration;
 import org.broadleafcommerce.common.sitemap.exception.SiteMapException;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.common.web.BaseUrlResolver;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -39,7 +41,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
@@ -65,6 +68,8 @@ public class SiteMapServiceImpl implements SiteMapService {
 
     protected static final String INDEX_FILE_NUMBER_REGEX = "[1-9][0-9]{0,8}";
 
+    protected static final String DEFAULT_GENERATION_SCOPE = "default";
+
     protected Boolean gzipSiteMapFiles;
 
     /**
@@ -73,9 +78,10 @@ public class SiteMapServiceImpl implements SiteMapService {
     protected final ReentrantLock siteMapGenerationLock = new ReentrantLock();
 
     /**
-     * Start time (millis) of the last generation triggered by {@link #getSiteMapFile(String)}, successful or not.
+     * Start time (millis) of the last generation triggered by {@link #getSiteMapFile(String)}, successful or not,
+     * keyed by {@link #getSiteMapGenerationScope()}.
      */
-    protected final AtomicLong lastOnDemandGenerationTime = new AtomicLong(0L);
+    protected final Map<String, Long> lastOnDemandGenerationTimes = new ConcurrentHashMap<>();
 
     @Resource(name = "blModuleConfigurationService")
     protected ModuleConfigurationService moduleConfigurationService;
@@ -209,7 +215,8 @@ public class SiteMapServiceImpl implements SiteMapService {
     /**
      * Generates the sitemap for a storefront request of {@code fileName}. Does nothing if another generation is
      * running (the caller gets whatever is on disk instead of queueing), if the file no longer needs generating, or
-     * if the previous on-demand generation started less than {@link #getOnDemandGenerationMinIntervalInMillis()} ago.
+     * if the previous on-demand generation for the current site started less than
+     * {@link #getOnDemandGenerationMinIntervalInMillis()} ago.
      *
      * @param fileName a name accepted by {@link #isGeneratedSiteMapFileName(String)}
      * @param expired true when regenerating an expired file, false when the file is missing
@@ -231,16 +238,17 @@ public class SiteMapServiceImpl implements SiteMapService {
                 return siteMapFile;
             }
 
+            String scope = getSiteMapGenerationScope();
             long now = System.currentTimeMillis();
-            long lastGeneration = lastOnDemandGenerationTime.get();
-            if (lastGeneration > 0 && (now - lastGeneration) < getOnDemandGenerationMinIntervalInMillis()) {
+            Long lastGeneration = lastOnDemandGenerationTimes.get(scope);
+            if (lastGeneration != null && (now - lastGeneration) < getOnDemandGenerationMinIntervalInMillis()) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Skipping on-demand SiteMap generation for " + fileName
                             + " since the previous one started less than the minimum interval ago");
                 }
                 return siteMapFile;
             }
-            lastOnDemandGenerationTime.set(now);
+            lastOnDemandGenerationTimes.put(scope, now);
 
             generateSiteMap();
             return broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
@@ -281,6 +289,16 @@ public class SiteMapServiceImpl implements SiteMapService {
                 + INDEX_FILE_NUMBER_REGEX
                 + Pattern.quote(pattern.substring(tokenPos + INDEX_FILE_TOKEN.length()));
         return candidate.matches(regex);
+    }
+
+    /**
+     * Scope of the generated sitemap files: the current site, matching the per-site storage used by
+     * {@link BroadleafFileService}.
+     */
+    protected String getSiteMapGenerationScope() {
+        BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
+        Site site = brc == null ? null : brc.getSite();
+        return site == null || site.getId() == null ? DEFAULT_GENERATION_SCOPE : String.valueOf(site.getId());
     }
 
     protected boolean isSiteMapFileExpired(File siteMapFile) {
