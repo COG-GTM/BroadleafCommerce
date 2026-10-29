@@ -17,11 +17,13 @@
  */
 package org.broadleafcommerce.cms.web;
 
+import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
 import org.broadleafcommerce.common.sandbox.domain.SandBox;
 import org.broadleafcommerce.common.sandbox.domain.SandBoxType;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -32,6 +34,11 @@ import java.lang.reflect.Proxy;
 public class PreviewTemplateControllerTest {
 
     private final PreviewTemplateController controller = new PreviewTemplateController();
+
+    @Before
+    public void authenticateFromAdmin() {
+        controller.crossAppAuthService = crossAppAuth(true, false);
+    }
 
     @After
     public void clearContext() {
@@ -81,6 +88,20 @@ public class PreviewTemplateControllerTest {
     }
 
     @Test
+    public void previewSandBoxWithoutAdminAuthenticationIsNotFound() {
+        bindSandBox(SandBoxType.USER);
+
+        controller.crossAppAuthService = null;
+        assertNotFound("/preview/account/orders");
+
+        controller.crossAppAuthService = crossAppAuth(false, false);
+        assertNotFound("/preview/account/orders");
+
+        controller.crossAppAuthService = crossAppAuth(true, true);
+        assertNotFound("/preview/account/orders");
+    }
+
+    @Test
     public void requestOutsideMappingIsNotFound() {
         bindSandBox(SandBoxType.USER);
         assertNotFound(request("/store", "/other/preview/account"));
@@ -94,6 +115,20 @@ public class PreviewTemplateControllerTest {
             context.setSandBox(sandBox);
         }
         BroadleafRequestContext.setBroadleafRequestContext(context);
+    }
+
+    private CrossAppAuthService crossAppAuth(boolean authedFromAdmin, boolean csr) {
+        return (CrossAppAuthService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {CrossAppAuthService.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "isAuthedFromAdmin":
+                            return authedFromAdmin;
+                        case "hasCsrPermission":
+                            return csr;
+                        default:
+                            return null;
+                    }
+                });
     }
 
     private MockHttpServletRequest request(String contextPath, String uri) {

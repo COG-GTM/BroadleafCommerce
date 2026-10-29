@@ -17,7 +17,10 @@
  */
 package org.broadleafcommerce.cms.web;
 
+import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,14 +31,19 @@ import java.util.regex.Pattern;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * Renders a template under {@code templates/} for an admin sandbox preview. Requests outside a
- * non-production sandbox, or whose path is not a plain template path, get a 404.
+ * Renders a template under {@code templates/} for an admin sandbox preview. Requests that are not
+ * authenticated from the admin, are outside a non-production sandbox, or whose path is not a plain
+ * template path get a 404.
  */
 @Controller
 @RequestMapping(PreviewTemplateController.REQUEST_MAPPING_PREFIX + "**")
 public class PreviewTemplateController {
     public static final String REQUEST_MAPPING_PREFIX = "/preview/";
     private final String templatePathPrefix = "templates";
+
+    @Autowired(required = false)
+    @Qualifier("blCrossAppAuthService")
+    protected CrossAppAuthService crossAppAuthService;
 
     /**
      * Slash-separated segments of letters, digits, '_' and '-'. Excludes '.', ':', '~', '%' and
@@ -45,7 +53,7 @@ public class PreviewTemplateController {
 
     @RequestMapping
     public String displayPreview(HttpServletRequest httpServletRequest) {
-        if (!isPreviewSandBoxActive()) {
+        if (!isAdminPreviewRequest()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         String requestURIPrefix = httpServletRequest.getContextPath() + REQUEST_MAPPING_PREFIX;
@@ -61,10 +69,15 @@ public class PreviewTemplateController {
     }
 
     /**
-     * The sandbox resolver only assigns a non-production sandbox to requests authenticated from
-     * the admin with sandbox preview enabled, so this restricts rendering to admin preview sessions.
+     * Requires an admin cross-app authentication (not CSR) and a non-production sandbox. Fails closed
+     * when no {@link CrossAppAuthService} is configured, since the sandbox id alone is caller supplied.
      */
-    protected boolean isPreviewSandBoxActive() {
+    protected boolean isAdminPreviewRequest() {
+        if (crossAppAuthService == null
+                || !crossAppAuthService.isAuthedFromAdmin()
+                || crossAppAuthService.hasCsrPermission()) {
+            return false;
+        }
         BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext(false);
         return context != null && !context.isProductionSandBox();
     }
