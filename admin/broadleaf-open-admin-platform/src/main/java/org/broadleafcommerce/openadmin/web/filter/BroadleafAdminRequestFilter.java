@@ -129,6 +129,15 @@ public class BroadleafAdminRequestFilter extends AbstractBroadleafAdminRequestFi
         }
     }
 
+    /**
+     * The translation modal posts its ceiling entity as an entity form field, which is used to load classes by name.
+     * Other admin forms (e.g. Admin Sections) have unrelated fields named ceilingEntity, so only check it here.
+     */
+    protected boolean isTranslationRequest(HttpServletRequest request) {
+        String servletPath = request.getServletPath();
+        return servletPath != null && (servletPath.equals("/translation") || servletPath.startsWith("/translation/"));
+    }
+
     protected boolean validateClassNameParams(HttpServletRequest request) {
         String ceilingEntityClassname = request.getParameter("ceilingEntityClassname");
         String ceilingEntity = request.getParameter("ceilingEntity");
@@ -145,6 +154,9 @@ public class BroadleafAdminRequestFilter extends AbstractBroadleafAdminRequestFi
         params.put("ceilingEntity", ceilingEntity);
         params.put("ceilingEntityFullyQualifiedClassname", ceilingEntityFullyQualifiedClassname);
         params.put("__originalType", originalType);
+        if (isTranslationRequest(request)) {
+            params.put("translationCeilingEntity", request.getParameter("fields['ceilingEntity'].value"));
+        }
         return validationService.validateClassNameParams(params, "blPU");
     }
 

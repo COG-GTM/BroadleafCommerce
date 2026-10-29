@@ -39,6 +39,18 @@ public interface PersistenceService {
     boolean validateEntityClassName(String entityClassName);
 
     /**
+     * Determine if a test type name is either a known entity class registered with Hibernate, or one of the interfaces
+     * or superclasses of such an entity. Use this before loading a class whose name came from a request, since it allows
+     * the interface names commonly used as ceiling entities without loading arbitrary classpath classes.
+     *
+     * @param entityTypeName
+     * @return whether the name is a registered entity class or a supertype of one
+     */
+    default boolean validateEntityTypeName(String entityTypeName) {
+        return validateEntityClassName(entityTypeName);
+    }
+
+    /**
      * Identifies the {@link EntityManager} for the given entityClass, using the default targetModeType of {@link TargetModeType#SANDBOX}
      *
      * @param entityClass

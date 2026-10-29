@@ -19,6 +19,7 @@ package org.broadleafcommerce.openadmin.server.security.dao;
 
 import org.apache.commons.lang3.ClassUtils;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.common.service.PersistenceService;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermission;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermissionImpl;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
@@ -52,6 +53,9 @@ public class AdminPermissionDaoImpl implements AdminPermissionDao {
 
     @Resource(name = "blEntityConfiguration")
     protected EntityConfiguration entityConfiguration;
+
+    @Resource(name = "blPersistenceService")
+    protected PersistenceService persistenceService;
 
     public void deleteAdminPermission(AdminPermission permission) {
         if (!em.contains(permission)) {
@@ -136,15 +140,7 @@ public class AdminPermissionDaoImpl implements AdminPermissionDao {
     ) {
         //the ceiling may be an impl, which will fail because entity permission is normally specified for the interface
         //try the passed in ceiling first, but also try an interfaces implemented
-        List<String> testClasses = new ArrayList<>();
-        testClasses.add(ceilingEntityFullyQualifiedName);
-        try {
-            for (Object interfaze : ClassUtils.getAllInterfaces(Class.forName(ceilingEntityFullyQualifiedName))) {
-                testClasses.add(((Class<?>) interfaze).getName());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        List<String> testClasses = buildCeilingEntityTestClasses(ceilingEntityFullyQualifiedName);
 
         for (String testClass : testClasses) {
             Query query = em.createNamedQuery("BC_COUNT_PERMISSIONS_FOR_USER_BY_TYPE_AND_CEILING_ENTITY");
@@ -165,15 +161,7 @@ public class AdminPermissionDaoImpl implements AdminPermissionDao {
     public boolean isUserQualifiedForOperationOnCeilingEntityViaDefaultPermissions(String ceilingEntityFullyQualifiedName) {
         //the ceiling may be an impl, which will fail because entity permission is normally specified for the interface
         //try the passed in ceiling first, but also try an interfaces implemented
-        List<String> testClasses = new ArrayList<>();
-        testClasses.add(ceilingEntityFullyQualifiedName);
-        try {
-            for (Object interfaze : ClassUtils.getAllInterfaces(Class.forName(ceilingEntityFullyQualifiedName))) {
-                testClasses.add(((Class<?>) interfaze).getName());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        List<String> testClasses = buildCeilingEntityTestClasses(ceilingEntityFullyQualifiedName);
 
         for (String testClass : testClasses) {
             Query query = em.createNamedQuery("BC_COUNT_BY_PERMISSION_AND_CEILING_ENTITY");
@@ -193,15 +181,7 @@ public class AdminPermissionDaoImpl implements AdminPermissionDao {
     public boolean doesOperationExistForCeilingEntity(PermissionType permissionType, String ceilingEntityFullyQualifiedName) {
         //the ceiling may be an impl, which will fail because entity permission is normally specified for the interface
         //try the passed in ceiling first, but also try an interfaces implemented
-        List<String> testClasses = new ArrayList<>();
-        testClasses.add(ceilingEntityFullyQualifiedName);
-        try {
-            for (Object interfaze : ClassUtils.getAllInterfaces(Class.forName(ceilingEntityFullyQualifiedName))) {
-                testClasses.add(((Class<?>) interfaze).getName());
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        List<String> testClasses = buildCeilingEntityTestClasses(ceilingEntityFullyQualifiedName);
 
         for (String testClass : testClasses) {
             Query query = em.createNamedQuery("BC_COUNT_PERMISSIONS_BY_TYPE_AND_CEILING_ENTITY");
@@ -217,4 +197,29 @@ public class AdminPermissionDaoImpl implements AdminPermissionDao {
         }
         return false;
     }
+
+    /**
+     * Returns the ceiling entity name plus the names of all interfaces it implements. The interfaces are only resolved
+     * for registered entities (or their supertypes) so that a request-supplied name never causes an arbitrary class to
+     * be loaded; any other name is tested literally.
+     */
+    protected List<String> buildCeilingEntityTestClasses(String ceilingEntityFullyQualifiedName) {
+        List<String> testClasses = new ArrayList<>();
+        testClasses.add(ceilingEntityFullyQualifiedName);
+        if (persistenceService == null || !persistenceService.validateEntityTypeName(ceilingEntityFullyQualifiedName)) {
+            return testClasses;
+        }
+        try {
+            Class<?> ceilingClass = Class.forName(
+                    ceilingEntityFullyQualifiedName, false, AdminPermissionDaoImpl.class.getClassLoader()
+            );
+            for (Class<?> interfaze : ClassUtils.getAllInterfaces(ceilingClass)) {
+                testClasses.add(interfaze.getName());
+            }
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new RuntimeException(e);
+        }
+        return testClasses;
+    }
+
 }

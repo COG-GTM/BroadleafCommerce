@@ -32,6 +32,8 @@ import org.broadleafcommerce.common.i18n.domain.TranslationImpl;
 import org.broadleafcommerce.common.locale.service.LocaleService;
 import org.broadleafcommerce.common.locale.util.LocaleUtil;
 import org.broadleafcommerce.common.sandbox.SandBoxHelper;
+import org.broadleafcommerce.common.service.PersistenceService;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -95,6 +97,9 @@ public class TranslationServiceImpl implements TranslationService, TranslationSu
 
     @Resource(name = "blCacheManager")
     protected CacheManager cacheManager;
+
+    @Resource(name = "blPersistenceService")
+    protected PersistenceService persistenceService;
 
     protected Cache<String, Object> cache;
 
@@ -461,12 +466,29 @@ public class TranslationServiceImpl implements TranslationService, TranslationSu
 
     @Override
     public TranslatedEntity getAssignableEntityType(String className) {
-        try {
-            Class<?> clazz = Class.forName(className);
-            return getEntityType(clazz);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException(className + " is not a known translatable class");
+        if (!isAllowedTranslatableClassName(className)) {
+            throw new IllegalArgumentException(StringUtil.sanitize(className) + " is not a known translatable class");
         }
+        try {
+            Class<?> clazz = Class.forName(className, false, TranslationServiceImpl.class.getClassLoader());
+            return getEntityType(clazz);
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new IllegalArgumentException(StringUtil.sanitize(className) + " is not a known translatable class");
+        }
+    }
+
+    /**
+     * Only registered {@link TranslatedEntity} types and registered entities (or their supertypes) may be loaded,
+     * since the class name can originate from an admin request.
+     */
+    protected boolean isAllowedTranslatableClassName(String className) {
+        if (StringUtils.isBlank(className)) {
+            return false;
+        }
+        if (TranslatedEntity.getTypes().containsKey(className)) {
+            return true;
+        }
+        return persistenceService != null && persistenceService.validateEntityTypeName(className);
     }
 
     @Override
