@@ -17,22 +17,69 @@
  */
 package org.broadleafcommerce.cms.web;
 
+import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.regex.Pattern;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+/**
+ * Renders a template under {@code templates/} for an admin sandbox preview. Requests that are not
+ * authenticated from the admin, are outside a non-production sandbox, or whose path is not a plain
+ * template path get a 404.
+ */
 @Controller
 @RequestMapping(PreviewTemplateController.REQUEST_MAPPING_PREFIX + "**")
 public class PreviewTemplateController {
     public static final String REQUEST_MAPPING_PREFIX = "/preview/";
     private final String templatePathPrefix = "templates";
 
+    @Autowired(required = false)
+    @Qualifier("blCrossAppAuthService")
+    protected CrossAppAuthService crossAppAuthService;
+
+    /**
+     * Slash-separated segments of letters, digits, '_' and '-'. Excludes '.', ':', '~', '%' and
+     * Thymeleaf expression characters, so no traversal, fragment selectors or expressions.
+     */
+    protected static final Pattern SAFE_TEMPLATE_PATH = Pattern.compile("(/[A-Za-z0-9_-]+)+");
+
     @RequestMapping
     public String displayPreview(HttpServletRequest httpServletRequest) {
+        if (!isAdminPreviewRequest()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         String requestURIPrefix = httpServletRequest.getContextPath() + REQUEST_MAPPING_PREFIX;
-        String templatePath = httpServletRequest.getRequestURI().substring(requestURIPrefix.length() - 1);
+        String requestURI = httpServletRequest.getRequestURI();
+        if (requestURI == null || !requestURI.startsWith(requestURIPrefix)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        String templatePath = requestURI.substring(requestURIPrefix.length() - 1);
+        if (!SAFE_TEMPLATE_PATH.matcher(templatePath).matches()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         return templatePathPrefix + templatePath;
+    }
+
+    /**
+     * Requires an admin cross-app authentication (not CSR) and a non-production sandbox. Fails closed
+     * when no {@link CrossAppAuthService} is configured, since the sandbox id alone is caller supplied.
+     */
+    protected boolean isAdminPreviewRequest() {
+        if (crossAppAuthService == null
+                || !crossAppAuthService.isAuthedFromAdmin()
+                || crossAppAuthService.hasCsrPermission()) {
+            return false;
+        }
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext(false);
+        return context != null && !context.isProductionSandBox();
     }
 
 }
