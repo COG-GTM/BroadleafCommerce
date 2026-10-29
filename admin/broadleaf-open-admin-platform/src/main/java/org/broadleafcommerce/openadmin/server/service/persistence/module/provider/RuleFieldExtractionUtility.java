@@ -17,6 +17,8 @@
  */
 package org.broadleafcommerce.openadmin.server.service.persistence.module.provider;
 
+import org.broadleafcommerce.common.rule.MvelHelper;
+import org.broadleafcommerce.common.rule.MvelRuleViolationException;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.RuleFieldValidator;
@@ -35,6 +37,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -47,6 +52,9 @@ import jakarta.annotation.Resource;
  */
 @Component("blRuleFieldExtractionUtility")
 public class RuleFieldExtractionUtility {
+
+    protected static final Collection<String> ADDITIONAL_RULE_CONTEXT_IMPORTS =
+            Collections.unmodifiableList(Arrays.asList("OfferType", "FulfillmentType"));
 
     @Resource(name = "blRuleBuilderFieldServiceFactory")
     protected RuleBuilderFieldServiceFactory ruleBuilderFieldServiceFactory;
@@ -111,7 +119,31 @@ public class RuleFieldExtractionUtility {
             DataDTO dto,
             String fieldService
     ) throws MVELTranslationException {
-        return translator.createMVEL(entityKey, dto, ruleBuilderFieldServiceFactory.createInstance(fieldService));
+        String mvel = translator.createMVEL(entityKey, dto, ruleBuilderFieldServiceFactory.createInstance(fieldService));
+        validateMvel(mvel);
+        return mvel;
+    }
+
+    /**
+     * Rejects rules that leave the restricted rule language enforced at evaluation time by {@link MvelHelper}, so
+     * that an unsafe rule is refused when it is saved rather than silently ignored when it is evaluated.
+     *
+     * @param mvel the rule about to be persisted
+     * @throws MVELTranslationException when the rule is not allowed
+     */
+    public void validateMvel(String mvel) throws MVELTranslationException {
+        try {
+            MvelHelper.validateRule(mvel, getAdditionalRuleContextImports());
+        } catch (MvelRuleViolationException e) {
+            throw new MVELTranslationException(MVELTranslationException.UNSAFE_RULE, e.getMessage());
+        }
+    }
+
+    /**
+     * Names of the context imports, beyond those added by {@link MvelHelper}, that persisted rules are evaluated with.
+     */
+    protected Collection<String> getAdditionalRuleContextImports() {
+        return ADDITIONAL_RULE_CONTEXT_IMPORTS;
     }
 
     /**

@@ -29,6 +29,7 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Utility class to convert a DataDTO/ExpressionDTO into an MVEL string
@@ -53,6 +54,9 @@ public class DataDTOToMVELTranslator {
     public static final String SIZE_LESS_THAN_EQUALS_OPERATOR = ".size()<=";
     public static final String SIZE_EQUALS_OPERATOR = ".size()==";
     public static final String ZERO_OPERATOR = "0";
+
+    protected static final Pattern FIELD_REFERENCE = Pattern.compile(
+            "[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*|\\['[A-Za-z0-9_\\-]*'\\])*");
 
     public static final String OLD_CONTAINS_OPERATOR = ".contains";
     public static final String OLD_STARTS_WITH_OPERATOR = ".startsWith";
@@ -595,6 +599,12 @@ public class DataDTOToMVELTranslator {
     ) throws MVELTranslationException {
         StringBuilder response = new StringBuilder();
         if (isFieldComparison) {
+            if (value == null || value.length == 0 || value[0] == null
+                    || !FIELD_REFERENCE.matcher(value[0].toString()).matches()) {
+                throw new MVELTranslationException(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND,
+                        "Cannot compare the field (" + fieldName + ") to (" + (value == null || value.length == 0
+                                ? null : value[0]) + ") since it is not a valid field name");
+            }
             switch (type) {
                 case MONEY:
                     response.append(entityKey);
@@ -630,7 +640,12 @@ public class DataDTOToMVELTranslator {
 
                 switch (type) {
                     case BOOLEAN:
-                        response.append(value[j]);
+                        if (!"true".equalsIgnoreCase(parsableVal) && !"false".equalsIgnoreCase(parsableVal)) {
+                            throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                                    "Cannot format value for the field (" + fieldName + ") based on field type. "
+                                            + "The type of field is Boolean, and you entered: (" + parsableVal + ")");
+                        }
+                        response.append(parsableVal.toLowerCase());
                         break;
                     case DECIMAL:
                         try {
