@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.openadmin.server.service.persistence.module.provider;
 
+import org.broadleafcommerce.common.rule.MvelHelper;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.RuleFieldValidator;
@@ -111,7 +112,24 @@ public class RuleFieldExtractionUtility {
             DataDTO dto,
             String fieldService
     ) throws MVELTranslationException {
-        return translator.createMVEL(entityKey, dto, ruleBuilderFieldServiceFactory.createInstance(fieldService));
+        String mvel = translator.createMVEL(entityKey, dto, ruleBuilderFieldServiceFactory.createInstance(fieldService));
+        validateMvel(mvel);
+        return mvel;
+    }
+
+    /**
+     * Rejects a rule that uses constructs refused by {@link MvelHelper#findUnsafeConstruct(String)}, so an unsafe rule
+     * fails when it is saved instead of being silently skipped when it is evaluated.
+     *
+     * @param mvel the rule about to be persisted
+     * @throws MVELTranslationException when the rule is not allowed
+     */
+    public void validateMvel(String mvel) throws MVELTranslationException {
+        String violation = MvelHelper.findUnsafeConstruct(mvel);
+        if (violation != null) {
+            throw new MVELTranslationException(MVELTranslationException.UNSAFE_RULE,
+                    "The rule uses a construct that is not allowed in rules: (" + violation + ")");
+        }
     }
 
     /**

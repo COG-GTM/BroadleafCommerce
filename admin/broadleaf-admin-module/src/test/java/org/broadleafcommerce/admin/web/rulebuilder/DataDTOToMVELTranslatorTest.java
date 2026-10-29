@@ -21,6 +21,7 @@ import org.broadleafcommerce.admin.web.rulebuilder.service.CustomerFieldServiceI
 import org.broadleafcommerce.admin.web.rulebuilder.service.FulfillmentGroupFieldServiceImpl;
 import org.broadleafcommerce.admin.web.rulebuilder.service.OrderFieldServiceImpl;
 import org.broadleafcommerce.admin.web.rulebuilder.service.OrderItemFieldServiceImpl;
+import org.broadleafcommerce.admin.web.rulebuilder.service.SkuFieldServiceImpl;
 import org.broadleafcommerce.common.presentation.RuleOperatorType;
 import org.broadleafcommerce.common.presentation.RuleOptionType;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
@@ -42,6 +43,7 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
     private CustomerFieldServiceImpl customerFieldService;
     private OrderFieldServiceImpl orderFieldService;
     private FulfillmentGroupFieldServiceImpl fulfillmentGroupFieldService;
+    private SkuFieldServiceImpl skuFieldService;
 
     @Override
     protected void setUp() {
@@ -53,6 +55,8 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         orderFieldService.init();
         fulfillmentGroupFieldService = new FulfillmentGroupFieldServiceImpl();
         fulfillmentGroupFieldService.init();
+        skuFieldService = new SkuFieldServiceImpl();
+        skuFieldService.init();
     }
 
     /**
@@ -277,13 +281,13 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         d1.setQuantity(1);
         d1.setCondition(BLCOperator.AND.name());
         ExpressionDTO d1e1 = new ExpressionDTO();
-        d1e1.setId("category.name");
+        d1e1.setId("name");
         d1e1.setOperator(BLCOperator.COLLECTION_IN.name());
-        d1e1.setValue("[\"test category\", \"test category 2\"]");
+        d1e1.setValue("[\"test sku\", \"test sku 2\"]");
         d1.getRules().add(d1e1);
 
-        String d1Translated = translator.createMVEL("discreteOrderItem", d1, orderItemFieldService);
-        String d1Mvel = "CollectionUtils.intersection(?discreteOrderItem.?category.?name,[\"test category\", \"test category 2\"]).size()>0";
+        String d1Translated = translator.createMVEL("sku", d1, skuFieldService);
+        String d1Mvel = "CollectionUtils.intersection(?sku.?name,[\"test sku\", \"test sku 2\"]).size()>0";
         assert(d1Mvel.equals(d1Translated));
 
     }
@@ -319,6 +323,153 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         
         assert(d1Mvel.equals(d1Translated));
 
+    }
+
+    private String translate(String entityKey, String field, BLCOperator operator, String value,
+                             org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService fieldService)
+            throws MVELTranslationException {
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId(field);
+        expressionDTO.setOperator(operator.name());
+        expressionDTO.setValue(value);
+        return new DataDTOToMVELTranslator().createMVEL(entityKey, expressionDTO, fieldService);
+    }
+
+    private void assertRejected(int code, String entityKey, String field, BLCOperator operator, String value,
+                                org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService fieldService) {
+        try {
+            String mvel = translate(entityKey, field, operator, value, fieldService);
+            fail("Expected the rule to be rejected, but it was translated to: " + mvel);
+        } catch (MVELTranslationException e) {
+            assertEquals(code, e.getCode());
+        }
+    }
+
+    /**
+     * A string value containing a quote must stay a single string literal instead of breaking out into MVEL code.
+     */
+    public void testStringValueIsEscaped() throws MVELTranslationException {
+        String injection = "x\" || java.lang.Runtime.getRuntime().exec(\"touch /tmp/pwned\") != null || \"";
+        assertEquals("?discreteOrderItem.?category.?name==\"x\\\" || java.lang.Runtime.getRuntime().exec(\\\"touch "
+                        + "/tmp/pwned\\\") != null || \\\"\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, injection, orderItemFieldService));
+        assertEquals("?discreteOrderItem.?category.?name==\"x\\\" || 1==1 || \\\"\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "x\" || 1==1 || \"",
+                        orderItemFieldService));
+        assertEquals("MvelHelper.toUpperCase(?discreteOrderItem.?category.?name)==MvelHelper.toUpperCase(\"x\\\")"
+                        + "||true||(\\\"\")",
+                translate("discreteOrderItem", "category.name", BLCOperator.IEQUALS, "x\")||true||(\"",
+                        orderItemFieldService));
+        assertEquals("org.apache.commons.lang3.StringUtils.contains(MvelHelper.toUpperCase(?discreteOrderItem.?category"
+                        + ".?name),MvelHelper.toUpperCase(\"a\\\"),b(\\\"\"))",
+                translate("discreteOrderItem", "category.name", BLCOperator.ICONTAINS, "a\"),b(\"",
+                        orderItemFieldService));
+    }
+
+    /**
+     * A value that is already wrapped in quotes keeps working, and its inner quotes are escaped.
+     */
+    public void testQuotedStringValueIsEscaped() throws MVELTranslationException {
+        assertEquals("?discreteOrderItem.?category.?name==\"test category\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "\"test category\"",
+                        orderItemFieldService));
+        assertEquals("?discreteOrderItem.?category.?name==\"a\\\"||true||\\\"b\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "\"a\"||true||\"b\"",
+                        orderItemFieldService));
+        assertEquals("?discreteOrderItem.?category.?name==\"say \\\"hi\\\"\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "say \\\"hi\\\"",
+                        orderItemFieldService));
+    }
+
+    /**
+     * A backslash cannot be used to escape the closing quote of the literal.
+     */
+    public void testBackslashCannotEscapeClosingQuote() throws MVELTranslationException {
+        assertEquals("?discreteOrderItem.?category.?name==\"x\\\\\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "x\\", orderItemFieldService));
+        assertEquals("?discreteOrderItem.?category.?name==\"\\\\u005C\\\"||true||\\\"\"",
+                translate("discreteOrderItem", "category.name", BLCOperator.EQUALS, "\\u005C\"||true||\"",
+                        orderItemFieldService));
+    }
+
+    /**
+     * Collection values are emitted as escaped string literals even when they are not wrapped in quotes.
+     */
+    public void testCollectionValuesAreEscaped() throws MVELTranslationException {
+        assertEquals("CollectionUtils.intersection(?sku.?name,[\"a\\\" || true || \\\"\"]).size()>0",
+                translate("sku", "name", BLCOperator.COLLECTION_IN, "[a\" || true || \"]", skuFieldService));
+        assertEquals("CollectionUtils.intersection(?sku.?name,[\"x\\\\u005C\"]).size()>0",
+                translate("sku", "name", BLCOperator.COLLECTION_IN, "[\"x\\u005C\"]", skuFieldService));
+    }
+
+    /**
+     * A field comparison value is spliced into the rule as a property path, so it must name a registered field.
+     */
+    public void testFieldComparisonRequiresRegisteredField() {
+        assertRejected(MVELTranslationException.OPERATOR_NOT_FOUND, "customer", "emailAddress",
+                BLCOperator.EQUALS_FIELD, "username", customerFieldService);
+
+        customerFieldService.getFields().add(new FieldData.Builder()
+                .label("Customer - email (comparison)")
+                .name("emailComparison")
+                .operators("customComparisonOperators")
+                .options(RuleOptionType.EMPTY_COLLECTION)
+                .type(SupportedFieldType.STRING)
+                .build());
+        try {
+            assertRejected(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND, "customer", "emailComparison",
+                    BLCOperator.EQUALS_FIELD, "username||java.lang.Runtime.getRuntime().exec(\"id\")!=null",
+                    customerFieldService);
+            assertRejected(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND, "customer", "emailComparison",
+                    BLCOperator.EQUALS_FIELD, "notARegisteredField", customerFieldService);
+            assertEquals("?customer.?emailComparison==customer.username", translateUnchecked("customer",
+                    "emailComparison", BLCOperator.EQUALS_FIELD, "username", customerFieldService));
+        } finally {
+            customerFieldService.init();
+        }
+    }
+
+    private String translateUnchecked(String entityKey, String field, BLCOperator operator, String value,
+                                      org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService fieldService) {
+        try {
+            return translate(entityKey, field, operator, value, fieldService);
+        } catch (MVELTranslationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Operators the rule builder does not offer for a field are rejected.
+     */
+    public void testOperatorMustBeOfferedForField() {
+        assertRejected(MVELTranslationException.OPERATOR_NOT_FOUND, "order", "subTotal",
+                BLCOperator.COUNT_GREATER_THAN, "1", orderFieldService);
+        assertRejected(MVELTranslationException.OPERATOR_NOT_FOUND, "discreteOrderItem", "category.name",
+                BLCOperator.COLLECTION_IN, "[\"a\"]", orderItemFieldService);
+    }
+
+    /**
+     * Boolean, numeric and id values must be literals of their type.
+     */
+    public void testTypedValuesAreValidated() throws MVELTranslationException {
+        orderItemFieldService.getFields().add(new FieldData.Builder()
+                .label("Order Item - on sale")
+                .name("isOnSale")
+                .operators(RuleOperatorType.BOOLEAN)
+                .options(RuleOptionType.EMPTY_COLLECTION)
+                .type(SupportedFieldType.BOOLEAN)
+                .build());
+        try {
+            assertEquals("?discreteOrderItem.?isOnSale==true",
+                    translate("discreteOrderItem", "isOnSale", BLCOperator.EQUALS, "TRUE", orderItemFieldService));
+            assertRejected(MVELTranslationException.INCOMPATIBLE_RULE, "discreteOrderItem", "isOnSale",
+                    BLCOperator.EQUALS, "true||java.lang.Runtime.getRuntime().exec(\"id\")!=null",
+                    orderItemFieldService);
+        } finally {
+            orderItemFieldService.init();
+        }
+        assertRejected(MVELTranslationException.INCOMPATIBLE_DECIMAL_VALUE, "order", "subTotal",
+                BLCOperator.GREATER_THAN, "1||true", orderFieldService);
     }
 
 }

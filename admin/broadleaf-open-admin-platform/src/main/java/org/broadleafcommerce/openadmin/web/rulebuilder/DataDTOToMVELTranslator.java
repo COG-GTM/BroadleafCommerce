@@ -18,17 +18,25 @@
 package org.broadleafcommerce.openadmin.web.rulebuilder;
 
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.presentation.RuleOperatorType;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
 import org.broadleafcommerce.common.util.FormatUtil;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.FieldManager;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.ExpressionDTO;
+import org.broadleafcommerce.openadmin.web.rulebuilder.dto.FieldData;
 import org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService;
 
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Utility class to convert a DataDTO/ExpressionDTO into an MVEL string
@@ -57,6 +65,50 @@ public class DataDTOToMVELTranslator {
     public static final String OLD_CONTAINS_OPERATOR = ".contains";
     public static final String OLD_STARTS_WITH_OPERATOR = ".startsWith";
     public static final String OLD_ENDS_WITH_OPERATOR = ".endsWith";
+
+    protected static final Pattern FIELD_REFERENCE = Pattern.compile(
+            "[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*");
+    protected static final Pattern NUMERIC_LITERAL = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
+
+    protected static final Set<BLCOperator> FIELD_COMPARISON_OPERATORS = Collections.unmodifiableSet(EnumSet.of(
+            BLCOperator.CONTAINS_FIELD, BLCOperator.ENDS_WITH_FIELD, BLCOperator.EQUALS_FIELD,
+            BLCOperator.GREATER_OR_EQUAL_FIELD, BLCOperator.GREATER_THAN_FIELD, BLCOperator.LESS_OR_EQUAL_FIELD,
+            BLCOperator.LESS_THAN_FIELD, BLCOperator.NOT_EQUAL_FIELD, BLCOperator.STARTS_WITH_FIELD));
+
+    /**
+     * Operators allowed for each operator set a rule builder field can declare, mirroring the operator sets offered by
+     * the admin rule builder (ruleBuilder-operators-v2.js). Fields declaring an operator set not listed here are not
+     * restricted.
+     */
+    protected static final Map<String, Set<BLCOperator>> ALLOWED_OPERATORS = buildAllowedOperators();
+
+    protected static Map<String, Set<BLCOperator>> buildAllowedOperators() {
+        Map<String, Set<BLCOperator>> allowed = new HashMap<>();
+        Set<BLCOperator> equality = EnumSet.of(BLCOperator.EQUALS, BLCOperator.NOT_EQUAL);
+        Set<BLCOperator> collection = EnumSet.of(BLCOperator.COLLECTION_IN, BLCOperator.COLLECTION_NOT_IN);
+        Set<BLCOperator> numeric = EnumSet.of(BLCOperator.EQUALS, BLCOperator.NOT_EQUAL, BLCOperator.GREATER_THAN,
+                BLCOperator.GREATER_OR_EQUAL, BLCOperator.LESS_THAN, BLCOperator.LESS_OR_EQUAL, BLCOperator.BETWEEN,
+                BLCOperator.BETWEEN_INCLUSIVE);
+        Set<BLCOperator> date = EnumSet.copyOf(numeric);
+        date.add(BLCOperator.WITHIN_DAYS);
+        Set<BLCOperator> text = EnumSet.of(BLCOperator.IS_NULL, BLCOperator.EQUALS, BLCOperator.IEQUALS,
+                BLCOperator.NOT_EQUAL, BLCOperator.INOT_EQUAL, BLCOperator.ICONTAINS, BLCOperator.INOT_CONTAINS,
+                BLCOperator.ISTARTS_WITH, BLCOperator.INOT_STARTS_WITH, BLCOperator.IENDS_WITH,
+                BLCOperator.INOT_ENDS_WITH);
+        Set<BLCOperator> textList = EnumSet.of(BLCOperator.COLLECTION_IN, BLCOperator.COLLECTION_NOT_IN,
+                BLCOperator.CONTAINS, BLCOperator.NOT_CONTAINS, BLCOperator.COUNT_GREATER_THAN,
+                BLCOperator.COUNT_GREATER_OR_EQUAL, BLCOperator.COUNT_LESS_THAN, BLCOperator.COUNT_LESS_OR_EQUAL,
+                BLCOperator.COUNT_EQUALS);
+        allowed.put(RuleOperatorType.BOOLEAN, Collections.unmodifiableSet(equality));
+        allowed.put(RuleOperatorType.ENUMERATION, Collections.unmodifiableSet(equality));
+        allowed.put(RuleOperatorType.SELECTIZE, Collections.unmodifiableSet(collection));
+        allowed.put(RuleOperatorType.SELECTIZE_ENUMERATION, Collections.unmodifiableSet(collection));
+        allowed.put(RuleOperatorType.DATE, Collections.unmodifiableSet(date));
+        allowed.put(RuleOperatorType.NUMERIC, Collections.unmodifiableSet(numeric));
+        allowed.put(RuleOperatorType.TEXT, Collections.unmodifiableSet(text));
+        allowed.put(RuleOperatorType.TEXT_LIST, Collections.unmodifiableSet(textList));
+        return Collections.unmodifiableMap(allowed);
+    }
 
 
     public String createMVEL(String entityKey, DataDTO dataDTO, RuleBuilderFieldService fieldService)
@@ -136,7 +188,11 @@ public class DataDTOToMVELTranslator {
                             "specified: (" + field + ")");
         }
 
+        validateOperator(field, operator, fieldService);
         value = extractBasicValues(expressionDTO.getValue());
+        if (FIELD_COMPARISON_OPERATORS.contains(operator)) {
+            validateComparisonField(field, value, fieldService);
+        }
 
         switch (operator) {
             case CONTAINS: {
@@ -352,6 +408,43 @@ public class DataDTOToMVELTranslator {
                 sb.append(")");
                 break;
             }
+        }
+    }
+
+    /**
+     * Rejects an operator that the rule builder does not offer for the field, so a hand-crafted request cannot pick an
+     * operator (e.g. a {@code *_FIELD} comparison) that the field was never meant to support.
+     */
+    protected void validateOperator(String field, BLCOperator operator, RuleBuilderFieldService fieldService)
+            throws MVELTranslationException {
+        String operatorSet = null;
+        if (fieldService.getFields() != null) {
+            for (FieldData fieldData : fieldService.getFields()) {
+                if (field.equals(fieldData.getFieldName())) {
+                    operatorSet = fieldData.getOperators();
+                    break;
+                }
+            }
+        }
+        Set<BLCOperator> allowed = operatorSet == null ? null : ALLOWED_OPERATORS.get(operatorSet);
+        if (allowed != null && !allowed.contains(operator)) {
+            throw new MVELTranslationException(MVELTranslationException.OPERATOR_NOT_FOUND,
+                    "The operator (" + operator + ") is not supported for the field (" + field + ")");
+        }
+    }
+
+    /**
+     * The value of a field comparison is spliced into the rule as a property path, so it must name a field registered
+     * with the rule builder field service.
+     */
+    protected void validateComparisonField(String field, Object[] value, RuleBuilderFieldService fieldService)
+            throws MVELTranslationException {
+        String comparisonField = value == null || value.length == 0 || value[0] == null ? null : value[0].toString();
+        if (comparisonField == null || !FIELD_REFERENCE.matcher(comparisonField).matches()
+                || fieldService.getSupportedFieldType(comparisonField) == null) {
+            throw new MVELTranslationException(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND,
+                    "Cannot compare the field (" + field + ") to (" + comparisonField + ") since it is not a "
+                            + "field supported by the rule builder");
         }
     }
 
@@ -595,6 +688,11 @@ public class DataDTOToMVELTranslator {
     ) throws MVELTranslationException {
         StringBuilder response = new StringBuilder();
         if (isFieldComparison) {
+            if (value == null || value.length == 0 || value[0] == null
+                    || !FIELD_REFERENCE.matcher(value[0].toString()).matches()) {
+                throw new MVELTranslationException(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND,
+                        "Cannot compare the field (" + fieldName + ") to a value that is not a field name");
+            }
             switch (type) {
                 case MONEY:
                     response.append(entityKey);
@@ -630,7 +728,13 @@ public class DataDTOToMVELTranslator {
 
                 switch (type) {
                     case BOOLEAN:
-                        response.append(value[j]);
+                        String booleanVal = parsableVal.trim();
+                        if (!"true".equalsIgnoreCase(booleanVal) && !"false".equalsIgnoreCase(booleanVal)) {
+                            throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                                    "Cannot format value for the field (" + fieldName + ") based on field type. "
+                                            + "The type of field is Boolean, and you entered: (" + parsableVal + ")");
+                        }
+                        response.append(booleanVal.toLowerCase());
                         break;
                     case DECIMAL:
                         try {
@@ -641,7 +745,7 @@ public class DataDTOToMVELTranslator {
                                             + fieldName + ") based on field type. The type of field is Decimal, " +
                                             "and you entered: (" + parsableVal + ")");
                         }
-                        response.append(parsableVal);
+                        response.append(parsableVal.trim());
                         break;
                     case ID:
                         if (secondaryType != null && secondaryType.toString().equals(
@@ -649,13 +753,7 @@ public class DataDTOToMVELTranslator {
                             if (ignoreCase) {
                                 response.append("MvelHelper.toUpperCase(");
                             }
-                            if (!ignoreQuotes) {
-                                response.append("\"");
-                            }
-                            response.append(value[j]);
-                            if (!ignoreQuotes) {
-                                response.append("\"");
-                            }
+                            response.append(formatStringValue(String.valueOf(value[j]), ignoreQuotes));
                             if (ignoreCase) {
                                 response.append(")");
                             }
@@ -668,7 +766,7 @@ public class DataDTOToMVELTranslator {
                                                 fieldName + ") based on field type. The type of field is Integer, " +
                                                 "and you entered: (" + value[j] + ")");
                             }
-                            response.append(value[j]);
+                            response.append(parsableVal);
                         }
                         break;
                     case INTEGER:
@@ -691,7 +789,7 @@ public class DataDTOToMVELTranslator {
                                             fieldName + ") based on field type. The type of field is Money, " +
                                             "and you entered: (" + parsableVal + ")");
                         }
-                        response.append(parsableVal);
+                        response.append(parsableVal.trim());
                         break;
                     case DATE:
                         if (SupportedFieldType.WITHIN_DAYS.equals(secondaryType)) {
@@ -716,34 +814,10 @@ public class DataDTOToMVELTranslator {
                         }
                         break;
                     default:
-                        String stringVersionState = String.valueOf(value[j]);
-                        String stringVersionStateTrimmed = String.valueOf(value[j]).trim();
-                        boolean alreadyHasQuotesTrimmed = stringVersionStateTrimmed.startsWith("\"")
-                                && stringVersionStateTrimmed.endsWith("\"");
-                        boolean alreadyHasQuotes = stringVersionState.startsWith("\"")
-                                && stringVersionStateTrimmed.endsWith("\"");
-
-                        if (alreadyHasQuotes || alreadyHasQuotesTrimmed) {
-                            int openQuoteIndex = stringVersionState.indexOf("\"") + 1;
-                            int closeQuoteIndex = stringVersionState.lastIndexOf("\"");
-                            String substring = stringVersionState.substring(openQuoteIndex, closeQuoteIndex);
-                            int paddingRightLength = stringVersionState.length() - closeQuoteIndex;
-                            //don't forget to pad left and/or right according to original string, this will make string exactly the same
-                            //probably trimming is ok business logic, but padding will make unit tests happy and green :)
-                            stringVersionState = String.format("%" + openQuoteIndex + "s", "\"")
-                                    + substring.replace("\"", "\\\"")
-                                    + String.format("%-" + paddingRightLength + "s", "\"");
-                        }
                         if (ignoreCase) {
                             response.append("MvelHelper.toUpperCase(");
                         }
-                        if (!ignoreQuotes && !alreadyHasQuotes) {
-                            response.append("\"");
-                        }
-                        response.append(stringVersionState);
-                        if (!ignoreQuotes && !alreadyHasQuotes) {
-                            response.append("\"");
-                        }
+                        response.append(formatStringValue(String.valueOf(value[j]), ignoreQuotes));
                         if (ignoreCase) {
                             response.append(")");
                         }
@@ -755,6 +829,56 @@ public class DataDTOToMVELTranslator {
             }
         }
         return response.toString();
+    }
+
+    /**
+     * Formats a value as an MVEL string literal. A value already wrapped in quotes keeps its surrounding whitespace and
+     * has its content escaped. When quotes are not required (count, null and collection operands) only a null or
+     * numeric literal is emitted unquoted, anything else is still emitted as an escaped string literal.
+     */
+    protected String formatStringValue(String value, boolean ignoreQuotes) {
+        String trimmed = value.trim();
+        boolean quoted = trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"");
+        if (quoted) {
+            int start = value.indexOf(trimmed);
+            return value.substring(0, start) + "\"" + escapeStringContent(trimmed.substring(1, trimmed.length() - 1))
+                    + "\"" + value.substring(start + trimmed.length());
+        }
+        if (ignoreQuotes && ("null".equals(trimmed) || NUMERIC_LITERAL.matcher(trimmed).matches())) {
+            return trimmed;
+        }
+        return "\"" + escapeStringContent(value) + "\"";
+    }
+
+    /**
+     * Escapes the content of an MVEL string literal so that it cannot terminate the literal. Escape sequences that are
+     * already present (an escaped quote, backslash, apostrophe, control character, or the unicode quote escapes
+     * produced by {@link #escapeInternalQuotes(String)}) are kept, every other backslash is doubled and every unescaped
+     * double quote is escaped.
+     */
+    protected String escapeStringContent(String content) {
+        StringBuilder sb = new StringBuilder(content.length() + 8);
+        int length = content.length();
+        for (int i = 0; i < length; i++) {
+            char c = content.charAt(i);
+            if (c == '\\') {
+                if (i + 1 < length && "\"\\'ntrbf".indexOf(content.charAt(i + 1)) >= 0) {
+                    sb.append(c).append(content.charAt(i + 1));
+                    i++;
+                } else if (content.regionMatches(true, i, "\\u0022", 0, 6)
+                        || content.regionMatches(true, i, "\\u0027", 0, 6)) {
+                    sb.append(content, i, i + 6);
+                    i += 5;
+                } else {
+                    sb.append("\\\\");
+                }
+            } else if (c == '"') {
+                sb.append("\\\"");
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
 }

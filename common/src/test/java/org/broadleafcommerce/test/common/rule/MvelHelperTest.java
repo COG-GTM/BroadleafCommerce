@@ -180,4 +180,59 @@ public class MvelHelperTest extends TestCase {
         }
         return baos.toString();
     }
+
+    /**
+     * Rules produced by the rule builder, including the legacy upper case form, are allowed.
+     */
+    public void testRuleBuilderRulesAreAllowed() {
+        assertNull(MvelHelper.findUnsafeConstruct("?discreteOrderItem.?category.?name==\"test category\""));
+        assertNull(MvelHelper.findUnsafeConstruct("MvelHelper.toUpperCase(?discreteOrderItem.?category.?name)"
+                + "==MvelHelper.toUpperCase(\"java.lang.Runtime new \\\" exec\")"));
+        assertNull(MvelHelper.findUnsafeConstruct("org.apache.commons.lang3.StringUtils.contains("
+                + "MvelHelper.toUpperCase(?discreteOrderItem.?category.?name),MvelHelper.toUpperCase(\"shirt\"))"));
+        assertNull(MvelHelper.findUnsafeConstruct("CollectionUtils.intersection(?sku.?name,[\"a\", \"b\"]).size()>0"));
+        assertNull(MvelHelper.findUnsafeConstruct("MVEL.eval(\"toUpperCase()\",discreteOrderItem.?category.?name)"
+                + "==MVEL.eval(\"toUpperCase()\",\"merchandise\")"));
+        assertNull(MvelHelper.findUnsafeConstruct("(MvelHelper.convertField(\"DATE\",?customer.?getCustomerAttributes()"
+                + "[\"invoice_date\"])>MvelHelper.convertField(\"DATE\",MvelHelper.subtractFromCurrentTime(12)))"));
+        assertNull(MvelHelper.findUnsafeConstruct("locale.localeCode == 'US'"));
+    }
+
+    /**
+     * Rules that construct objects, use reflection or reach JVM classes are refused.
+     */
+    public void testUnsafeRulesAreRefused() {
+        assertNotNull(MvelHelper.findUnsafeConstruct(
+                "?orderItem.?name==\"x\" || java.lang.Runtime.getRuntime().exec(\"id\") != null || \"\""));
+        assertNotNull(MvelHelper.findUnsafeConstruct("Runtime.getRuntime().exec(\"id\")"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("new ProcessBuilder(\"id\").start() != null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("orderItem.getClass().forName(\"x\") != null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("MVEL.eval(\"Runtime.getRuntime()\") != null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("org.springframework.util.ClassUtils.isPresent(\"x\", null)"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("java . lang . System.exit(0)"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("orderItem.?name==\"unterminated"));
+    }
+
+    /**
+     * Escaped quotes in a string literal outside a collection stay escaped when the rule is prepared for compilation.
+     */
+    public void testEscapedQuotesStayInsideLiteral() {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("name", "a\" || true || \"");
+        assertTrue(MvelHelper.evaluateRule("name == \"a\\\" || true || \\\"\"", parameters, new HashMap<>()));
+        parameters.put("name", "b");
+        assertFalse(MvelHelper.evaluateRule("name == \"a\\\" || true || \\\"\"", parameters, new HashMap<>()));
+    }
+
+    /**
+     * An unsafe rule is not executed.
+     */
+    public void testUnsafeRuleIsNotEvaluated() {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("flag", new StringBuilder());
+        boolean result = MvelHelper.evaluateRule("flag.append(\"x\") != null && System.getProperty(\"user.dir\") != null",
+                parameters, new HashMap<>());
+        assertFalse(result);
+        assertEquals(0, ((StringBuilder) parameters.get("flag")).length());
+    }
 }
