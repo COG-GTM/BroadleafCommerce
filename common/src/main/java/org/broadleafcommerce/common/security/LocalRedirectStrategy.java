@@ -50,7 +50,9 @@ public class LocalRedirectStrategy implements RedirectStrategy {
      */
     @Override
     public void sendRedirect(HttpServletRequest request, HttpServletResponse response, String url) throws IOException {
-        if (!url.startsWith("/")) {
+        if (isProtocolRelative(url)) {
+            validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
+        } else if (!url.startsWith("/")) {
             if (StringUtils.equals(request.getParameter("successUrl"), url)
                     || StringUtils.equals(request.getParameter("failureUrl"), url)) {
                 validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
@@ -63,6 +65,13 @@ public class LocalRedirectStrategy implements RedirectStrategy {
         }
 
         response.sendRedirect(redirectUrl);
+    }
+
+    /**
+     * {@code //host} and {@code /\\host} start with '/' but browsers resolve them to another host.
+     */
+    protected boolean isProtocolRelative(String url) {
+        return url.startsWith("//") || url.startsWith("/\\");
     }
 
     /**
