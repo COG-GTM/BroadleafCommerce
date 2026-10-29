@@ -34,6 +34,7 @@ public class ServletOutputStreamWrapper extends ServletOutputStream {
 
     private FastByteArrayOutputStream baos = new FastByteArrayOutputStream(8192);
     private OutputStream outputStream;
+    private boolean closed;
 
     public ServletOutputStreamWrapper(OutputStream outputStream) {
         this.outputStream = outputStream;
@@ -56,6 +57,19 @@ public class ServletOutputStreamWrapper extends ServletOutputStream {
     protected void flushInternalBuffer() throws IOException {
         outputStream.write(baos.toByteArray());
         baos.reset();
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        try {
+            flushInternalBuffer();
+        } finally {
+            outputStream.close();
+        }
     }
 
     @Override

@@ -26,6 +26,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 
 import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 
@@ -40,6 +41,8 @@ public class FileSystemResponseWrapper extends HttpServletResponseWrapper {
     private ServletOutputStream outputStream;
     private PrintWriter writer;
     private File targetFile;
+    private boolean cookieAdded;
+    private boolean errorSent;
 
     public FileSystemResponseWrapper(HttpServletResponse response, File targetFile) throws IOException {
         super(response);
@@ -73,6 +76,32 @@ public class FileSystemResponseWrapper extends HttpServletResponseWrapper {
         }
 
         return writer;
+    }
+
+    @Override
+    public void addCookie(Cookie cookie) {
+        cookieAdded = true;
+        super.addCookie(cookie);
+    }
+
+    @Override
+    public void sendError(int sc) throws IOException {
+        errorSent = true;
+        super.sendError(sc);
+    }
+
+    @Override
+    public void sendError(int sc, String msg) throws IOException {
+        errorSent = true;
+        super.sendError(sc, msg);
+    }
+
+    public boolean isCookieAdded() {
+        return cookieAdded;
+    }
+
+    public boolean isErrorSent() {
+        return errorSent;
     }
 
     public void closeFileOutputStream() {
