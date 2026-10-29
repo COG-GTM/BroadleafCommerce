@@ -19,6 +19,7 @@ package org.broadleafcommerce.profile.core.dao;
 
 import org.broadleafcommerce.profile.core.domain.CustomerForgotPasswordSecurityToken;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -29,6 +30,16 @@ public interface CustomerForgotPasswordSecurityTokenDao {
     CustomerForgotPasswordSecurityToken readToken(String token);
 
     List<CustomerForgotPasswordSecurityToken> readUnusedTokensByCustomerId(Long customerId);
+
+    /**
+     * Reads the unused tokens for the customer that were created after {@code createdAfter}, newest first.
+     */
+    List<CustomerForgotPasswordSecurityToken> readUnusedTokensByCustomerId(Long customerId, Date createdAfter);
+
+    /**
+     * Counts all tokens (used or not) issued to the customer after {@code createdAfter}.
+     */
+    Long countTokensCreatedSince(Long customerId, Date createdAfter);
 
     CustomerForgotPasswordSecurityToken saveToken(CustomerForgotPasswordSecurityToken token);
 
