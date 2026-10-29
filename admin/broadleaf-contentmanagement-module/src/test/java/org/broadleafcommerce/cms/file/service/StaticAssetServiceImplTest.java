@@ -21,9 +21,14 @@ import org.broadleafcommerce.common.file.service.StaticAssetPathServiceImpl;
 import org.junit.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
+import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertTrue;
 
 /**
@@ -100,6 +105,174 @@ public class StaticAssetServiceImplTest {
         assetService.validateFileExtension(file);
         file = new MockMultipartFile("img.png", this.getClass().getResourceAsStream("/testfile/img.png"));
         assetService.validateFileExtension(file);
+    }
+
+    @Test(expected = IOException.class)
+    public void testWhitelistRejectsImagePolyglotWithDisallowedName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        assetService.validateFileExtension(upload("test.html", pngWithHtmlPayload()));
+    }
+
+    @Test(expected = IOException.class)
+    public void testWhitelistRejectsDisallowedContentWithAllowedName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        assetService.setRejectMismatchedContentType(false);
+        assetService.validateFileExtension(upload("test.png", HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    public void testWhitelistAcceptsMatchingNameAndContent() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        assetService.validateFileExtension(upload("Test.PNG", resource("/testfile/img.png")));
+    }
+
+    @Test
+    public void testWhitelistAcceptsAlternateExtensionOfDetectedType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("jpeg");
+        assetService.validateFileExtension(upload("photo.jpeg", JPEG_HEADER));
+    }
+
+    @Test
+    public void testWhitelistAcceptsTextSubtypeByName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("csv");
+        assetService.validateFileExtension(upload("prices.csv", "sku,price\nA1,10.00\n".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test(expected = IOException.class)
+    public void testBlacklistChecksFileNameExtension() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("html");
+        assetService.setRejectMismatchedContentType(false);
+        assetService.validateFileExtension(upload("test.html", pngWithHtmlPayload()));
+    }
+
+    @Test(expected = IOException.class)
+    public void testBlacklistChecksDetectedContentType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("pdf");
+        assetService.setRejectMismatchedContentType(false);
+        assetService.validateFileExtension(upload("brochure.png", PDF_HEADER));
+    }
+
+    @Test(expected = IOException.class)
+    public void testBlacklistChecksAlternateExtensionsOfDetectedContentType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("jpeg");
+        assetService.validateFileExtension(upload("photo.jpg", JPEG_HEADER));
+    }
+
+    @Test(expected = IOException.class)
+    public void testRejectsNameThatDoesNotMatchContent() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("pdf");
+        assetService.validateFileExtension(upload("promo.html", pngWithHtmlPayload()));
+    }
+
+    @Test
+    public void testMismatchCheckCanBeDisabled() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("pdf");
+        assetService.setRejectMismatchedContentType(false);
+        assetService.validateFileExtension(upload("promo.html", pngWithHtmlPayload()));
+    }
+
+    @Test(expected = IOException.class)
+    public void testWhitelistRejectsUndetectableContent() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        assetService.validateFileExtension(upload("img.png", UNDETECTABLE_BINARY));
+    }
+
+    @Test
+    public void testBlacklistOfGenericTextTypeAllowsTextSubtypes() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("txt");
+        assetService.validateFileExtension(upload("site.css", "body { color: red; }\n".getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("site.js", "var a = 1;\n".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test(expected = IOException.class)
+    public void testBlacklistOfGenericTextTypeStillChecksName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("html");
+        assetService.validateFileExtension(upload("notes.txt", HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    public void testAcceptsCommonTextAssets() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("pdf");
+        assetService.validateFileExtension(upload("site.css", "body { color: red; }\n".getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("site.js", "var a = 1;\n".getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("data.json", "{\"a\": 1}\n".getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("page.html", HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("img.png", resource("/testfile/img.png")));
+    }
+
+    @Test
+    public void testStoredMimeTypeComesFromContentNotName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("image/png", assetService.resolveMimeType(stream(pngWithHtmlPayload()), "promo.html"));
+        assertEquals("image/png", assetService.resolveMimeType(stream(pngWithHtmlPayload()), "test.png"));
+    }
+
+    @Test
+    public void testStoredMimeTypeUsesNameSpecializationOfContentType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("text/css", assetService.resolveMimeType(
+                stream("body { color: red; }\n".getBytes(StandardCharsets.UTF_8)), "site.css"));
+        assertEquals("image/jpeg", assetService.resolveMimeType(stream(JPEG_HEADER), "photo.jpg"));
+    }
+
+    @Test
+    public void testUndetectableContentIsNotStoredAsActiveType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(UNDETECTABLE_BINARY), "promo.html"));
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(UNDETECTABLE_BINARY), "promo.svg"));
+    }
+
+    @Test
+    public void testResolveMimeTypeResetsStream() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        byte[] png = resource("/testfile/img.png");
+        InputStream in = stream(png);
+        assetService.resolveMimeType(in, "img.png");
+        assertTrue(Arrays.equals(png, in.readAllBytes()));
+    }
+
+    private static InputStream stream(byte[] content) {
+        return new ByteArrayInputStream(content);
+    }
+
+    private static final String HTML_PAYLOAD = "<html><body><script>alert(document.cookie)</script></body></html>";
+
+    private static final byte[] JPEG_HEADER = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10,
+            'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00};
+
+    private static final byte[] UNDETECTABLE_BINARY = {0x00, 0x01, 0x02, 0x03, (byte) 0xFE, (byte) 0xFD, 0x00, 0x7F, 0x10, 0x11};
+
+    private static final byte[] PDF_HEADER = "%PDF-1.4\n%\u00e2\u00e3\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.ISO_8859_1);
+
+    private static MockMultipartFile upload(String originalFilename, byte[] content) {
+        return new MockMultipartFile("file", originalFilename, null, content);
+    }
+
+    private byte[] resource(String path) throws IOException {
+        try (InputStream in = this.getClass().getResourceAsStream(path)) {
+            return in.readAllBytes();
+        }
+    }
+
+    private byte[] pngWithHtmlPayload() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(resource("/testfile/img.png"));
+        out.write(HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8));
+        return out.toByteArray();
     }
 
 }
