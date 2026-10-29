@@ -19,6 +19,7 @@ package org.broadleafcommerce.openadmin.web.filter;
 
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
 import org.broadleafcommerce.common.security.BroadleafExternalAuthenticationUserDetails;
+import org.broadleafcommerce.common.security.util.PasswordUtils;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminRole;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
 import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityService;
@@ -60,6 +61,7 @@ import jakarta.servlet.http.HttpServletRequest;
 public class AdminExternalLoginStateFilter extends GenericFilterBean {
 
     protected static final String BLC_ADMIN_PROVISION_USER_CHECK = "BLC_ADMIN_PROVISION_USER_CHECK";
+    protected static final int GENERATED_PASSWORD_LENGTH = 32;
 
     @Autowired
     @Qualifier("blAdminSecurityService")
@@ -102,13 +104,14 @@ public class AdminExternalLoginStateFilter extends GenericFilterBean {
     protected void saveAdminUser(BroadleafExternalAuthenticationUserDetails broadleafUser, AdminUser user) {
         //Name, login, password, email are required.
         user.setLogin(broadleafUser.getUsername());
-        user.setUnencodedPassword(broadleafUser.getPassword());
-
-        if (user.getUnencodedPassword() == null) {
-            //If Spring is configured to erase credentials, then this will always be null
-            //Set the username as a default password here.
-            user.setUnencodedPassword(user.getLogin());
+        String externalPassword = broadleafUser.getPassword();
+        if (externalPassword == null || externalPassword.isEmpty()) {
+            //If Spring is configured to erase credentials, then this will always be null.
+            //Never derive the local password from the login; use an unguessable random value so that
+            //only the external provider can authenticate this user.
+            externalPassword = PasswordUtils.generateSecurePassword(GENERATED_PASSWORD_LENGTH);
         }
+        user.setUnencodedPassword(externalPassword);
 
         StringBuffer name = new StringBuffer();
         if (broadleafUser.getFirstName() != null && broadleafUser.getFirstName().trim().length() > 0) {
