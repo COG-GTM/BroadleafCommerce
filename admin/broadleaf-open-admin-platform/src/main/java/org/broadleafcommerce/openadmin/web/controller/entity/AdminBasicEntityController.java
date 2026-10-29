@@ -74,6 +74,7 @@ import org.broadleafcommerce.openadmin.web.form.entity.EntityFormAction;
 import org.broadleafcommerce.openadmin.web.form.entity.Field;
 import org.broadleafcommerce.openadmin.web.form.entity.FieldGroup;
 import org.springframework.beans.propertyeditors.StringTrimmerEditor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.MultiValueMap;
@@ -88,6 +89,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.FlashMap;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.util.UrlPathHelper;
 
@@ -385,8 +387,21 @@ public class AdminBasicEntityController extends AdminAbstractController {
             }
         } else {
             entityType = URLDecoder.decode(entityType, "UTF-8");
+            validateRequestedEntityType(entityType, cmd);
         }
         return entityType;
+    }
+
+    /**
+     * Rejects a caller-supplied entity type that is not part of the polymorphic tree of the requested ceiling entity.
+     */
+    protected void validateRequestedEntityType(String entityType, final ClassMetadata cmd) {
+        ClassTree polymorphicEntities = cmd.getPolymorphicEntities();
+        if (polymorphicEntities == null || polymorphicEntities.find(entityType) == null) {
+            LOG.warn(String.format("Rejected entity type [%s] that is not a polymorphic type of [%s]",
+                    StringUtils.normalizeSpace(entityType), cmd.getCeilingType()));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid entity type");
+        }
     }
 
     /**

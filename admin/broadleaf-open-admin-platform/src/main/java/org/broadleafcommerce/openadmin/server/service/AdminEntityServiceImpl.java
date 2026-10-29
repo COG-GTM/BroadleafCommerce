@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
 import org.broadleafcommerce.common.presentation.client.AddMethodType;
@@ -36,6 +37,7 @@ import org.broadleafcommerce.openadmin.dto.AdornedTargetList;
 import org.broadleafcommerce.openadmin.dto.BasicCollectionMetadata;
 import org.broadleafcommerce.openadmin.dto.BasicFieldMetadata;
 import org.broadleafcommerce.openadmin.dto.ClassMetadata;
+import org.broadleafcommerce.openadmin.dto.ClassTree;
 import org.broadleafcommerce.openadmin.dto.CollectionMetadata;
 import org.broadleafcommerce.openadmin.dto.CriteriaTransferObject;
 import org.broadleafcommerce.openadmin.dto.DynamicResultSet;
@@ -623,6 +625,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
         if (md instanceof BasicCollectionMetadata) {
             BasicCollectionMetadata fmd = (BasicCollectionMetadata) md;
+            validateSubCollectionEntityType(entityForm.getEntityType(), fmd, sectionCrumbs);
             ppr.getEntity().setType(new String[]{entityForm.getEntityType()});
 
             // If we're looking up an entity instead of trying to create one on the fly, let's make sure
@@ -708,6 +711,50 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         ppr.getEntity().setProperties(propArr);
 
         return add(ppr);
+    }
+
+    /**
+     * Ensures the form-supplied entity type of a new collection item is the collection ceiling or one of the
+     * polymorphic types the collection's metadata allows.
+     */
+    protected void validateSubCollectionEntityType(String entityType, BasicCollectionMetadata collectionMetadata,
+            List<SectionCrumb> sectionCrumbs) throws ServiceException {
+        String collectionCeilingEntity = collectionMetadata.getCollectionCeilingEntity();
+        ClassTree allowedTypes = null;
+        if (StringUtils.isNotBlank(entityType) && !entityType.equals(collectionCeilingEntity)) {
+            ClassMetadata cmd = getClassMetadata(PersistencePackageRequest.fromMetadata(collectionMetadata, sectionCrumbs))
+                    .getDynamicResultSet().getClassMetaData();
+            allowedTypes = cmd.getPolymorphicEntities();
+        }
+        validateSubCollectionEntityType(entityType, collectionCeilingEntity, allowedTypes);
+    }
+
+    /**
+     * Rejects a blank entity type, or one that is neither the collection ceiling nor both part of {@code allowedTypes}
+     * and assignable to the ceiling.
+     */
+    protected void validateSubCollectionEntityType(String entityType, String collectionCeilingEntity,
+            ClassTree allowedTypes) throws SecurityServiceException {
+        if (StringUtils.isNotBlank(entityType) && entityType.equals(collectionCeilingEntity)) {
+            return;
+        }
+        boolean allowed = false;
+        if (StringUtils.isNotBlank(entityType) && StringUtils.isNotBlank(collectionCeilingEntity)
+                && allowedTypes != null && allowedTypes.find(entityType) != null) {
+            try {
+                ClassLoader classLoader = getClass().getClassLoader();
+                Class<?> ceilingClass = Class.forName(collectionCeilingEntity, false, classLoader);
+                Class<?> entityClass = Class.forName(entityType, false, classLoader);
+                allowed = ceilingClass.isAssignableFrom(entityClass);
+            } catch (ClassNotFoundException | LinkageError e) {
+                allowed = false;
+            }
+        }
+        if (!allowed) {
+            throw new SecurityServiceException(String.format(
+                    "Entity type [%s] is not a valid type for the collection ceiling [%s]",
+                    StringUtils.normalizeSpace(entityType), collectionCeilingEntity));
+        }
     }
 
     @Override
