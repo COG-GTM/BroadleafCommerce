@@ -88,6 +88,13 @@ public class GeolocationRequestProcessorTest {
     }
 
     @Test
+    public void chainOfOnlyTrustedHopsYieldsNoAddress() {
+        env.setProperty(GeolocationRequestProcessor.TRUSTED_PROXIES_PROPERTY, "10.0.0.0/8, 198.51.100.0/24");
+        assertNull(resolve("10.1.2.3", "198.51.100.9"));
+        assertNull(resolve("10.1.2.3", "198.51.100.9, 10.4.5.6"));
+    }
+
+    @Test
     public void malformedHopFromTrustedProxyYieldsNoAddress() {
         env.setProperty(GeolocationRequestProcessor.TRUSTED_PROXIES_PROPERTY, "10.0.0.0/8");
         assertNull(resolve("10.1.2.3", "8.8.8.8, evil.example.com"));

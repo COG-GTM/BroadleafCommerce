@@ -47,7 +47,8 @@ import jakarta.annotation.Resource;
  * <p>
  * The client IP is the socket address ({@code getRemoteAddr()}). The {@value #FORWARD_HEADER} header is only consulted
  * when the socket address belongs to a proxy listed in {@value #TRUSTED_PROXIES_PROPERTY}; in that case the right-most
- * hop that is not itself a trusted proxy is used. Values that are not IP literals are never sent to the geolocation API.
+ * hop that is not itself a trusted proxy is used (if every hop is trusted, no lookup is made). Values that are not IP
+ * literals are never sent to the geolocation API.
  */
 @Component("blGeolocationRequestProcessor")
 public class GeolocationRequestProcessor extends AbstractBroadleafWebRequestProcessor {
@@ -114,19 +115,21 @@ public class GeolocationRequestProcessor extends AbstractBroadleafWebRequestProc
         }
 
         List<String> hops = getForwardedHops(request);
-        InetAddress clientAddress = remoteAddress;
+        if (hops.isEmpty()) {
+            return remoteAddress.getHostAddress();
+        }
         for (int i = hops.size() - 1; i >= 0; i--) {
             InetAddress hop = parseIpLiteral(hops.get(i));
             if (hop == null) {
                 LOG.debug("Ignoring geolocation lookup: malformed " + FORWARD_HEADER + " hop from a trusted proxy");
                 return null;
             }
-            clientAddress = hop;
             if (!isTrustedProxy(hop, trustedProxies)) {
-                break;
+                return hop.getHostAddress();
             }
         }
-        return clientAddress.getHostAddress();
+        // every hop is a trusted proxy, so the left-most entry may be client-supplied
+        return null;
     }
 
     protected List<String> getForwardedHops(ServletWebRequest request) {
