@@ -51,7 +51,6 @@ import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.AclEntryFlag;
 import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -191,9 +190,7 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
             return mergedConfigDirectory;
         }
         if (StringUtils.isBlank(mergedConfigLocation)) {
-            mergedConfigDirectory = isPosix()
-                    ? Files.createTempDirectory(TEMP_DIRECTORY_PREFIX, permissions("rwx------"))
-                    : Files.createTempDirectory(TEMP_DIRECTORY_PREFIX);
+            mergedConfigDirectory = Files.createTempDirectory(TEMP_DIRECTORY_PREFIX, ownerOnly("rwx------"));
             mergedConfigDirectoryCreated = true;
         } else {
             mergedConfigDirectory = Paths.get(mergedConfigLocation.trim()).toAbsolutePath().normalize();
@@ -203,19 +200,12 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
                     Files.createDirectories(parent);
                 }
                 try {
-                    if (isPosix()) {
-                        Files.createDirectory(mergedConfigDirectory, permissions("rwx------"));
-                    } else {
-                        Files.createDirectory(mergedConfigDirectory);
-                    }
+                    Files.createDirectory(mergedConfigDirectory, ownerOnly("rwx------"));
                     mergedConfigDirectoryCreated = true;
                 } catch (FileAlreadyExistsException e) {
                     // created concurrently; validated below
                 }
             }
-        }
-        if (mergedConfigDirectoryCreated && !isPosix()) {
-            restrictToOwner(mergedConfigDirectory);
         }
         validateMergedConfigDirectory(mergedConfigDirectory);
         return mergedConfigDirectory;
@@ -246,37 +236,7 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
 
     protected SeekableByteChannel newPrivateFileChannel(Path file) throws IOException {
         Set<StandardOpenOption> options = EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-        if (isPosix()) {
-            return Files.newByteChannel(file, options, permissions("rw-------"));
-        }
-        SeekableByteChannel channel = Files.newByteChannel(file, options);
-        try {
-            restrictToOwner(file);
-        } catch (IOException | RuntimeException e) {
-            channel.close();
-            deleteQuietly(file);
-            throw e;
-        }
-        return channel;
-    }
-
-    /**
-     * On non-POSIX file systems that support ACLs (e.g. Windows), replaces the ACL of the given path with a single
-     * entry granting full access to its owner.
-     */
-    protected Path restrictToOwner(Path path) throws IOException {
-        AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
-        if (view == null) {
-            return path;
-        }
-        AclEntry ownerOnly = AclEntry.newBuilder()
-                .setType(AclEntryType.ALLOW)
-                .setPrincipal(view.getOwner())
-                .setPermissions(EnumSet.allOf(AclEntryPermission.class))
-                .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
-                .build();
-        view.setAcl(List.of(ownerOnly));
-        return path;
+        return Files.newByteChannel(file, options, ownerOnly("rw-------"));
     }
 
     protected String randomToken() {
@@ -289,8 +249,38 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
         return FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
     }
 
-    protected FileAttribute<Set<PosixFilePermission>> permissions(String permissions) {
-        return PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(permissions));
+    /**
+     * Attributes that make a new file or directory accessible only to the JVM user from the moment it is created:
+     * the given POSIX permissions, or on ACL file systems (e.g. Windows) a single ALLOW entry for the current user.
+     */
+    protected FileAttribute<?>[] ownerOnly(String posixPermissions) throws IOException {
+        Set<String> views = FileSystems.getDefault().supportedFileAttributeViews();
+        if (views.contains("posix")) {
+            return new FileAttribute<?>[] {
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(posixPermissions)) };
+        }
+        if (views.contains("acl")) {
+            UserPrincipal user = FileSystems.getDefault().getUserPrincipalLookupService()
+                    .lookupPrincipalByName(System.getProperty("user.name"));
+            List<AclEntry> acl = List.of(AclEntry.newBuilder()
+                    .setType(AclEntryType.ALLOW)
+                    .setPrincipal(user)
+                    .setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                    .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
+                    .build());
+            return new FileAttribute<?>[] { new FileAttribute<List<AclEntry>>() {
+                @Override
+                public String name() {
+                    return "acl:acl";
+                }
+
+                @Override
+                public List<AclEntry> value() {
+                    return acl;
+                }
+            } };
+        }
+        return new FileAttribute<?>[0];
     }
 
     protected void deleteQuietly(Path path) {
