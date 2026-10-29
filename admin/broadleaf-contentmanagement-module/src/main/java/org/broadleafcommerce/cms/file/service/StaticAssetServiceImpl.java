@@ -95,10 +95,27 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Value("${static.asset.invalid.chars.replacement}")
     protected String replacementString;
 
-    private static String normalizeFileExtension(MultipartFile file) {
-        int index = file.getOriginalFilename().lastIndexOf(".");
-        return file.getOriginalFilename().substring(0, index + 1)
-                + file.getOriginalFilename().substring(index + 1).toLowerCase();
+    private static String normalizeFileExtension(String fileName) {
+        int index = fileName.lastIndexOf(".");
+        return fileName.substring(0, index + 1) + fileName.substring(index + 1).toLowerCase();
+    }
+
+    protected static boolean containsTraversalSegment(String path) {
+        for (String segment : path.split("[/\\\\]")) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected static boolean containsControlCharacter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String getFileExtension(MultipartFile file) {
@@ -226,9 +243,10 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public StaticAsset createStaticAssetFromFile(MultipartFile file, Map<String, String> properties) {
         try {
+            String safeFileName = getSafeUploadFileName(file.getOriginalFilename());
             validateFileExtension(file);
             staticAssetStorageService.validateFileSize(file);
-            String fileName = normalizeFileExtension(file);
+            String fileName = normalizeFileExtension(safeFileName);
             boolean b = validateFileName(fileName);
             if (b) {
                 fileName = fileName.replaceAll(
@@ -239,6 +257,41 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             return createStaticAsset(file.getInputStream(), fileName, file.getSize(), properties);
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Reduces a client-supplied upload name to a single safe path segment. Names containing {@code .} or {@code ..}
+     * path segments are rejected; any other directory prefix (e.g. a full client path sent by some browsers) is dropped.
+     *
+     * @param originalFilename the name from the multipart {@code Content-Disposition} header
+     * @return the last path segment of the name
+     * @throws IllegalArgumentException if the name is blank, traverses directories, is hidden or has control characters
+     */
+    protected String getSafeUploadFileName(String originalFilename) {
+        if (StringUtils.isBlank(originalFilename)) {
+            throw new IllegalArgumentException("Uploaded file name is required.");
+        }
+        if (containsControlCharacter(originalFilename) || containsTraversalSegment(originalFilename)) {
+            throw new IllegalArgumentException("Uploaded file name contains illegal path segments or characters.");
+        }
+        String fileName = FilenameUtils.getName(originalFilename);
+        if (StringUtils.isBlank(fileName) || fileName.startsWith(".")) {
+            throw new IllegalArgumentException("Uploaded file name is not valid.");
+        }
+        return fileName;
+    }
+
+    /**
+     * Ensures an asset URL cannot escape the asset storage root once it is mapped onto a file system path.
+     *
+     * @param fullUrl the asset URL built from the entity type, entity id and file name
+     * @throws IllegalArgumentException if the URL contains backslashes, control characters or {@code .}/{@code ..} segments
+     */
+    protected void validateAssetUrl(String fullUrl) {
+        if (StringUtils.isBlank(fullUrl) || fullUrl.indexOf('\\') >= 0 || containsControlCharacter(fullUrl)
+                || containsTraversalSegment(fullUrl)) {
+            throw new IllegalArgumentException("Invalid static asset URL: " + StringUtil.sanitize(fullUrl));
         }
     }
 
@@ -263,6 +316,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         }
 
         String fullUrl = buildAssetURL(properties, fileName);
+        validateAssetUrl(fullUrl);
         StringBuilder urlBuilder = new StringBuilder();
         urlBuilder.append(fullUrl);
         ExtensionResultStatusType resultStatusType = staticAssetExtensionManager.getProxy().modifyDuplicateAssetURL(urlBuilder);
@@ -285,6 +339,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
                 fullUrl = getCountUrl(fullUrl, count, false);
             }
         }
+        validateAssetUrl(fullUrl);
 
         try {
             ImageMetadata metadata = imageArtifactProcessor.getImageMetadata(inputStream);

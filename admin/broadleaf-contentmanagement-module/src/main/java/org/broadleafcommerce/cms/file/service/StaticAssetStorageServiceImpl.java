@@ -39,6 +39,7 @@ import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
 import org.broadleafcommerce.common.io.ConcurrentFileOutputStream;
 import org.broadleafcommerce.common.util.StreamCapableTransactionalOperationAdapter;
 import org.broadleafcommerce.common.util.StreamingTransactionCapableUtil;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.openadmin.server.service.artifact.ArtifactService;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -440,6 +441,11 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
                     tempWorkArea.getFilePathLocation() + File.separator
                             + FilenameUtils.separatorsToSystem(staticAsset.getFullUrl())
             );
+            if (!isWithinWorkArea(tempWorkArea, destFileName)) {
+                broadleafFileService.closeWorkArea(tempWorkArea);
+                throw new IOException("Static asset path resolves outside of the temporary work area: "
+                        + StringUtil.sanitize(staticAsset.getFullUrl()));
+            }
 
             InputStream input = fileInputStream;
             byte[] buffer = new byte[getFileBufferSize()];
@@ -474,6 +480,13 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
                 broadleafFileService.closeWorkArea(tempWorkArea);
             }
         }
+    }
+
+    protected boolean isWithinWorkArea(FileWorkArea workArea, String destFileName) {
+        String workAreaPath = FilenameUtils.normalizeNoEndSeparator(workArea.getFilePathLocation());
+        return destFileName != null && workAreaPath != null
+                && destFileName.startsWith(workAreaPath + File.separator)
+                && destFileName.length() > workAreaPath.length() + 1;
     }
 
     protected long getMaxUploadSizeForFile(String fileName) {

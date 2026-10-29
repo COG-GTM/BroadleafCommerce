@@ -19,9 +19,13 @@ package org.broadleafcommerce.cms.admin.web.controller;
 
 import org.broadleafcommerce.cms.file.domain.ImageStaticAssetImpl;
 import org.broadleafcommerce.cms.file.domain.StaticAsset;
+import org.broadleafcommerce.cms.file.domain.StaticAssetImpl;
 import org.broadleafcommerce.cms.file.service.StaticAssetService;
 import org.broadleafcommerce.cms.file.service.StaticAssetStorageService;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
+import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
 import org.broadleafcommerce.openadmin.server.service.handler.CustomPersistenceHandler;
 import org.broadleafcommerce.openadmin.web.controller.AdminAbstractController;
 import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
@@ -109,6 +113,11 @@ public class AdminAssetUploadController extends AdminAbstractController {
                                                       @PathVariable(value = "sectionKey") String sectionKey, @PathVariable(value = "id") String id) throws IOException {
         Map<String, Object> responseMap = new HashMap<String, Object>();
 
+        if (!isAllowed(StaticAssetImpl.class.getName(), EntityOperationType.ADD)) {
+            responseMap.put("error", "Not authorized to upload assets");
+            return new ResponseEntity<Map<String, Object>>(responseMap, new HttpHeaders(), HttpStatus.FORBIDDEN);
+        }
+
         Map<String, String> properties = new HashMap<String, String>();
         properties.put("entityType", sectionKey);
         properties.put("entityId", id);
@@ -154,6 +163,10 @@ public class AdminAssetUploadController extends AdminAbstractController {
                          @PathVariable Map<String, String> pathVars,
                          @RequestParam("file") MultipartFile file,
                          @RequestParam MultiValueMap<String, String> requestParams) throws Exception {
+        if (!isAllowed(StaticAssetImpl.class.getName(), EntityOperationType.ADD)) {
+            throw new SecurityServiceException("Security Check Failed for entity operation: ADD ("
+                    + StaticAssetImpl.class.getName() + ")");
+        }
 
         StaticAsset staticAsset = staticAssetService.createStaticAssetFromFile(file, null);
         staticAssetStorageService.createStaticAssetStorageFromFile(file, staticAsset);
@@ -183,5 +196,14 @@ public class AdminAssetUploadController extends AdminAbstractController {
                                                       @PathVariable(value = "addlSectionKey") String addlSectionKey,
                                                       @PathVariable(value = "id") String id) throws IOException {
         return upload(request, file, sectionKey, id);
+    }
+
+    protected boolean isAllowed(String ceilingEntity, EntityOperationType operationType) {
+        try {
+            adminRemoteSecurityService.securityCheck(ceilingEntity, operationType);
+            return true;
+        } catch (ServiceException e) {
+            return false;
+        }
     }
 }
