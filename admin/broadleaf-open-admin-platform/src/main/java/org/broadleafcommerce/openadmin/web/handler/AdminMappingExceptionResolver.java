@@ -21,6 +21,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.web.controller.BroadleafControllerUtility;
 import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.handler.SimpleMappingExceptionResolver;
 import org.springframework.web.util.UrlPathHelper;
@@ -45,7 +46,11 @@ public class AdminMappingExceptionResolver extends SimpleMappingExceptionResolve
     ) {
         if (BroadleafControllerUtility.isAjaxRequest(request)) {
             // Set up some basic response attributes
-            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            if (ex instanceof ResponseStatusException rse) {
+                response.setStatus(rse.getStatusCode().value());
+            } else {
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
             ModelAndView mav = new ModelAndView("utility/blcException");
 
             // Friendly message

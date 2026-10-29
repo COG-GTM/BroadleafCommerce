@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
 import org.broadleafcommerce.common.presentation.client.AddMethodType;
@@ -623,6 +624,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
         if (md instanceof BasicCollectionMetadata) {
             BasicCollectionMetadata fmd = (BasicCollectionMetadata) md;
+            validateSubCollectionEntityType(entityForm.getEntityType(), fmd.getCollectionCeilingEntity());
             ppr.getEntity().setType(new String[]{entityForm.getEntityType()});
 
             // If we're looking up an entity instead of trying to create one on the fly, let's make sure
@@ -708,6 +710,32 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         ppr.getEntity().setProperties(propArr);
 
         return add(ppr);
+    }
+
+    /**
+     * Ensures the form-supplied entity type of a new collection item is the collection ceiling or one of its subtypes.
+     */
+    protected void validateSubCollectionEntityType(String entityType, String collectionCeilingEntity)
+            throws SecurityServiceException {
+        if (StringUtils.isBlank(entityType) || entityType.equals(collectionCeilingEntity)) {
+            return;
+        }
+        boolean allowed = false;
+        if (StringUtils.isNotBlank(collectionCeilingEntity)) {
+            try {
+                ClassLoader classLoader = getClass().getClassLoader();
+                Class<?> ceilingClass = Class.forName(collectionCeilingEntity, false, classLoader);
+                Class<?> entityClass = Class.forName(entityType, false, classLoader);
+                allowed = ceilingClass.isAssignableFrom(entityClass);
+            } catch (ClassNotFoundException | LinkageError e) {
+                allowed = false;
+            }
+        }
+        if (!allowed) {
+            throw new SecurityServiceException(String.format(
+                    "Entity type [%s] is not a valid type for the collection ceiling [%s]",
+                    StringUtils.normalizeSpace(entityType), collectionCeilingEntity));
+        }
     }
 
     @Override
