@@ -17,10 +17,12 @@
  */
 package org.broadleafcommerce.core.web.processor;
 
+import org.apache.commons.text.StringEscapeUtils;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.core.catalog.domain.Category;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.service.CatalogURLService;
+import org.broadleafcommerce.core.web.util.ProcessorUtils;
 import org.broadleafcommerce.presentation.condition.ConditionalOnTemplating;
 import org.broadleafcommerce.presentation.dialect.AbstractBroadleafAttributeModifierProcessor;
 import org.broadleafcommerce.presentation.model.BroadleafAttributeModifier;
@@ -74,11 +76,7 @@ public class CatalogRelativeHrefProcessor extends AbstractBroadleafAttributeModi
     ) {
         Object result = context.parseExpression(attributeValue);
         HttpServletRequest request = BroadleafRequestContext.getBroadleafRequestContext().getRequest();
-        String currentUrl = request.getRequestURI();
-
-        if (request.getQueryString() != null) {
-            currentUrl = currentUrl + "?" + request.getQueryString();
-        }
+        String currentUrl = ProcessorUtils.getUrl(request.getRequestURI(), request.getParameterMap());
 
         if (result instanceof Product) {
             return catalogURLService.buildRelativeProductURL(currentUrl, (Product) result);
@@ -98,7 +96,7 @@ public class CatalogRelativeHrefProcessor extends AbstractBroadleafAttributeModi
     ) {
         String relativeHref = buildRelativeHref(tagName, tagAttributes, attributeName, attributeValue, context);
         Map<String, String> newAttributes = new HashMap<>();
-        newAttributes.put(HREF, relativeHref);
+        newAttributes.put(HREF, StringEscapeUtils.escapeHtml4(relativeHref));
         return new BroadleafAttributeModifier(newAttributes);
     }
 
