@@ -121,6 +121,22 @@ class AdminTranslationControllerSpec extends Specification {
         result.is(stored)
     }
 
+    def "a translation of a string-keyed entity is matched on its stored id without the list lookup"() {
+        given:
+        String country = "org.broadleafcommerce.profile.core.domain.Country"
+        Translation stored = translation(TranslatedEntity.COUNTRY, "US", "name")
+        translationService.getAssignableEntityType(country) >> TranslatedEntity.COUNTRY
+        translationService.findTranslationById(42L) >> stored
+        translationService.getTranslations(country, "US", "name") >> { throw new NumberFormatException("US") }
+
+        when:
+        def result = controller.checkTranslationAccess(form(country, 42L, "US", "name"), EntityOperationType.UPDATE)
+
+        then:
+        1 * securityVerifier.securityCheck(country, EntityOperationType.UPDATE)
+        result.is(stored)
+    }
+
     def "a translation of a different record or property of the same entity type is rejected"() {
         given:
         translationService.findTranslationById(42L) >> translation(TranslatedEntity.CATEGORY, "2001", "name")

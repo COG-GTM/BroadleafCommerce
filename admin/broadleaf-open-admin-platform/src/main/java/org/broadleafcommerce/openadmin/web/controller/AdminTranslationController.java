@@ -467,9 +467,10 @@ public class AdminTranslationController extends AdminAbstractController {
     }
 
     /**
-     * When the form names a specific entity and property, the translation must be one of that field's translations.
-     * The lookup goes through {@link TranslationService#getTranslations(String, String, String)} so sandbox entity
-     * ids are resolved to their original ids exactly as they are when the translation list is rendered.
+     * When the form names a specific entity and property, the translation must be one of that field's translations:
+     * either its stored entity id and field name match the form, or it is returned by
+     * {@link TranslationService#getTranslations(String, String, String)}, which resolves sandbox entity ids to their
+     * original ids exactly as they are when the translation list is rendered.
      */
     protected boolean belongsToSubmittedField(TranslationForm form, Translation translation) {
         if (StringUtils.isBlank(form.getEntityId()) && StringUtils.isBlank(form.getPropertyName())) {
@@ -477,6 +478,10 @@ public class AdminTranslationController extends AdminAbstractController {
         }
         if (StringUtils.isBlank(form.getEntityId()) || StringUtils.isBlank(form.getPropertyName())) {
             return false;
+        }
+        if (form.getEntityId().equals(translation.getEntityId())
+                && form.getPropertyName().equals(translation.getFieldName())) {
+            return true;
         }
         List<Translation> fieldTranslations;
         try {
