@@ -203,6 +203,16 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     }
 
     /**
+     * Whether {@code nameType} is a strict specialization of {@code contentType}, e.g. {@code text/css} for
+     * {@code text/plain} content. In that case the extensions registered for the generic content type (such as
+     * {@code txt}) do not describe the upload.
+     */
+    protected boolean isSpecializationOf(MediaType nameType, MediaType contentType) {
+        return nameType != null && contentType != null && !nameType.equals(contentType)
+                && MIME_TYPES.getMediaTypeRegistry().isInstanceOf(nameType, contentType);
+    }
+
+    /**
      * The name-based type is consistent with the content when the content type is unknown, when the file name
      * extension is registered for the content type, or when the name type is the content type or a
      * specialization of it (e.g. {@code text/css} for {@code text/plain} content).
@@ -314,9 +324,9 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         if (StringUtils.isNotBlank(allowedFileExtensions)) {
             final List<String> extensions = parseExtensionList(allowedFileExtensions);
             boolean nameAllowed = extensions.contains(nameExtension);
-            boolean contentAllowed = contentType == null
-                    || !Collections.disjoint(extensions, contentExtensions)
-                    || (nameAllowed && isNameConsistentWithContent(nameExtension, nameType, contentType));
+            boolean contentAllowed = contentType != null
+                    && (!Collections.disjoint(extensions, contentExtensions)
+                    || (nameAllowed && isNameConsistentWithContent(nameExtension, nameType, contentType)));
             if (!nameAllowed || !contentAllowed) {
                 LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + " (detected content type "
                         + contentType + "). Only following is allowed:" + allowedFileExtensions);
@@ -324,7 +334,8 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             }
         } else if (StringUtils.isNotBlank(disabledFileExtensions)) {
             final List<String> extensions = parseExtensionList(disabledFileExtensions);
-            boolean contentDisabled = !Collections.disjoint(extensions, contentExtensions);
+            boolean contentDisabled = !isSpecializationOf(nameType, contentType)
+                    && !Collections.disjoint(extensions, contentExtensions);
             if (extensions.contains(nameExtension) || contentDisabled) {
                 LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + " (detected content type "
                         + contentType + "). Disabled files:" + disabledFileExtensions);

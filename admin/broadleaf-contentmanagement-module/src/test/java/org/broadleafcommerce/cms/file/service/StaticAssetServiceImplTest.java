@@ -181,6 +181,28 @@ public class StaticAssetServiceImplTest {
         assetService.validateFileExtension(upload("promo.html", pngWithHtmlPayload()));
     }
 
+    @Test(expected = IOException.class)
+    public void testWhitelistRejectsUndetectableContent() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setAllowedFileExtensions("png");
+        assetService.validateFileExtension(upload("img.png", UNDETECTABLE_BINARY));
+    }
+
+    @Test
+    public void testBlacklistOfGenericTextTypeAllowsTextSubtypes() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("txt");
+        assetService.validateFileExtension(upload("site.css", "body { color: red; }\n".getBytes(StandardCharsets.UTF_8)));
+        assetService.validateFileExtension(upload("site.js", "var a = 1;\n".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test(expected = IOException.class)
+    public void testBlacklistOfGenericTextTypeStillChecksName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("html");
+        assetService.validateFileExtension(upload("notes.txt", HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8)));
+    }
+
     @Test
     public void testAcceptsCommonTextAssets() throws IOException {
         StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
@@ -210,9 +232,8 @@ public class StaticAssetServiceImplTest {
     @Test
     public void testUndetectableContentIsNotStoredAsActiveType() throws IOException {
         StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
-        byte[] binary = {0x00, 0x01, 0x02, 0x03, (byte) 0xFE, (byte) 0xFD, 0x00, 0x7F, 0x10, 0x11};
-        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(binary), "promo.html"));
-        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(binary), "promo.svg"));
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(UNDETECTABLE_BINARY), "promo.html"));
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(UNDETECTABLE_BINARY), "promo.svg"));
     }
 
     @Test
@@ -232,6 +253,8 @@ public class StaticAssetServiceImplTest {
 
     private static final byte[] JPEG_HEADER = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10,
             'J', 'F', 'I', 'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00};
+
+    private static final byte[] UNDETECTABLE_BINARY = {0x00, 0x01, 0x02, 0x03, (byte) 0xFE, (byte) 0xFD, 0x00, 0x7F, 0x10, 0x11};
 
     private static final byte[] PDF_HEADER = "%PDF-1.4\n%\u00e2\u00e3\n1 0 obj\n<<>>\nendobj\n".getBytes(StandardCharsets.ISO_8859_1);
 
