@@ -59,6 +59,15 @@ public class ServletOutputStreamWrapper extends ServletOutputStream {
     }
 
     @Override
+    public void close() throws IOException {
+        try {
+            flushInternalBuffer();
+        } finally {
+            outputStream.close();
+        }
+    }
+
+    @Override
     public boolean isReady() {
         return false;
     }
