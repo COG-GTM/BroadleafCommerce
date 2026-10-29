@@ -21,6 +21,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.text.StringEscapeUtils;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.order.domain.DiscreteOrderItem;
@@ -137,13 +138,13 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
                 sb.append("gtag('set', 'allow_google_signals', true);");
             }
             if (StringUtils.isNotEmpty(googleAnalytics4PropertyId)) {
-                sb.append("gtag('config', '" + googleAnalytics4PropertyId + "');");
+                sb.append("gtag('config', '" + escapeJs(googleAnalytics4PropertyId) + "');");
             }
             if (StringUtils.isNotEmpty(googleAnalytics4WebPropertyId)) {
-                sb.append("gtag('config', '" + googleAnalytics4WebPropertyId + "');");
+                sb.append("gtag('config', '" + escapeJs(googleAnalytics4WebPropertyId) + "');");
             }
             if (StringUtils.isNotEmpty(tagId)) {
-                sb.append("gtag('config', '" + tagId + "');");
+                sb.append("gtag('config', '" + escapeJs(tagId) + "');");
             }
 
             String orderNumberExpression = tagAttributes.get("ordernumber");
@@ -189,18 +190,18 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
      */
     protected String getTransactionJs(Order order) {
         StringBuilder sb = new StringBuilder();
-        sb.append("gtag('event', purchase',{");
+        sb.append("gtag('event', 'purchase',{");
 
-        sb.append("transaction_id: '" + order.getOrderNumber() + "'");
+        sb.append("transaction_id: '" + escapeJs(order.getOrderNumber()) + "'");
         if (StringUtils.isNotBlank(getAffiliation())) {
-            sb.append(",affiliation: '" + getAffiliation() + "'");
+            sb.append(",affiliation: '" + escapeJs(getAffiliation()) + "'");
         }
         sb.append(",value: " + order.getTotal());
         sb.append(",shipping:" + order.getTotalShipping() + "");
         sb.append(",tax: " + order.getTotalTax());
 
         if (order.getCurrency() != null) {
-            sb.append(",currency: '" + order.getCurrency().getCurrencyCode() + "'");
+            sb.append(",currency: '" + escapeJs(order.getCurrency().getCurrencyCode()) + "'");
         }
 
         sb.append(getItemJs(order));
@@ -221,9 +222,9 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
                     if (SkuAccessor.class.isAssignableFrom(orderItem.getClass())) {
                         sb.append(comma).append("{");
                         Sku sku = ((SkuAccessor) orderItem).getSku();
-                        sb.append("item_id: '" + sku.getId() + "'");
-                        sb.append(",item_name: '" + sku.getName() + "'");
-                        sb.append(",item_category: '" + getVariation(orderItem) + "'");
+                        sb.append("item_id: '" + escapeJs(sku.getId()) + "'");
+                        sb.append(",item_name: '" + escapeJs(sku.getName()) + "'");
+                        sb.append(",item_category: '" + escapeJs(getVariation(orderItem)) + "'");
                         sb.append(",price: " + orderItem.getAveragePrice());
                         sb.append(",quantity: " + orderItem.getQuantity());
                         sb.append("}");
@@ -255,6 +256,19 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
 
         //the result has a space at the end, ensure that is stripped out
         return result.substring(0, result.length() - 1);
+    }
+
+    /**
+     * Escapes a value for use inside a single- or double-quoted JavaScript string literal that is emitted into an
+     * inline {@code <script>} element. Angle brackets are also encoded so the value cannot close the script element.
+     */
+    protected String escapeJs(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return StringEscapeUtils.escapeEcmaScript(String.valueOf(value))
+                .replace("<", "\\u003C")
+                .replace(">", "\\u003E");
     }
 
     public String getTagIdForProperty() {
