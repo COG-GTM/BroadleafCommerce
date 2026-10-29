@@ -54,7 +54,6 @@ public class RegisterCustomerController {
 
     protected static final String[] CHALLENGE_BINDING_FIELDS = {
             "customer.challengeQuestion",
-            "customer.challengeAnswer",
             "customer.unencodedChallengeAnswer"
     };
 

@@ -112,9 +112,11 @@ public class RegisterCustomerControllerBindingTest {
         MutablePropertyValues params = new MutablePropertyValues();
         params.add("customer.challengeQuestion", "7");
         params.add("customer.unencodedChallengeAnswer", "blue");
+        params.add("customer.challengeAnswer", "plaintext");
         params.add("customer.id", "1042");
         binder.bind(params);
 
+        assertNull(form.getCustomer().getChallengeAnswer());
         assertEquals(Long.valueOf(7L), form.getCustomer().getChallengeQuestion().getId());
         assertEquals("blue", form.getCustomer().getUnencodedChallengeAnswer());
         assertNull(form.getCustomer().getId());
