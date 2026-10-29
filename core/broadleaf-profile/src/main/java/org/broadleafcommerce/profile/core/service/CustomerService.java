@@ -148,7 +148,8 @@ public interface CustomerService {
      * Verifies that a customer has a valid token.
      *
      * @param token    password reset token
-     * @param customer {@link Customer} who owns the token
+     * @param customer {@link Customer} who owns the token. Required with a salted encoder such as the default BCrypt
+     *                 password.site.encoder, since the token can then only be matched against the customer's own tokens
      * @return Response can contain errors including (invalidToken, tokenUsed, and tokenExpired)
      */
     GenericResponse checkPasswordResetToken(String token, Customer customer);

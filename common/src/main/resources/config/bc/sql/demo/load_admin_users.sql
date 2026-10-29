@@ -13,7 +13,8 @@
 --
 -- Superadmin User
 --
-INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','admin', true);
+-- PASSWORD is the BCrypt hash of the demo password 'admin' (matches the default password.admin.encoder).
+INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','$2a$10$GG66FImnKcY/uDsP.N1fkOYrVhfZaPJwXPeUP/abRJBcpKjYZeg.y', true);
 
 --
 -- Roles for sample admin users.
