@@ -74,9 +74,13 @@ public class MvelHelper {
                     + "|(?<![\\w$.])(?!org\\.apache\\.commons\\.lang3\\.StringUtils\\.)"
                     + "(org|com|net|io|java|javax|jakarta|sun|jdk)\\.");
     private static final Pattern STATE_CHANGING_RULE_CONSTRUCT = Pattern.compile(
-            "(?<![=!<>])=(?!=)|<<=|>>=|[-+*/%&|^]=|\\+\\+|--|;"
-                    + "|\\.(set[A-Z]\\w*|add\\w*|remove\\w*|clear|put\\w*|retainAll|compute\\w*|merge|delete|persist"
-                    + "|save\\w*)\\(");
+            "(?<![=!<>])=(?!=)|<<=|>>=|[-+*/%&|^]=|\\+\\+|--|;");
+    private static final Pattern METHOD_CALL = Pattern.compile("(?<![\\w$])([A-Za-z_$][\\w$]*)\\s*\\(");
+    private static final Pattern ALLOWED_RULE_METHOD = Pattern.compile(
+            "(get|is|has)[A-Z0-9_][\\w$]*|get|size|isEmpty|contains\\w*|startsWith|endsWith|equals\\w*|compareTo\\w*"
+                    + "|intValue|longValue|doubleValue|floatValue|toUpperCase|toLowerCase|toString|trim|length|indexOf"
+                    + "|lastIndexOf|substring|charAt|matches|intersection|convertField|subtractFromCurrentTime|currentTime"
+                    + "|and|or|not|in|if|instanceof|is");
 
     static {
         System.setProperty("mvel2.disable.jit", "true");
@@ -301,8 +305,9 @@ public class MvelHelper {
      * Checks a rule for constructs that are never produced by the admin rule builder and that would let a rule escape
      * its role as a boolean match expression: object construction, imports and function definitions, reflection and
      * class loading, process, thread and JVM control classes, nested MVEL evaluation, fully qualified class references
-     * other than {@code org.apache.commons.lang3.StringUtils}, and state changes (assignments, increments, statement
-     * separators, setters and collection mutators). String literals are ignored, and the legacy
+     * other than {@code org.apache.commons.lang3.StringUtils}, state changes (assignments, increments and statement
+     * separators), and calls to methods other than getters and the read-only comparison, string and helper methods
+     * that rules use. String literals are ignored, and the legacy
      * {@code MVEL.eval("toUpperCase()", ...)} form is still accepted.
      *
      * @param rule the rule to check
@@ -343,9 +348,16 @@ public class MvelHelper {
         if (matcher.find()) {
             return matcher.group();
         }
-        matcher = STATE_CHANGING_RULE_CONSTRUCT.matcher(normalized.replaceAll("\\s+", ""));
+        String compact = normalized.replaceAll("\\s+", "");
+        matcher = STATE_CHANGING_RULE_CONSTRUCT.matcher(compact);
         if (matcher.find()) {
             return matcher.group();
+        }
+        matcher = METHOD_CALL.matcher(normalized);
+        while (matcher.find()) {
+            if (!ALLOWED_RULE_METHOD.matcher(matcher.group(1)).matches()) {
+                return matcher.group();
+            }
         }
         return null;
     }

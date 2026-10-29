@@ -219,6 +219,10 @@ public class MvelHelperTest extends TestCase {
         assertNotNull(MvelHelper.findUnsafeConstruct("order.?orderItems.clear() == null"));
         assertNotNull(MvelHelper.findUnsafeConstruct("order.orderItems.remove(0) != null"));
         assertNotNull(MvelHelper.findUnsafeConstruct("x == 1; order.status"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.orderItems.sort(null) == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.orderItems.replaceAll(null) == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.orderItems.set (0, null) == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("MvelHelper.evaluateRule(\"true\", null)"));
     }
 
     /**
