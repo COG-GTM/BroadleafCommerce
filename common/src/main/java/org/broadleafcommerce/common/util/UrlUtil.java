@@ -92,6 +92,30 @@ public class UrlUtil {
     }
 
     /**
+     * Returns <tt>true</tt> if the url is a host relative path that is safe to redirect to: it must start with a
+     * single "/" and contain no scheme, backslash, whitespace or control characters. This rejects protocol relative
+     * targets such as "//evil.example" or "/\\evil.example" that browsers resolve to another host.
+     *
+     * @param url the redirect target to check
+     * @return true if the url stays on the current host
+     */
+    public static boolean isSafeRelativeRedirectUrl(String url) {
+        if (url == null || url.isEmpty() || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == ':' || c == '\\' || Character.isISOControl(c) || Character.isWhitespace(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Returns <tt>true</tt> if our current URL is absolute,
      * <tt>false</tt> otherwise.
      *
