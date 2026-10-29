@@ -52,6 +52,11 @@ import jakarta.servlet.http.HttpServletResponse;
 @ConditionalOnNotAdmin
 public class BroadleafRequestFilter extends AbstractIgnorableOncePerRequestFilter {
 
+    /**
+     * @deprecated no longer read; a request parameter cannot establish an admin identity. The admin user id on the
+     * storefront comes only from {@link org.broadleafcommerce.common.crossapp.service.CrossAppAuthService}.
+     */
+    @Deprecated
     public static final String ADMIN_USER_ID_PARAM_NAME = "blAdminUserId";
     // Properties to manage URLs that will not be processed by this filter.
     private static final String BLC_ADMIN_GWT = "org.broadleafcommerce.admin";

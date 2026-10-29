@@ -23,6 +23,7 @@ import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.RequestDTO;
 import org.broadleafcommerce.common.RequestDTOImpl;
 import org.broadleafcommerce.common.classloader.release.ThreadLocalManager;
+import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
 import org.broadleafcommerce.common.currency.domain.BroadleafRequestedCurrencyDto;
 import org.broadleafcommerce.common.extension.ExtensionManager;
 import org.broadleafcommerce.common.locale.domain.Locale;
@@ -34,6 +35,8 @@ import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.util.DeployBehaviorUtil;
 import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.exception.HaltFilterChainException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Component;
@@ -103,6 +106,10 @@ public class BroadleafRequestProcessor extends AbstractBroadleafWebRequestProces
 
     @Resource(name = "blEntityExtensionManagers")
     protected Map<String, ExtensionManager> entityExtensionManagers;
+
+    @Autowired(required = false)
+    @Qualifier("blCrossAppAuthService")
+    protected CrossAppAuthService crossAppAuthService;
 
     @Override
     public void process(WebRequest request) {
@@ -220,10 +227,16 @@ public class BroadleafRequestProcessor extends AbstractBroadleafWebRequestProces
         }
         ruleMap.put("locale", locale);
 
-        String adminUserId = request.getParameter(BroadleafRequestFilter.ADMIN_USER_ID_PARAM_NAME);
-        if (StringUtils.isNotBlank(adminUserId)) {
-            //TODO: Add token logic to secure the admin user id
-            brc.setAdminUserId(Long.parseLong(adminUserId));
+        populateAdminUserId(brc);
+    }
+
+    /**
+     * Sets the admin user id on the request context only from an admin hand-off that has already been authenticated
+     * through the single-use token consumed by {@link CrossAppAuthService}. Request parameters are never trusted.
+     */
+    protected void populateAdminUserId(BroadleafRequestContext brc) {
+        if (crossAppAuthService != null && crossAppAuthService.isAuthedFromAdmin()) {
+            brc.setAdminUserId(crossAppAuthService.getCurrentAuthedAdminId());
         }
     }
 
