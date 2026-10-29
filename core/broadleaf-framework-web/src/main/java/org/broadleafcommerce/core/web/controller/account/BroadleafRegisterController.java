@@ -29,15 +29,21 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.validator.RegisterCustomerValidator;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
+import org.broadleafcommerce.profile.web.core.security.CustomerStateRequestProcessor;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
 import org.broadleafcommerce.profile.web.core.service.register.RegistrationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
+
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 /**
  * The controller responsible for registering a customer.
@@ -52,6 +58,30 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author bpolster
  */
 public class BroadleafRegisterController extends BroadleafAbstractController {
+
+    /**
+     * Registration form properties that may never be populated from request parameters. Binding {@code customer.id}
+     * would make the registration merge over an existing customer row.
+     */
+    protected static final String[] DISALLOWED_REGISTRATION_FIELDS = {
+            "customer.id",
+            "customer.*.id",
+            "customer.password",
+            "customer.passwordChangeRequired",
+            "customer.registered",
+            "customer.deactivated",
+            "customer.anonymous",
+            "customer.cookied",
+            "customer.loggedIn",
+            "customer.externalId",
+            "customer.auditable*",
+            "customer.customerAttributes*",
+            "customer.customerAddresses*",
+            "customer.customerPhones*",
+            "customer.customerPayments*",
+            "customer.customerLocale*",
+            "oAuth2UserRequest*"
+    };
 
     protected static String registerSuccessView = "ajaxredirect:";
     protected static String registerView = "authentication/register";
@@ -90,6 +120,10 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
             HttpServletResponse response,
             Model model
     ) throws ServiceException, PricingException {
+        if (!isRegistrableCustomer(registerCustomerForm.getCustomer(), request)) {
+            errors.reject("registration.invalidCustomer");
+            return getRegisterView();
+        }
 
         if (useEmailForLogin) {
             Customer customer = registerCustomerForm.getCustomer();
@@ -133,6 +167,37 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     public RegisterCustomerForm initCustomerRegistrationForm() {
         return registrationService.initCustomerRegistrationForm();
+    }
+
+    @InitBinder
+    public void initRegistrationBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(getDisallowedRegistrationFields());
+    }
+
+    protected String[] getDisallowedRegistrationFields() {
+        return DISALLOWED_REGISTRATION_FIELDS;
+    }
+
+    /**
+     * A registration may only create a new customer or convert the persisted anonymous customer of the current
+     * session. Any other customer id on the submitted form means the request is trying to register over an existing
+     * customer.
+     */
+    protected boolean isRegistrableCustomer(Customer customer, HttpServletRequest request) {
+        if (customer == null) {
+            return false;
+        }
+        Long customerId = customer.getId();
+        return customerId == null || Objects.equals(customerId, getSessionAnonymousCustomerId(request));
+    }
+
+    protected Long getSessionAnonymousCustomerId(HttpServletRequest request) {
+        HttpSession session = request == null ? null : request.getSession(false);
+        if (session == null) {
+            return null;
+        }
+        Object id = session.getAttribute(CustomerStateRequestProcessor.getAnonymousCustomerIdSessionAttributeName());
+        return id instanceof Long ? (Long) id : null;
     }
 
     public boolean isUseEmailForLogin() {

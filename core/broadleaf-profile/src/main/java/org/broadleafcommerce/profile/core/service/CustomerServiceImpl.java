@@ -137,6 +137,7 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public Customer registerCustomer(Customer customer, String password, String passwordConfirm) {
+        checkNotRegisteringOverRegisteredCustomer(customer);
         customer.setRegistered(true);
 
         // When unencodedPassword is set the save() will encode it
@@ -148,6 +149,21 @@ public class CustomerServiceImpl implements CustomerService {
         notifyPostRegisterListeners(retCustomer);
 
         return retCustomer;
+    }
+
+    /**
+     * Registration creates a new customer or converts an anonymous one; it must never overwrite a customer that is
+     * already registered (e.g. because a request supplied that customer's id).
+     */
+    protected void checkNotRegisteringOverRegisteredCustomer(Customer customer) {
+        if (customer.getId() == null) {
+            return;
+        }
+        Customer existing = readCustomerById(customer.getId());
+        if (existing != null && existing.isRegistered()) {
+            throw new IllegalArgumentException("Attempting to register a customer over the already registered customer with id ("
+                    + customer.getId() + ")");
+        }
     }
 
     @Override
