@@ -60,7 +60,7 @@ public class ClassNameRequestParamValidationServiceImpl implements ClassNameRequ
         for (Map.Entry<String, String> entry : requestParamToClassName.entrySet()) {
             validated = StringUtils.isEmpty(entry.getValue());
             if (!validated) {
-                validated = persistenceService.validateEntityClassName(entry.getValue());
+                validated = isWhitelistedEntityClassName(entry.getValue());
                 if (!validated) {
                     LOG.warn(String.format("Non-whitelist %s specified. Rejecting.", entry.getKey()));
                 }
@@ -75,7 +75,7 @@ public class ClassNameRequestParamValidationServiceImpl implements ClassNameRequ
     @Override
     public String getClassNameForSection(String sectionKey) {
         String className = adminNavigationService.getClassNameForSection(sectionKey);
-        if (sectionKey.equals(className) && !persistenceService.validateEntityClassName(className)) {
+        if (sectionKey.equals(className) && !isWhitelistedEntityClassName(className)) {
             LOG.warn("Non-whitelist section key specified in request URI. Rejecting.");
             throw new SectionKeyValidationException("Non-whitelist section key specified. Rejecting.");
         }
@@ -89,7 +89,7 @@ public class ClassNameRequestParamValidationServiceImpl implements ClassNameRequ
             for (SectionCrumb crumb : crumbs) {
                 String test = adminNavigationService.getClassNameForSection(crumb.getSectionIdentifier());
                 if (crumb.getSectionIdentifier().equals(test)) {
-                    if (!persistenceService.validateEntityClassName(test)) {
+                    if (!isWhitelistedEntityClassName(test)) {
                         LOG.warn("Non-whitelist section key specified in sectionCrumbs param. Rejecting.");
                         throw new SectionKeyValidationException("Non-whitelist section key specified. Rejecting.");
                     }
@@ -97,6 +97,15 @@ public class ClassNameRequestParamValidationServiceImpl implements ClassNameRequ
             }
         }
         return crumbs;
+    }
+
+    protected boolean isWhitelistedEntityClassName(String className) {
+        try {
+            return persistenceService.validateEntityClassName(className);
+        } catch (RuntimeException e) {
+            LOG.debug("Unable to validate class name. Rejecting.", e);
+            return false;
+        }
     }
 
 }
