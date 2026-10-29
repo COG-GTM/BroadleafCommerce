@@ -24,6 +24,7 @@ import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.security.service.ExploitProtectionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.GenericFilterBean;
@@ -60,6 +61,13 @@ public class CsrfFilter extends GenericFilterBean {
 
     protected List<String> excludedRequestPatterns;
 
+    /**
+     * Whether a CSRF token passed in the URL query string is accepted. Disabled by default because tokens in URLs leak
+     * through access logs, browser history and Referer headers.
+     */
+    @Value("${exploitProtection.csrf.allowQueryStringToken:false}")
+    protected boolean allowQueryStringCsrfToken = false;
+
     @Override
     public void doFilter(ServletRequest baseRequest, ServletResponse baseResponse, FilterChain chain) throws IOException, ServletException {
         HttpServletRequest request = (HttpServletRequest) baseRequest;
@@ -78,7 +86,9 @@ public class CsrfFilter extends GenericFilterBean {
 
         // We only validate CSRF tokens on POST
         if (request.getMethod().equals("POST") && !excludedRequestFound) {
-            String requestToken = request.getParameter(exploitProtectionService.getCsrfTokenParameter());
+            String requestToken = CsrfTokenRequestResolver.resolveToken(
+                    request, exploitProtectionService.getCsrfTokenParameter(), allowQueryStringCsrfToken
+            );
             try {
                 exploitProtectionService.compareToken(requestToken);
             } catch (SecurityServiceException e) {
@@ -90,6 +100,14 @@ public class CsrfFilter extends GenericFilterBean {
         }
 
         chain.doFilter(request, response);
+    }
+
+    public boolean isAllowQueryStringCsrfToken() {
+        return allowQueryStringCsrfToken;
+    }
+
+    public void setAllowQueryStringCsrfToken(boolean allowQueryStringCsrfToken) {
+        this.allowQueryStringCsrfToken = allowQueryStringCsrfToken;
     }
 
     public List<String> getExcludedRequestPatterns() {

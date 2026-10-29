@@ -37,6 +37,9 @@ import jakarta.annotation.Resource;
 /**
  * Used as a replacement to the HTML {@code <form>} element which adds a CSRF token input field to forms that are submitted
  * via anything but GET. This is required to properly bypass the {@link CsrfFilter}.
+ * <p>
+ * The token is always emitted as a hidden input, including for {@code multipart/form-data} forms, so it is never placed
+ * in the form's action URL.
  *
  * @author apazzolini
  * @see {@link CsrfFilter}
@@ -82,42 +85,27 @@ public class FormProcessor extends AbstractBroadleafModelModifierProcessor {
                     stateVersionToken = spps.getStateVersionToken();
                 }
 
-                //detect multipart form
-                if ("multipart/form-data".equalsIgnoreCase(formAttributes.get("enctype"))) {
-                    String csrfQueryParameter = "?" + eps.getCsrfTokenParameter() + "=" + csrfToken;
-                    if (stateVersionToken != null) {
-                        csrfQueryParameter += "&" + spps.getStateVersionTokenParameter() + "=" + stateVersionToken;
-                    }
+                Map<String, String> csrfAttributes = new HashMap<>();
+                csrfAttributes.put("type", "hidden");
+                csrfAttributes.put("name", eps.getCsrfTokenParameter());
+                csrfAttributes.put("value", csrfToken);
+                BroadleafTemplateElement csrfTag = context.createStandaloneElement(
+                        "input", csrfAttributes, true
+                );
+                model.addElement(csrfTag);
 
-                    // Add this into the attribute map to be used for the new <form> tag. The expression has already
-                    // been executed, don't need to treat the value as an expression
-                    String actionValue = formAttributes.get("action");
-                    actionValue += csrfQueryParameter;
-                    formAttributes.put("action", actionValue);
-                } else {
+                if (stateVersionToken != null) {
 
-                    Map<String, String> csrfAttributes = new HashMap<>();
-                    csrfAttributes.put("type", "hidden");
-                    csrfAttributes.put("name", eps.getCsrfTokenParameter());
-                    csrfAttributes.put("value", csrfToken);
-                    BroadleafTemplateElement csrfTag = context.createStandaloneElement(
-                            "input", csrfAttributes, true
+                    Map<String, String> stateVersionAttributes = new HashMap<>();
+                    stateVersionAttributes.put("type", "hidden");
+                    stateVersionAttributes.put("name", spps.getStateVersionTokenParameter());
+                    stateVersionAttributes.put("value", stateVersionToken);
+                    BroadleafTemplateElement stateVersionTag = context.createStandaloneElement(
+                            "input", stateVersionAttributes, true
                     );
-                    model.addElement(csrfTag);
-
-                    if (stateVersionToken != null) {
-
-                        Map<String, String> stateVersionAttributes = new HashMap<>();
-                        stateVersionAttributes.put("type", "hidden");
-                        stateVersionAttributes.put("name", spps.getStateVersionTokenParameter());
-                        stateVersionAttributes.put("value", stateVersionToken);
-                        BroadleafTemplateElement stateVersionTag = context.createStandaloneElement(
-                                "input", stateVersionAttributes, true
-                        );
-                        model.addElement(stateVersionTag);
-                    }
-                    dto.setModel(model);
+                    model.addElement(stateVersionTag);
                 }
+                dto.setModel(model);
 
             } catch (ServiceException e) {
                 throw new RuntimeException("Could not get a CSRF token for this session", e);
