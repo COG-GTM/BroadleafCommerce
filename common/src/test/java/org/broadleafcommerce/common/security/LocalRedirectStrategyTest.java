@@ -83,6 +83,26 @@ public class LocalRedirectStrategyTest {
     }
 
     @Test
+    public void rejectsDotSegmentsEscapingTheContext() throws Exception {
+        assertRejected("/store", "https://" + SERVER + "/store/../admin", "successUrl");
+        assertRejected("/store", "https://" + SERVER + "/store/%2e%2e/admin", "successUrl");
+        assertRejected("/store", "https://" + SERVER + "/store/./account", "failureUrl");
+    }
+
+    @Test
+    public void contextRelativeRedirectToContextRootStaysOnContextRoot() throws Exception {
+        LocalRedirectStrategy strategy = new LocalRedirectStrategy();
+        strategy.setContextRelative(true);
+        assertEquals("/store/", strategy.calculateRedirectUrl("/store", "https://" + SERVER + "/store"));
+        assertEquals("/store/?tab=home", strategy.calculateRedirectUrl("/store", "https://" + SERVER + "/store?tab=home"));
+
+        String url = "https://" + SERVER + "/store";
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        strategy.sendRedirect(request("/store", url, "successUrl"), response, url);
+        assertEquals("/store/", response.getRedirectedUrl());
+    }
+
+    @Test
     public void allowsLocalPaths() throws Exception {
         assertEquals("/account", redirect("", "/account", "successUrl"));
         assertEquals("/store/account", redirect("/store", "/account", "successUrl"));

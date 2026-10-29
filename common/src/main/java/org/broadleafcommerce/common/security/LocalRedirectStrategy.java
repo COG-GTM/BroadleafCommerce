@@ -116,6 +116,10 @@ public class LocalRedirectStrategy implements RedirectStrategy {
         url = url.substring(url.indexOf("://") + 3);
         url = url.substring(url.indexOf(contextPath) + contextPath.length());
 
+        if (url.isEmpty() || url.charAt(0) == '?' || url.charAt(0) == '#') {
+            return contextPath + "/" + url;
+        }
+
         if ((url.length() > 1) && (url.charAt(0) == '/')) {
             url = url.substring(1);
         }
@@ -154,10 +158,23 @@ public class LocalRedirectStrategy implements RedirectStrategy {
                 && uri.getHost() != null
                 && StringUtils.equalsIgnoreCase(requestServerName, uri.getHost())
                 && (!enforcePortMatch || requestServerPort == uri.getPort())
+                && !hasDotSegment(uri.getPath())
                 && isWithinContextPath(contextPath, uri.getRawPath())) {
             return;
         }
         throw invalidRedirectUrl(url);
+    }
+
+    protected boolean hasDotSegment(String path) {
+        if (path == null) {
+            return false;
+        }
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected boolean isWithinContextPath(String contextPath, String path) {
