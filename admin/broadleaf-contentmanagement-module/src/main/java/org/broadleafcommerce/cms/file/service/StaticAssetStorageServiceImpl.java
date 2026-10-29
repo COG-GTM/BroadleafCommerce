@@ -39,6 +39,7 @@ import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
 import org.broadleafcommerce.common.io.ConcurrentFileOutputStream;
 import org.broadleafcommerce.common.util.StreamCapableTransactionalOperationAdapter;
 import org.broadleafcommerce.common.util.StreamingTransactionCapableUtil;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.openadmin.server.service.artifact.ArtifactService;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +58,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Blob;
@@ -435,16 +438,18 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
             save(storage);
         } else if (StorageType.FILESYSTEM.equals(staticAsset.getStorageType())) {
             FileWorkArea tempWorkArea = broadleafFileService.initializeWorkArea();
-            // Convert the given URL from the asset to a system-specific suitable file path
-            String destFileName = FilenameUtils.normalize(
-                    tempWorkArea.getFilePathLocation() + File.separator
-                            + FilenameUtils.separatorsToSystem(staticAsset.getFullUrl())
-            );
+            File destFile;
+            try {
+                destFile = resolveFileInWorkArea(tempWorkArea, staticAsset.getFullUrl());
+            } catch (IOException e) {
+                broadleafFileService.closeWorkArea(tempWorkArea);
+                throw e;
+            }
+            String destFileName = destFile.getPath();
 
             InputStream input = fileInputStream;
             byte[] buffer = new byte[getFileBufferSize()];
 
-            File destFile = new File(destFileName);
             if (!destFile.getParentFile().exists()) {
                 if (!destFile.getParentFile().mkdirs()) {
                     if (!destFile.getParentFile().exists()) {
@@ -474,6 +479,24 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
                 broadleafFileService.closeWorkArea(tempWorkArea);
             }
         }
+    }
+
+    /**
+     * Converts the given asset URL to a file inside the given work area.
+     *
+     * @throws IOException if the URL is missing or would resolve to a location outside of the work area
+     */
+    protected File resolveFileInWorkArea(FileWorkArea workArea, String assetUrl) throws IOException {
+        if (StringUtils.isBlank(assetUrl)) {
+            throw new IOException("Asset URL is required to store an asset on the file system");
+        }
+        Path workAreaPath = Paths.get(workArea.getFilePathLocation()).toAbsolutePath().normalize();
+        String relativePath = StringUtils.stripStart(FilenameUtils.separatorsToUnix(assetUrl), "/");
+        Path destPath = workAreaPath.resolve(FilenameUtils.separatorsToSystem(relativePath)).normalize();
+        if (!destPath.startsWith(workAreaPath) || destPath.equals(workAreaPath)) {
+            throw new IOException("Asset URL resolves outside of the asset work area: " + StringUtil.sanitize(assetUrl));
+        }
+        return destPath.toFile();
     }
 
     protected long getMaxUploadSizeForFile(String fileName) {

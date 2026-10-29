@@ -95,10 +95,55 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Value("${static.asset.invalid.chars.replacement}")
     protected String replacementString;
 
-    private static String normalizeFileExtension(MultipartFile file) {
-        int index = file.getOriginalFilename().lastIndexOf(".");
-        return file.getOriginalFilename().substring(0, index + 1)
-                + file.getOriginalFilename().substring(index + 1).toLowerCase();
+    private static String normalizeFileExtension(String fileName) {
+        int index = fileName.lastIndexOf(".");
+        return fileName.substring(0, index + 1) + fileName.substring(index + 1).toLowerCase();
+    }
+
+    /**
+     * Reduces a client supplied file name to its last path segment so it can never carry directory information
+     * (e.g. "../../evil.txt" becomes "evil.txt").
+     *
+     * @throws IllegalArgumentException if no usable file name remains
+     */
+    protected String sanitizeFileName(String fileName) {
+        String name = fileName == null ? null : FilenameUtils.getName(fileName.replaceAll("\\p{Cntrl}", ""));
+        if (StringUtils.isBlank(name) || ".".equals(name) || "..".equals(name)) {
+            throw new IllegalArgumentException("Invalid asset file name: " + StringUtil.sanitize(fileName));
+        }
+        return name;
+    }
+
+    /**
+     * Validates a single asset url path segment such as the entity type or entity id.
+     *
+     * @throws IllegalArgumentException if the segment contains a path separator or is a relative path segment
+     */
+    protected String validatePathSegment(String segment) {
+        if (StringUtils.containsAny(segment, '/', '\\') || ".".equals(segment) || "..".equals(segment)) {
+            throw new IllegalArgumentException("Invalid asset path segment: " + StringUtil.sanitize(segment));
+        }
+        return segment;
+    }
+
+    /**
+     * Ensures an assembled asset url is an absolute path without any relative segments, since it is later
+     * used to build a file system path for the asset.
+     *
+     * @throws IllegalArgumentException if the url could resolve outside of the asset namespace
+     */
+    protected String validateAssetURL(String assetUrl) {
+        String unixUrl = FilenameUtils.separatorsToUnix(assetUrl);
+        for (String segment : unixUrl.split("/")) {
+            if ("..".equals(segment)) {
+                throw new IllegalArgumentException("Invalid asset url: " + StringUtil.sanitize(assetUrl));
+            }
+        }
+        String normalized = FilenameUtils.normalize(unixUrl, true);
+        if (normalized == null || !normalized.startsWith("/")) {
+            throw new IllegalArgumentException("Invalid asset url: " + StringUtil.sanitize(assetUrl));
+        }
+        return assetUrl;
     }
 
     private static String getFileExtension(MultipartFile file) {
@@ -182,11 +227,11 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         String fileName = assetProperties.get("fileName");
 
         if (entityType != null && !"null".equals(entityType)) {
-            path = path.append(entityType).append("/");
+            path = path.append(validatePathSegment(entityType)).append("/");
         }
 
         if (entityId != null && !"null".equals(entityId)) {
-            path = path.append(entityId).append("/");
+            path = path.append(validatePathSegment(entityId)).append("/");
         }
 
         if (fileName != null) {
@@ -201,7 +246,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             fileName = originalFilename;
         }
 
-        return path.append(fileName).toString();
+        return validateAssetURL(path.append(fileName).toString());
     }
 
     public void validateFileExtension(MultipartFile file) throws IOException {
@@ -228,7 +273,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         try {
             validateFileExtension(file);
             staticAssetStorageService.validateFileSize(file);
-            String fileName = normalizeFileExtension(file);
+            String fileName = normalizeFileExtension(sanitizeFileName(file.getOriginalFilename()));
             boolean b = validateFileName(fileName);
             if (b) {
                 fileName = fileName.replaceAll(
@@ -262,6 +307,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
             properties = new HashMap<>();
         }
 
+        fileName = sanitizeFileName(fileName);
         String fullUrl = buildAssetURL(properties, fileName);
         StringBuilder urlBuilder = new StringBuilder();
         urlBuilder.append(fullUrl);

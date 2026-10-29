@@ -38,6 +38,8 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -333,9 +335,10 @@ public class BroadleafFileServiceImpl implements BroadleafFileService {
     }
 
     protected void checkFiles(FileWorkArea workArea, List<File> fileList) {
+        Path workAreaPath = Paths.get(workArea.getFilePathLocation()).toAbsolutePath().normalize();
         for (File file : fileList) {
             String fileName = file.getAbsolutePath();
-            if (!fileName.startsWith(workArea.getFilePathLocation())) {
+            if (!file.toPath().toAbsolutePath().normalize().startsWith(workAreaPath)) {
                 throw new FileServiceException("File operation attempted on file that is not in provided work area. "
                         + fileName + ".  Work area = " + workArea.getFilePathLocation());
             }
