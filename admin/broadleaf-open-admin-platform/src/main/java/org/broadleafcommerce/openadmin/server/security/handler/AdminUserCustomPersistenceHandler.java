@@ -180,34 +180,45 @@ public class AdminUserCustomPersistenceHandler extends CustomPersistenceHandlerA
 
     @Override
     public void remove(PersistencePackage persistencePackage, DynamicEntityDao dynamicEntityDao, RecordHelper helper) throws ServiceException {
+        adminRemoteSecurityService.securityCheck(persistencePackage, EntityOperationType.REMOVE);
         Entity entity = persistencePackage.getEntity();
-        String idValue = entity.findProperty("id").getValue();
-        String userLoginToRemove = entity.findProperty("login") == null
+        Property idProperty = entity.findProperty("id");
+        String idValue = idProperty == null ? null : idProperty.getValue();
+        Property loginProperty = entity.findProperty("login");
+        String userLoginToRemove = loginProperty == null ? null : loginProperty.getValue();
+
+        AdminUser adminInstance = StringUtils.isBlank(idValue)
                 ? null
-                : entity.findProperty("login").getValue();
+                : adminSecurityService.readAdminUserById(Long.parseLong(idValue));
 
-        AdminUser persistentAdminUser = adminRemoteSecurityService.getPersistentAdminUser();
+        validateNotRemovingCurrentUser(entity, adminInstance, userLoginToRemove);
 
-        if (persistentAdminUser != null && persistentAdminUser.getLogin() != null && userLoginToRemove != null) {
-            if (persistentAdminUser.getLogin().equals(userLoginToRemove)) {
-                throw new ValidationException(entity, "admin.cantDeleteCurrentUserError");
-            }
-        }
-
-        if (idValue != null) {
-            Long id = Long.parseLong(idValue);
-            AdminUser adminInstance = adminSecurityService.readAdminUserById(id);
-            // Check if Status was Weaved in
-            if (Status.class.isAssignableFrom(adminInstance.getClass())) {
-                ((Status) adminInstance).setArchived('Y');
-                adminSecurityService.saveAdminUser(adminInstance);
-                return;
-            }
-
+        // Check if Status was Weaved in
+        if (adminInstance != null && Status.class.isAssignableFrom(adminInstance.getClass())) {
+            ((Status) adminInstance).setArchived('Y');
+            adminSecurityService.saveAdminUser(adminInstance);
+            return;
         }
 
         OperationType removeType = persistencePackage.getPersistencePerspective().getOperationTypes().getRemoveType();
         helper.getCompatibleModule(removeType).remove(persistencePackage);
+    }
+
+    protected void validateNotRemovingCurrentUser(Entity entity, AdminUser userToRemove, String userLoginToRemove)
+            throws ValidationException {
+        AdminUser currentUser = adminRemoteSecurityService.getPersistentAdminUser();
+        if (currentUser == null) {
+            return;
+        }
+        boolean sameId = userToRemove != null && currentUser.getId() != null
+                && currentUser.getId().equals(userToRemove.getId());
+        String currentLogin = currentUser.getLogin();
+        boolean sameLogin = currentLogin != null
+                && (currentLogin.equals(userLoginToRemove)
+                || (userToRemove != null && currentLogin.equals(userToRemove.getLogin())));
+        if (sameId || sameLogin) {
+            throw new ValidationException(entity, "admin.cantDeleteCurrentUserError");
+        }
     }
 
     protected void validateUserUpdateSecurity(PersistencePackage persistencePackage, AdminUser changingUser) throws ServiceException {
