@@ -78,6 +78,21 @@ public class ForgotPasswordRequestThrottleTest {
         assertTrue(throttle.tryAcquire(request("10.0.0.1"), "alice"));
     }
 
+    @Test
+    public void fullKeyMapDoesNotResetActiveCounters() {
+        throttle.setMaxTrackedKeys(4);
+        throttle.tryAcquire(request("10.0.0.1"), "alice");
+        throttle.tryAcquire(request("10.0.0.1"), "alice");
+        assertFalse(throttle.tryAcquire(request("10.0.0.1"), "alice"));
+
+        for (int i = 0; i < 10; i++) {
+            throttle.tryAcquire(request("10.0.1." + i), "user" + i);
+        }
+
+        assertFalse(throttle.tryAcquire(request("10.0.0.1"), "alice"));
+        assertFalse(throttle.tryAcquire(request("10.0.9.9"), "alice"));
+    }
+
     private static HttpServletRequest request(String remoteAddr) {
         return (HttpServletRequest) Proxy.newProxyInstance(HttpServletRequest.class.getClassLoader(),
                 new Class[]{HttpServletRequest.class},

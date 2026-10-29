@@ -502,8 +502,12 @@ public class CustomerServiceImpl implements CustomerService {
         return issued != null && issued >= maxForgotPasswordTokensPerWindow;
     }
 
+    /**
+     * Matches {@link #isTokenExpired}, which compares whole elapsed minutes and so accepts a token until
+     * {@code tokenExpiredMinutes + 1} minutes have passed.
+     */
     protected Date getTokenExpirationCutoff() {
-        return new Date(SystemTime.asMillis() - tokenExpiredMinutes * 60000L);
+        return new Date(SystemTime.asMillis() - (tokenExpiredMinutes + 1) * 60000L);
     }
 
     protected void checkCustomer(Customer customer, GenericResponse response) {

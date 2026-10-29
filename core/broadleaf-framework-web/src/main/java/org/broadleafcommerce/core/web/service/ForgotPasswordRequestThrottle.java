@@ -36,7 +36,7 @@ import jakarta.servlet.http.HttpServletRequest;
 @Service("blForgotPasswordRequestThrottle")
 public class ForgotPasswordRequestThrottle {
 
-    protected static final int MAX_TRACKED_KEYS = 100_000;
+    protected static final int DEFAULT_MAX_TRACKED_KEYS = 100_000;
 
     protected final Map<String, Window> windows = new ConcurrentHashMap<>();
 
@@ -49,13 +49,15 @@ public class ForgotPasswordRequestThrottle {
     @Value("${forgot.password.throttle.max.requests.per.username:5}")
     protected int maxRequestsPerUsername = 5;
 
+    protected int maxTrackedKeys = DEFAULT_MAX_TRACKED_KEYS;
+
     /**
      * Records a forgot-password attempt and returns false when the client address or the username has exceeded its
      * allowance for the current window.
      */
     public boolean tryAcquire(HttpServletRequest request, String username) {
         long now = SystemTime.asMillis();
-        if (windows.size() > MAX_TRACKED_KEYS) {
+        if (windows.size() >= maxTrackedKeys) {
             evictExpired(now);
         }
         boolean allowed = true;
@@ -69,8 +71,16 @@ public class ForgotPasswordRequestThrottle {
         return allowed;
     }
 
+    /**
+     * Returns the request count for {@code key} in the current window. Existing counters are never dropped before
+     * their window ends; when the map is full, untracked keys are allowed without being recorded (the per-customer
+     * token cap in {@code CustomerServiceImpl} still applies).
+     */
     protected int increment(String key, long now) {
         long windowMillis = windowSeconds * 1000L;
+        if (windows.size() >= maxTrackedKeys && !windows.containsKey(key)) {
+            return 0;
+        }
         Window window = windows.compute(key, (k, existing) -> {
             if (existing == null || now - existing.start >= windowMillis) {
                 return new Window(now, 1);
@@ -83,9 +93,6 @@ public class ForgotPasswordRequestThrottle {
     protected void evictExpired(long now) {
         long windowMillis = windowSeconds * 1000L;
         windows.entrySet().removeIf(e -> now - e.getValue().start >= windowMillis);
-        if (windows.size() > MAX_TRACKED_KEYS) {
-            windows.clear();
-        }
     }
 
     public void setWindowSeconds(long windowSeconds) {
@@ -98,6 +105,10 @@ public class ForgotPasswordRequestThrottle {
 
     public void setMaxRequestsPerUsername(int maxRequestsPerUsername) {
         this.maxRequestsPerUsername = maxRequestsPerUsername;
+    }
+
+    public void setMaxTrackedKeys(int maxTrackedKeys) {
+        this.maxTrackedKeys = maxTrackedKeys;
     }
 
     protected record Window(long start, int count) {

@@ -117,6 +117,19 @@ public class CustomerServiceImplForgotPasswordTest {
     }
 
     @Test
+    public void tokenStaysValidUntilIsTokenExpiredRejectsIt() {
+        service.sendForgotPasswordNotification(USERNAME, null);
+        String token = sentEmails.get(0).getToken();
+
+        now += service.getTokenExpiredMinutes() * 60_000L + 59_000L;
+        SystemTime.setGlobalTimeSource(new FixedTimeSource(now));
+        assertFalse(service.checkPasswordResetToken(token, customer).getHasErrors());
+
+        advanceMinutes(1);
+        assertTrue(service.checkPasswordResetToken(token, customer).getHasErrors());
+    }
+
+    @Test
     public void forgotPasswordRequestsAreCappedPerCustomer() {
         int max = service.getMaxForgotPasswordTokensPerWindow();
         for (int i = 0; i < max; i++) {
