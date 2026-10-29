@@ -88,29 +88,38 @@ class EntityTypeAllowlistSpec extends Specification {
         ]
     }
 
-    def "a collection item type that is the ceiling or a subtype is accepted on save"() {
+    static ClassTree tree(Class<?>... types) {
+        ClassTree root = new ClassTree(types[0].name)
+        root.setChildren(types.drop(1).collect { new ClassTree(it.name) } as ClassTree[])
+        return root
+    }
+
+    def "a collection item type that is the ceiling or an allowed polymorphic subtype is accepted on save"() {
         when:
-        service.validateSubCollectionEntityType(AdminUserImpl.name, AdminUser.name)
-        service.validateSubCollectionEntityType(AdminUser.name, AdminUser.name)
-        service.validateSubCollectionEntityType(null, AdminUser.name)
+        service.validateSubCollectionEntityType(AdminUserImpl.name, AdminUser.name, tree(AdminUserImpl))
+        service.validateSubCollectionEntityType(AdminUser.name, AdminUser.name, null as ClassTree)
 
         then:
         noExceptionThrown()
     }
 
     @Unroll
-    def "a collection item type #entityType outside the ceiling #ceiling is rejected on save"() {
+    def "a collection item type #entityType under ceiling #ceiling is rejected on save"() {
         when:
-        service.validateSubCollectionEntityType(entityType, ceiling)
+        service.validateSubCollectionEntityType(entityType as String, ceiling as String, allowedTypes as ClassTree)
 
         then:
         thrown(SecurityServiceException)
 
         where:
-        entityType                                               | ceiling
-        AdminRoleImpl.name                                       | AdminUser.name
-        AdminUserImpl.name                                       | AdminRole.name
-        'org.broadleafcommerce.profile.core.domain.CustomerImpl' | AdminUser.name
-        AdminUserImpl.name                                       | null
+        entityType                                               | ceiling        | allowedTypes
+        null                                                     | AdminUser.name | tree(AdminUserImpl)
+        ''                                                       | AdminUser.name | tree(AdminUserImpl)
+        AdminUserImpl.name                                       | AdminUser.name | tree(AdminRoleImpl)
+        AdminUserImpl.name                                       | AdminUser.name | null
+        AdminRoleImpl.name                                       | AdminUser.name | tree(AdminUserImpl, AdminRoleImpl)
+        AdminUserImpl.name                                       | AdminRole.name | tree(AdminUserImpl)
+        'org.broadleafcommerce.profile.core.domain.CustomerImpl' | AdminUser.name | new ClassTree('org.broadleafcommerce.profile.core.domain.CustomerImpl')
+        AdminUserImpl.name                                       | null           | tree(AdminUserImpl)
     }
 }
