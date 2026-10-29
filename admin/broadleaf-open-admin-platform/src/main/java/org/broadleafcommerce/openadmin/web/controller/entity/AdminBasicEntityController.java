@@ -458,6 +458,18 @@ public class AdminBasicEntityController extends AdminAbstractController {
     ) throws Exception {
         final String sectionKey = getSectionKey(pathVars);
         final String sectionClassName = getClassNameForSection(sectionKey);
+        final List<SectionCrumb> sectionCrumbs = getSectionCrumbs(request, null, null);
+        final ClassMetadata cmd = service.getClassMetadata(
+                        getSectionPersistencePackageRequest(sectionClassName, sectionCrumbs, pathVars)
+                )
+                .getDynamicResultSet()
+                .getClassMetaData();
+
+        if (!isDuplicateActionAllowed(sectionClassName, cmd)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return getErrorDuplicatingResponse(response, "Duplication_Unauthorized");
+        }
+
         final Class<?> entityClass = dynamicEntityDao.getImplClass(sectionClassName);
         final long identifier = Long.parseLong(id);
 
@@ -478,6 +490,22 @@ public class AdminBasicEntityController extends AdminAbstractController {
         } else {
             return getErrorDuplicatingResponse(response, "Validation_Failure");
         }
+    }
+
+    /**
+     * Duplicating an entity creates a new record, so the current admin user must hold the
+     * {@link EntityOperationType#ADD} permission on the section and pass the row-level add check.
+     */
+    protected boolean isDuplicateActionAllowed(final String sectionClassName, final ClassMetadata cmd) {
+        try {
+            adminRemoteSecurityService.securityCheck(sectionClassName, EntityOperationType.ADD);
+        } catch (ServiceException e) {
+            return false;
+        }
+
+        return rowLevelSecurityService.canAdd(
+                adminRemoteSecurityService.getPersistentAdminUser(), sectionClassName, cmd
+        );
     }
 
     protected String getErrorDuplicatingResponse(HttpServletResponse response, String code) {
