@@ -154,7 +154,8 @@ public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthent
             }
             String decoded;
             try {
-                decoded = URLDecoder.decode(current, StandardCharsets.UTF_8);
+                // '+' is a literal character in a path, so only percent escapes are decoded
+                decoded = URLDecoder.decode(current.replace("+", "%2B"), StandardCharsets.UTF_8);
             } catch (IllegalArgumentException e) {
                 return false;
             }

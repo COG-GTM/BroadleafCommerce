@@ -88,10 +88,19 @@ class BroadleafAdminAuthenticationSuccessHandlerSpec extends Specification {
         "/admin/product/1?tab=general"             || "/admin/product/1?tab=general"
         "https://admin.acme.com/admin/customer"    || "https://admin.acme.com/admin/customer"
         "https://admin.acme.com:443/admin/offer"   || "https://admin.acme.com:443/admin/offer"
+        "/admin/product/SKU+XL"                    || "/admin/product/SKU+XL"
+        "/admin/product/SKU%2BXL"                  || "/admin/product/SKU%2BXL"
     }
 
-    def "saved request without successUrl keeps redirecting to the saved request"() {
+    @Unroll
+    def "saved request #saved without successUrl keeps redirecting to the saved request"() {
         expect:
-        loginWithSavedRequest("https://admin.acme.com/admin/product?sessionTimeout=true") == "https://admin.acme.com/admin/product"
+        loginWithSavedRequest(saved) == expected
+
+        where:
+        saved                                                     || expected
+        "https://admin.acme.com/admin/product?sessionTimeout=true" || "https://admin.acme.com/admin/product"
+        "https://admin.acme.com/admin/product/SKU+XL"             || "https://admin.acme.com/admin/product/SKU+XL"
+        "https://admin.acme.com/admin/product/SKU%2BXL"           || "https://admin.acme.com/admin/product/SKU%2BXL"
     }
 }
