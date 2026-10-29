@@ -33,8 +33,10 @@ import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerAddress;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.web.core.CustomerState;
+import org.springframework.http.HttpStatus;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -239,7 +241,11 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
             BindingResult result
     ) throws PricingException, ServiceException {
         Order cart = CartState.getCart();
-        orderMultishipOptionService.saveOrderMultishipOptions(cart, orderMultishipOptionForm.getOptions());
+        try {
+            orderMultishipOptionService.saveOrderMultishipOptions(cart, orderMultishipOptionForm.getOptions());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid multiship option", e);
+        }
         cart = fulfillmentGroupService.matchFulfillmentGroupsToMultishipOptions(cart, true);
 
         //Add module specific logic

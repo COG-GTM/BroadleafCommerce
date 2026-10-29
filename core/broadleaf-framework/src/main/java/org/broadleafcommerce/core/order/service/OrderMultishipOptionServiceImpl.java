@@ -23,10 +23,14 @@ import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.order.domain.OrderMultishipOption;
 import org.broadleafcommerce.core.order.domain.OrderMultishipOptionImpl;
 import org.broadleafcommerce.core.order.service.call.OrderMultishipOptionDTO;
+import org.broadleafcommerce.profile.core.domain.Address;
+import org.broadleafcommerce.profile.core.domain.CustomerAddress;
 import org.broadleafcommerce.profile.core.service.AddressService;
+import org.broadleafcommerce.profile.core.service.CustomerAddressService;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,8 @@ public class OrderMultishipOptionServiceImpl implements OrderMultishipOptionServ
 
     @Resource(name = "blAddressService")
     protected AddressService addressService;
+    @Resource(name = "blCustomerAddressService")
+    protected CustomerAddressService customerAddressService;
     @Resource(name = "blOrderItemService")
     protected OrderItemService orderItemService;
     @Resource(name = "blFulfillmentOptionService")
@@ -97,22 +103,29 @@ public class OrderMultishipOptionServiceImpl implements OrderMultishipOptionServ
         for (OrderMultishipOption option : findOrderMultishipOptions(order.getId())) {
             currentOptions.put(option.getId(), option);
         }
+        Map<Long, DiscreteOrderItem> allowedItems = getAllowedOrderItemsById(order);
+        Map<Long, Address> allowedAddresses = getAllowedAddressesById(order, currentOptions.values());
+
+        // Resolve every DTO before touching any persisted option so a rejected request changes nothing
+        List<DiscreteOrderItem> resolvedItems = new ArrayList<>();
+        List<Address> resolvedAddresses = new ArrayList<>();
+        for (OrderMultishipOptionDTO dto : optionDTOs) {
+            validateOptionId(order, currentOptions, dto.getId());
+            resolvedItems.add(resolveOrderItem(order, allowedItems, dto.getOrderItemId()));
+            resolvedAddresses.add(resolveAddress(order, allowedAddresses, dto.getAddressId()));
+        }
 
         List<OrderMultishipOption> orderMultishipOptions = new ArrayList<OrderMultishipOption>();
-        for (OrderMultishipOptionDTO dto : optionDTOs) {
-            OrderMultishipOption option = currentOptions.get(dto.getId());
+        for (int i = 0; i < optionDTOs.size(); i++) {
+            OrderMultishipOptionDTO dto = optionDTOs.get(i);
+            OrderMultishipOption option = dto.getId() == null ? null : currentOptions.get(dto.getId());
             if (option == null) {
                 option = orderMultishipOptionDao.create();
             }
 
             option.setOrder(order);
-            option.setOrderItem(orderItemService.readOrderItemById(dto.getOrderItemId()));
-
-            if (dto.getAddressId() != null) {
-                option.setAddress(addressService.readAddressById(dto.getAddressId()));
-            } else {
-                option.setAddress(null);
-            }
+            option.setOrderItem(resolvedItems.get(i));
+            option.setAddress(resolvedAddresses.get(i));
 
             if (dto.getFulfillmentOptionId() != null) {
                 option.setFulfillmentOption(
@@ -170,12 +183,18 @@ public class OrderMultishipOptionServiceImpl implements OrderMultishipOptionServ
             Order order,
             List<OrderMultishipOptionDTO> optionDtos
     ) {
+        Map<Long, OrderMultishipOption> currentOptions = new HashMap<>();
+        for (OrderMultishipOption option : findOrderMultishipOptions(order.getId())) {
+            currentOptions.put(option.getId(), option);
+        }
+        Map<Long, DiscreteOrderItem> allowedItems = getAllowedOrderItemsById(order);
+        Map<Long, Address> allowedAddresses = getAllowedAddressesById(order, currentOptions.values());
+
         List<OrderMultishipOption> orderMultishipOptions = new ArrayList<>();
         for (OrderMultishipOptionDTO optionDto : optionDtos) {
+            validateOptionId(order, currentOptions, optionDto.getId());
             OrderMultishipOption option = new OrderMultishipOptionImpl();
-            if (optionDto.getAddressId() != null) {
-                option.setAddress(addressService.readAddressById(optionDto.getAddressId()));
-            }
+            option.setAddress(resolveAddress(order, allowedAddresses, optionDto.getAddressId()));
             if (optionDto.getFulfillmentOptionId() != null) {
                 option.setFulfillmentOption(fulfillmentOptionService.readFulfillmentOptionById(
                         optionDto.getFulfillmentOptionId()
@@ -183,10 +202,89 @@ public class OrderMultishipOptionServiceImpl implements OrderMultishipOptionServ
             }
             option.setId(optionDto.getId());
             option.setOrder(order);
-            option.setOrderItem(orderItemService.readOrderItemById(optionDto.getOrderItemId()));
+            option.setOrderItem(resolveOrderItem(order, allowedItems, optionDto.getOrderItemId()));
             orderMultishipOptions.add(option);
         }
         return orderMultishipOptions;
+    }
+
+    /**
+     * Discrete order items (including those nested in bundles) of the given order, keyed by id.
+     * Multiship options may only reference these.
+     */
+    protected Map<Long, DiscreteOrderItem> getAllowedOrderItemsById(Order order) {
+        Map<Long, DiscreteOrderItem> items = new HashMap<>();
+        for (DiscreteOrderItem item : order.getDiscreteOrderItems()) {
+            if (item.getId() != null) {
+                items.put(item.getId(), item);
+            }
+        }
+        return items;
+    }
+
+    /**
+     * Addresses a multiship option on the given order may reference, keyed by id: the active saved addresses of
+     * the order's customer plus addresses already attached to the order's own multiship options.
+     */
+    protected Map<Long, Address> getAllowedAddressesById(
+            Order order,
+            Collection<OrderMultishipOption> currentOptions
+    ) {
+        Map<Long, Address> addresses = new HashMap<>();
+        for (OrderMultishipOption option : currentOptions) {
+            Address address = option.getAddress();
+            if (address != null && address.getId() != null) {
+                addresses.put(address.getId(), address);
+            }
+        }
+        if (order.getCustomer() != null && order.getCustomer().getId() != null) {
+            List<CustomerAddress> customerAddresses =
+                    customerAddressService.readActiveCustomerAddressesByCustomerId(order.getCustomer().getId());
+            if (customerAddresses != null) {
+                for (CustomerAddress customerAddress : customerAddresses) {
+                    Address address = customerAddress.getAddress();
+                    if (address != null && address.getId() != null) {
+                        addresses.put(address.getId(), address);
+                    }
+                }
+            }
+        }
+        return addresses;
+    }
+
+    protected void validateOptionId(Order order, Map<Long, OrderMultishipOption> currentOptions, Long optionId) {
+        if (optionId != null && !currentOptions.containsKey(optionId)) {
+            throw new IllegalArgumentException(
+                    "Multiship option " + optionId + " does not belong to order " + order.getId()
+            );
+        }
+    }
+
+    protected DiscreteOrderItem resolveOrderItem(
+            Order order,
+            Map<Long, DiscreteOrderItem> allowedItems,
+            Long orderItemId
+    ) {
+        DiscreteOrderItem item = orderItemId == null ? null : allowedItems.get(orderItemId);
+        if (item == null) {
+            throw new IllegalArgumentException(
+                    "Order item " + orderItemId + " does not belong to order " + order.getId()
+            );
+        }
+        return item;
+    }
+
+    protected Address resolveAddress(Order order, Map<Long, Address> allowedAddresses, Long addressId) {
+        if (addressId == null) {
+            return null;
+        }
+        Address address = allowedAddresses.get(addressId);
+        if (address == null) {
+            throw new IllegalArgumentException(
+                    "Address " + addressId + " is not available to the customer of order " + order.getId()
+            );
+        }
+        return address;
     }
 
     @Override

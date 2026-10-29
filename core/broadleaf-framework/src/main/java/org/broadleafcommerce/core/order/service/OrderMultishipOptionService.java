@@ -124,6 +124,8 @@ public interface OrderMultishipOptionService {
      * @param order
      * @param optionDtos
      * @return the associated OrderMultishipOptions
+     * @throws IllegalArgumentException if a DTO references an option, order item or address that does not belong
+     *                                  to the order or its customer
      */
     List<OrderMultishipOption> getOrderMultishipOptionsFromDTOs(Order order, List<OrderMultishipOptionDTO> optionDtos);
 
@@ -137,6 +139,8 @@ public interface OrderMultishipOptionService {
      *
      * @param order
      * @param optionDTOs
+     * @throws IllegalArgumentException if a DTO references an option, order item or address that does not belong
+     *                                  to the order or its customer; nothing is saved in that case
      */
     void saveOrderMultishipOptions(Order order, List<OrderMultishipOptionDTO> optionDTOs);
 
