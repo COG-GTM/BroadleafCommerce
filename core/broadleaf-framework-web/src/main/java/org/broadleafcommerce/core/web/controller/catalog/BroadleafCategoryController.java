@@ -109,7 +109,7 @@ public class BroadleafCategoryController extends BroadleafAbstractController imp
             parameters.put(fieldName, activeFieldFilters.toArray(new String[activeFieldFilters.size()]));
             parameters.remove("facetField");
 
-            String newUrl = ProcessorUtils.getUrl(ProcessorUtils.getRequestBaseUrl(request), parameters);
+            String newUrl = ProcessorUtils.getUrl(ProcessorUtils.getContextRelativeRequestBaseUrl(request), parameters);
             model.setViewName("redirect:" + newUrl);
         } else {
             // Else, if we received a GET to the category URL (either the user clicked this link or we redirected

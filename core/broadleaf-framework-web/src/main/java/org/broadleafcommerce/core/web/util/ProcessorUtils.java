@@ -48,6 +48,22 @@ public class ProcessorUtils {
     }
 
     /**
+     * Same as {@link #getRequestBaseUrl(HttpServletRequest)} but without the context path, for use in Spring
+     * {@code redirect:} view names, which are resolved relative to the context.
+     *
+     * @param request the current request
+     * @return the encoded request path relative to the context path
+     */
+    public static String getContextRelativeRequestBaseUrl(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (uri != null && contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            uri = uri.substring(contextPath.length());
+        }
+        return encodePath(uri);
+    }
+
+    /**
      * Percent-encodes every character of {@code path} that is not allowed in an RFC 3986 path. Existing
      * well-formed percent-encoded sequences are preserved so that already encoded paths are not double encoded.
      *

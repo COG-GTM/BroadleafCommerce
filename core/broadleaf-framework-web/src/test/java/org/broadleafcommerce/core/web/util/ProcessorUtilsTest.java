@@ -21,8 +21,11 @@ import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 
+import java.lang.reflect.Proxy;
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 public class ProcessorUtilsTest {
 
@@ -54,5 +57,29 @@ public class ProcessorUtilsTest {
         params.put("sort", new String[]{"price asc"});
         String url = ProcessorUtils.getUrl(ProcessorUtils.encodePath("/search\" onfocus=\"alert(1)"), params);
         assertEquals("/search%22%20onfocus=%22alert(1)?sort=price+asc", url);
+    }
+
+    @Test
+    public void requestBaseUrlsAreRelativeAndHandleContextPath() {
+        HttpServletRequest request = request("/shop", "/shop/hot-sauces/\"x");
+        assertEquals("/shop/hot-sauces/%22x", ProcessorUtils.getRequestBaseUrl(request));
+        assertEquals("/hot-sauces/%22x", ProcessorUtils.getContextRelativeRequestBaseUrl(request));
+
+        assertEquals("/", ProcessorUtils.getContextRelativeRequestBaseUrl(request("/shop", "/shop")));
+        assertEquals("/search", ProcessorUtils.getContextRelativeRequestBaseUrl(request("", "/search")));
+    }
+
+    protected HttpServletRequest request(String contextPath, String requestUri) {
+        return (HttpServletRequest) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{HttpServletRequest.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getContextPath":
+                            return contextPath;
+                        case "getRequestURI":
+                            return requestUri;
+                        default:
+                            throw new UnsupportedOperationException(method.getName());
+                    }
+                });
     }
 }
