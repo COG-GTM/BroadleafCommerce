@@ -70,7 +70,7 @@ public class ToggleFacetLinkProcessor extends AbstractBroadleafAttributeModifier
         BroadleafRequestContext blcContext = BroadleafRequestContext.getBroadleafRequestContext();
         HttpServletRequest request = blcContext.getRequest();
 
-        String baseUrl = request.getRequestURL().toString();
+        String baseUrl = ProcessorUtils.getRequestBaseUrl(request);
         Map<String, String[]> params = new HashMap<>(request.getParameterMap());
 
         SearchFacetResultDTO result = (SearchFacetResultDTO) context.parseExpression(attributeValue);

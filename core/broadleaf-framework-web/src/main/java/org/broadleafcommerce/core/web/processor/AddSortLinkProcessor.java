@@ -92,7 +92,7 @@ public class AddSortLinkProcessor extends AbstractBroadleafAttributeModifierProc
         BroadleafRequestContext blcContext = BroadleafRequestContext.getBroadleafRequestContext();
         HttpServletRequest request = blcContext.getRequest();
 
-        String baseUrl = request.getRequestURL().toString();
+        String baseUrl = ProcessorUtils.getRequestBaseUrl(request);
         Map<String, String[]> params = new HashMap<>(request.getParameterMap());
 
         String key = SearchCriteria.SORT_STRING;

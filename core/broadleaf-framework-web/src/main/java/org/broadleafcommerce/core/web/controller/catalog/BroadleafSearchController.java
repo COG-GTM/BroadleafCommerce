@@ -99,7 +99,7 @@ public class BroadleafSearchController extends AbstractCatalogController {
             parameters.put(fieldName, activeFieldFilters.toArray(new String[activeFieldFilters.size()]));
             parameters.remove("facetField");
 
-            String newUrl = ProcessorUtils.getUrl(request.getRequestURL().toString(), parameters);
+            String newUrl = ProcessorUtils.getUrl(ProcessorUtils.getRequestBaseUrl(request), parameters);
             return "redirect:" + newUrl;
         } else {
             // Else, if we received a GET to the category URL (either the user performed a search or we redirected

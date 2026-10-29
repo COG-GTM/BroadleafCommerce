@@ -69,7 +69,7 @@ public class RemoveFacetValuesLinkProcessor extends AbstractBroadleafAttributeMo
         BroadleafRequestContext blcContext = BroadleafRequestContext.getBroadleafRequestContext();
         HttpServletRequest request = blcContext.getRequest();
 
-        String baseUrl = request.getRequestURL().toString();
+        String baseUrl = ProcessorUtils.getRequestBaseUrl(request);
         Map<String, String[]> params = new HashMap<>(request.getParameterMap());
 
         SearchFacetDTO facet = (SearchFacetDTO) context.parseExpression(attributeValue);

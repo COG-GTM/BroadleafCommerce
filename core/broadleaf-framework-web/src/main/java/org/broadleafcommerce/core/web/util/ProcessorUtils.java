@@ -19,8 +19,11 @@ package org.broadleafcommerce.core.web.util;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Map.Entry;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * @author apazzolini
@@ -28,6 +31,57 @@ import java.util.Map.Entry;
  * Utility class for Thymeleaf Processors
  */
 public class ProcessorUtils {
+
+    private static final char[] HEX = "0123456789ABCDEF".toCharArray();
+
+    /**
+     * Returns a relative, percent-encoded base URL for the current request that is safe to use as the base
+     * of a link built by {@link #getUrl(String, Map)}. Unlike {@link HttpServletRequest#getRequestURL()}, the
+     * result never contains the client-supplied Host header and every character outside the RFC 3986 path
+     * character set (quotes, angle brackets, whitespace, ...) is percent-encoded.
+     *
+     * @param request the current request
+     * @return the encoded request path, including the context path
+     */
+    public static String getRequestBaseUrl(HttpServletRequest request) {
+        return encodePath(request.getRequestURI());
+    }
+
+    /**
+     * Percent-encodes every character of {@code path} that is not allowed in an RFC 3986 path. Existing
+     * well-formed percent-encoded sequences are preserved so that already encoded paths are not double encoded.
+     *
+     * @param path a raw request path
+     * @return the encoded path, or "/" when {@code path} is empty
+     */
+    public static String encodePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return "/";
+        }
+        byte[] bytes = path.getBytes(StandardCharsets.UTF_8);
+        StringBuilder sb = new StringBuilder(bytes.length);
+        for (int i = 0; i < bytes.length; i++) {
+            int b = bytes[i] & 0xFF;
+            if (b == '%' && i + 2 < bytes.length && isHex(bytes[i + 1]) && isHex(bytes[i + 2])) {
+                sb.append('%').append((char) bytes[i + 1]).append((char) bytes[i + 2]);
+                i += 2;
+            } else if (isAllowedPathChar(b)) {
+                sb.append((char) b);
+            } else {
+                sb.append('%').append(HEX[b >> 4]).append(HEX[b & 0x0F]);
+            }
+        }
+        return sb.toString();
+    }
+
+    protected static boolean isAllowedPathChar(int c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || "-._~!$&()*+,;=:@/".indexOf(c) >= 0;
+    }
+
+    protected static boolean isHex(byte b) {
+        return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F');
+    }
 
     /**
      * Gets a UTF-8 URL encoded URL based on the current URL as well as the specified map
