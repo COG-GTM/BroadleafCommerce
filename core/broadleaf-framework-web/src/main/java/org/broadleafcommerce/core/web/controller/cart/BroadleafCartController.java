@@ -19,6 +19,7 @@ package org.broadleafcommerce.core.web.controller.cart;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.crossapp.service.CrossAppAuthService;
 import org.broadleafcommerce.common.util.BLCMessageUtils;
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.offer.domain.OfferCode;
@@ -40,6 +41,8 @@ import org.broadleafcommerce.core.order.service.exception.UpdateCartException;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
 import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.web.core.CustomerState;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 
@@ -70,6 +73,10 @@ public class BroadleafCartController extends AbstractCartController {
 
     @Value("${automatically.add.complete.items}")
     protected boolean automaticallyAddCompleteItems;
+
+    @Autowired(required = false)
+    @Qualifier("blCrossAppAuthService")
+    protected CrossAppAuthService crossAppAuthService;
 
     /**
      * Renders the cart page.
@@ -172,8 +179,10 @@ public class BroadleafCartController extends AbstractCartController {
      * Calls the addWithOverrides method on the orderService which will honor the override
      * prices on the OrderItemRequestDTO request object.
      * <p>
-     * Implementors must secure this method to avoid accidentally exposing the ability for
-     * malicious clients to override prices by hacking the post parameters.
+     * The request is rejected with a {@link PriceOverrideNotAllowedException} (HTTP 403) unless
+     * {@link #isPriceOverrideAllowed(HttpServletRequest)} returns true, which by default requires a CSR
+     * authenticated from the admin. This keeps shoppers from overriding prices by tampering with the
+     * post parameters even if a site maps this method to a URL.
      *
      * @param request
      * @param response
@@ -182,6 +191,7 @@ public class BroadleafCartController extends AbstractCartController {
      * @throws IOException
      * @throws AddToCartException
      * @throws PricingException
+     * @throws PriceOverrideNotAllowedException if the current user may not override prices
      */
     public String addWithPriceOverride(
             HttpServletRequest request,
@@ -189,6 +199,10 @@ public class BroadleafCartController extends AbstractCartController {
             Model model,
             OrderItemRequestDTO itemRequest
     ) throws IOException, AddToCartException, PricingException {
+        if (!isPriceOverrideAllowed(request)) {
+            throw new PriceOverrideNotAllowedException("The current user may not add items with override prices");
+        }
+
         Order cart = CartState.getCart();
 
         // If the cart is currently empty, it will be the shared, "null" cart. We must detect this
@@ -213,6 +227,15 @@ public class BroadleafCartController extends AbstractCartController {
             AddToCartItem itemRequest
     ) throws IOException, AddToCartException, PricingException {
         return addWithPriceOverride(request, response, model, (OrderItemRequestDTO) itemRequest);
+    }
+
+    /**
+     * Whether the current user may add items with client supplied override prices. Defaults to CSRs
+     * authenticated from the admin. Sites with a different policy may override this, but must never
+     * return true for ordinary storefront customers.
+     */
+    protected boolean isPriceOverrideAllowed(HttpServletRequest request) {
+        return crossAppAuthService != null && crossAppAuthService.hasCsrPermission();
     }
 
     /**
