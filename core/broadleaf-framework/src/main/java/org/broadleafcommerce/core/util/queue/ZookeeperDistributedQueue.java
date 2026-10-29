@@ -38,10 +38,12 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -79,6 +81,57 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private static final Log LOG = LogFactory.getLog(ZookeeperDistributedQueue.class);
     private static final String QUEUE_ENTRY_NAME = "dz-queue-entry";
 
+    /**
+     * Classes (in {@link ObjectInputFilter.Config#createFilter(String)} pattern syntax) that {@link #deserialize(byte[])}
+     * accepts by default: the Solr index update commands, the Solr documents they carry, and the JDK value and
+     * collection types those documents and the queue's own size config are made of.  Everything else is rejected.
+     */
+    public static final List<String> DEFAULT_ALLOWED_CLASS_PATTERNS = Collections.unmodifiableList(Arrays.asList(
+            //Object is not Serializable, so this only admits Object[] (e.g. the backing array of Arrays.asList)
+            "java.lang.Object",
+            "java.lang.String",
+            "java.lang.Boolean",
+            "java.lang.Character",
+            "java.lang.Number",
+            "java.lang.Byte",
+            "java.lang.Short",
+            "java.lang.Integer",
+            "java.lang.Long",
+            "java.lang.Float",
+            "java.lang.Double",
+            "java.math.BigDecimal",
+            "java.math.BigInteger",
+            "java.util.Date",
+            "java.util.UUID",
+            "java.util.ArrayList",
+            "java.util.LinkedList",
+            //HashMap and HashSet check a Map.Entry[] allocation against the filter while reading
+            "java.util.Map$Entry",
+            "java.util.HashMap",
+            "java.util.LinkedHashMap",
+            "java.util.HashSet",
+            "java.util.LinkedHashSet",
+            "java.util.Arrays$ArrayList",
+            "java.util.Collections$Empty*",
+            "java.util.Collections$Singleton*",
+            "java.util.Collections$Unmodifiable*",
+            "java.util.ImmutableCollections$*",
+            "java.util.CollSer",
+            "org.apache.solr.common.SolrDocumentBase",
+            "org.apache.solr.common.SolrInputDocument",
+            "org.apache.solr.common.SolrInputField",
+            "org.broadleafcommerce.core.search.service.solr.indexer.SolrUpdateCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.SiteReindexCommand",
+            "org.broadleafcommerce.core.search.service.solr.indexer.IncrementalUpdateCommand"
+    ));
+
+    /**
+     * Graph limits applied to every entry, sized well above a 1MB (Zookeeper's transport limit) Solr command.
+     */
+    public static final String DEFAULT_DESERIALIZATION_LIMITS = "maxdepth=32;maxrefs=1000000;maxbytes=4194304;maxarray=1000000";
+
     protected final Object QUEUE_MONITOR = new Object();
     private final String queueFolderPath;
     private final ZooKeeper zk;
@@ -86,6 +139,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private final int requestedMaxQueueCapacity;
     private final DistributedLock queueAccessLock;
     private final DistributedLock configLock;
+    private final ObjectInputFilter deserializationFilter;
     private int capacity;
 
     /**
@@ -129,13 +183,38 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @param acls
      */
     public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls) {
+        this(queuePath, zk, maxQueueSize, useDefaultBasePath, acls, null);
+    }
+
+    /**
+     * Same as {@link #ZookeeperDistributedQueue(String, ZooKeeper, int, boolean, List)}, but additionally allows classes
+     * matching additionalAllowedClassPatterns (in {@link ObjectInputFilter.Config#createFilter(String)} syntax, e.g.
+     * "com.mycompany.queue.MyCommand" or "com.mycompany.queue.*") to be read from the queue, on top of
+     * {@link #DEFAULT_ALLOWED_CLASS_PATTERNS}.  Queue entries of any other class are rejected when they are read.
+     * <p>
+     * When acls is null or empty, nodes are created with {@link ZooDefs.Ids#OPEN_ACL_UNSAFE}, which lets any Zookeeper client
+     * read or write queue entries.  Production deployments should pass a restrictive ACL (e.g. {@link ZooDefs.Ids#CREATOR_ALL_ACL}
+     * on a digest or SASL authenticated Zookeeper session).
+     *
+     * @param queuePath
+     * @param zk
+     * @param maxQueueSize
+     * @param useDefaultBasePath
+     * @param acls
+     * @param additionalAllowedClassPatterns
+     */
+    public ZookeeperDistributedQueue(String queuePath, ZooKeeper zk, int maxQueueSize, boolean useDefaultBasePath, List<ACL> acls,
+                                     Collection<String> additionalAllowedClassPatterns) {
         Assert.notNull(zk, "The SolrZkClient cannot be null.");
         Assert.notNull(queuePath, "The queuePath cannot be null and must be a Unix-style path (e.g. '/solr-index/command-queue').");
         Assert.hasText(queuePath.trim(), "The queuePath must not be empty and should not contain white spaces.");
         Assert.isTrue(maxQueueSize > 0, "maxQueueSize must be greater than 0.");
 
         this.zk = zk;
+        this.deserializationFilter = buildDeserializationFilter(additionalAllowedClassPatterns);
         if (acls == null || acls.isEmpty()) {
+            LOG.warn("No ACLs were provided for the Zookeeper queue " + queuePath + ". Its nodes will be created with "
+                    + "'ZooDefs.Ids.OPEN_ACL_UNSAFE' and can be written by any Zookeeper client.");
             this.acls = ZooDefs.Ids.OPEN_ACL_UNSAFE;
         } else {
             this.acls = acls;
@@ -648,8 +727,15 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                                     null
                                             );
 
-                                            @SuppressWarnings("unchecked")
-                                            T deserialized = (T) deserialize(data);
+                                            T deserialized;
+                                            try {
+                                                @SuppressWarnings("unchecked")
+                                                T read = (T) deserialize(data);
+                                                deserialized = read;
+                                            } catch (DistributedQueueException e) {
+                                                discardUnreadableEntry(entryName, e);
+                                                return null;
+                                            }
 
                                             if (remove) {
                                                 getZookeeperClient().delete(
@@ -822,16 +908,77 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}.
+     * Builds the {@link ObjectInputFilter} used by {@link #deserialize(byte[])}: {@link #DEFAULT_DESERIALIZATION_LIMITS},
+     * {@link #DEFAULT_ALLOWED_CLASS_PATTERNS} plus the additional patterns, and a final reject-everything-else rule.
+     *
+     * @param additionalAllowedClassPatterns may be null
+     * @return
+     */
+    public static ObjectInputFilter buildDeserializationFilter(Collection<String> additionalAllowedClassPatterns) {
+        List<String> patterns = new ArrayList<>();
+        patterns.add(DEFAULT_DESERIALIZATION_LIMITS);
+        patterns.addAll(DEFAULT_ALLOWED_CLASS_PATTERNS);
+        if (additionalAllowedClassPatterns != null) {
+            for (String pattern : additionalAllowedClassPatterns) {
+                Assert.hasText(pattern, "Allowed class patterns must not be empty.");
+                Assert.isTrue(!pattern.contains(";") && !pattern.trim().startsWith("!") && !pattern.contains("="),
+                        "Allowed class patterns must be a single class or package pattern: " + pattern);
+                patterns.add(pattern.trim());
+            }
+        }
+        patterns.add("!*");
+        return ObjectInputFilter.Config.createFilter(String.join(";", patterns));
+    }
+
+    /**
+     * Returns the {@link ObjectInputFilter} applied to every entry read from Zookeeper.
+     *
+     * @return
+     */
+    protected ObjectInputFilter getDeserializationFilter() {
+        return deserializationFilter;
+    }
+
+    /**
+     * Called when a queue entry cannot be deserialized (e.g. its classes are not allowed by {@link #getDeserializationFilter()}).
+     * The entry can never be read, so it is deleted rather than left at the head of the queue where it would block every reader.
+     *
+     * @param entryName
+     * @param cause
+     * @throws Exception
+     */
+    protected void discardUnreadableEntry(String entryName, DistributedQueueException cause) throws Exception {
+        LOG.error("Discarding entry " + entryName + " from the Zookeeper queue " + getQueueFolderPath()
+                + " because it could not be safely deserialized. This may indicate tampering with the queue's Zookeeper nodes.", cause);
+        try {
+            getZookeeperClient().delete(getQueueEntryFolder() + '/' + entryName, -1);
+        } catch (KeeperException.NoNodeException e) {
+            //Already removed by another reader.
+        }
+    }
+
+    /**
+     * Mechanism to convert a byte array to an object.  Default implementation uses {@link ObjectInputStream}, restricted by
+     * {@link #getDeserializationFilter()} because the bytes come from Zookeeper and are not trusted.  A JVM-wide filter
+     * (jdk.serialFilter), if configured, is applied as well.
      *
      * @param bytes
      * @return
      */
     protected Object deserialize(byte[] bytes) {
+        if (bytes == null) {
+            throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue: the node had no data.");
+        }
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
         try {
             ois = new ObjectInputStream(bais);
+            ObjectInputFilter filter = getDeserializationFilter();
+            ObjectInputFilter jvmFilter = ois.getObjectInputFilter();
+            if (jvmFilter != null) {
+                filter = ObjectInputFilter.merge(filter, jvmFilter);
+            }
+            ois.setObjectInputFilter(filter);
             return ois.readObject();
         } catch (IOException | ClassNotFoundException e) {
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);

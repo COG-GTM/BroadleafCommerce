@@ -17,18 +17,23 @@
  */
 package org.broadleafcommerce.core.search.service.solr.indexer;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.solr.client.solrj.SolrClient;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.data.ACL;
 import org.broadleafcommerce.core.util.lock.ReentrantDistributedZookeeperLock;
 import org.broadleafcommerce.core.util.queue.ZookeeperDistributedQueue;
 import org.springframework.core.env.Environment;
 import org.springframework.util.Assert;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -49,6 +54,11 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * This can be extended to provide different queue and lock implementations.  If you override them, then they both need
  * to be distributed or local.  Having a local lock and a distributed queue or vice versa will not work.
+ * <p>
+ * In a distributed setup the queue and lock nodes are created with {@link ZooDefs.Ids#CREATOR_ALL_ACL} when either
+ * {@link #ZK_DIGEST_AUTH_PROPERTY} (digest credentials, "user:password") is set, or {@link #ZK_CREATOR_ACL_PROPERTY} is true
+ * and the Zookeeper session is already authenticated (e.g. via SASL).  Otherwise they fall back to the world-writable
+ * {@link ZooDefs.Ids#OPEN_ACL_UNSAFE}.
  *
  * @author Kelly Tisdell
  */
@@ -57,12 +67,16 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     public static final int MAX_QUEUE_SIZE = 500;
     public static final String LOCK_PATH = "/solr-index/command-lock";
     public static final String QUEUE_PATH = "/solr-index/command-queue";
+    public static final String ZK_DIGEST_AUTH_PROPERTY = "solr.index.zookeeper.digest.auth";
+    public static final String ZK_CREATOR_ACL_PROPERTY = "solr.index.zookeeper.creator.acl";
     protected static final Map<String, BlockingQueue<? super SolrUpdateCommand>> QUEUE_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     protected static final Map<String, Lock> LOCK_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     private static final Log LOG = LogFactory.getLog(DefaultSolrIndexQueueProvider.class);
     private final ZooKeeper zk;
     private final boolean distributed;
     private final Environment env;
+    private List<ACL> zookeeperAcls;
+    private boolean zookeeperAclsResolved;
 
     public DefaultSolrIndexQueueProvider() {
         this(null, null);
@@ -144,8 +158,43 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
         return new ArrayBlockingQueue<>(MAX_QUEUE_SIZE);
     }
 
+    /**
+     * Returns the ACLs to create the distributed queue and lock nodes with, or null to use the (world-writable) default.
+     * If {@link #ZK_DIGEST_AUTH_PROPERTY} is set, the Zookeeper session is authenticated with those digest credentials first.
+     *
+     * @return
+     */
+    protected synchronized List<ACL> getZookeeperAcls() {
+        if (!zookeeperAclsResolved) {
+            zookeeperAcls = resolveZookeeperAcls();
+            zookeeperAclsResolved = true;
+        }
+        return zookeeperAcls;
+    }
+
+    protected List<ACL> resolveZookeeperAcls() {
+        if (getZookeeper() == null || getEnvironment() == null) {
+            return null;
+        }
+        String digestAuth = getEnvironment().getProperty(ZK_DIGEST_AUTH_PROPERTY);
+        if (StringUtils.isNotBlank(digestAuth)) {
+            Assert.isTrue(digestAuth.indexOf(':') > 0 && digestAuth.indexOf(':') < digestAuth.length() - 1,
+                    ZK_DIGEST_AUTH_PROPERTY + " must be in the form 'user:password'.");
+            getZookeeper().addAuthInfo("digest", digestAuth.getBytes(StandardCharsets.UTF_8));
+            return ZooDefs.Ids.CREATOR_ALL_ACL;
+        }
+        if (getEnvironment().getProperty(ZK_CREATOR_ACL_PROPERTY, Boolean.class, Boolean.FALSE)) {
+            return ZooDefs.Ids.CREATOR_ALL_ACL;
+        }
+        LOG.warn("Neither " + ZK_DIGEST_AUTH_PROPERTY + " nor " + ZK_CREATOR_ACL_PROPERTY + " is set. The distributed Solr "
+                + "index command queue and lock will be world-writable in Zookeeper.");
+        return null;
+    }
+
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
-        return new ZookeeperDistributedQueue<>(QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE);
+        return new ZookeeperDistributedQueue<>(
+                QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE, true, getZookeeperAcls()
+        );
     }
 
     protected Lock createLocalLock(String lockName) {
@@ -158,7 +207,7 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     }
 
     protected Lock createDistributedLock(String lockName) {
-        return new ReentrantDistributedZookeeperLock(getZookeeper(), LOCK_PATH, lockName, getEnvironment(), null);
+        return new ReentrantDistributedZookeeperLock(getZookeeper(), LOCK_PATH, lockName, getEnvironment(), getZookeeperAcls());
     }
 
 }
