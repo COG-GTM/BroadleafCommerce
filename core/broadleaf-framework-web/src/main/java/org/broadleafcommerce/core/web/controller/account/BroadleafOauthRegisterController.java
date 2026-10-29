@@ -103,6 +103,10 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             Model model,
             RedirectAttributes redirectAttributes
     ) throws PricingException {
+        if (!isRegistrableCustomer(registerCustomerForm.getCustomer(), request)) {
+            errors.reject("registration.invalidCustomer");
+            return getRegisterView();
+        }
         if (isUseEmailForLogin()) {
             Customer customer = registerCustomerForm.getCustomer();
             customer.setUsername(customer.getEmailAddress());
