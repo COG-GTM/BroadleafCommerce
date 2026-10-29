@@ -58,33 +58,6 @@ import jakarta.servlet.http.HttpServletResponse;
  */
 public class BroadleafRegisterController extends BroadleafAbstractController {
 
-    /**
-     * Customer properties that must never be bound from a registration request. A bound {@code customer.id} would
-     * make the registration merge over the existing customer row with that id.
-     */
-    protected static final String[] DISALLOWED_REGISTRATION_FIELDS = {
-            "customer.id",
-            "customer.password",
-            "customer.unencodedPassword",
-            "customer.passwordChangeRequired",
-            "customer.registered",
-            "customer.deactivated",
-            "customer.anonymous",
-            "customer.cookied",
-            "customer.loggedIn",
-            "customer.externalId",
-            "customer.taxExemptionCode",
-            "customer.auditable*",
-            "customer.customerAttributes*",
-            "customer.customerAddresses*",
-            "customer.customerPhones*",
-            "customer.customerPayments*",
-            "customer.customerLocale*",
-            "customer.challengeQuestion.*",
-            "customer.preview*",
-            "oAuth2UserRequest*"
-    };
-
     protected static String registerSuccessView = "ajaxredirect:";
     protected static String registerView = "authentication/register";
     @Value("${use.email.for.site.login:true}")
@@ -177,7 +150,7 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
      * @return binder field patterns that may not be populated from a registration request
      */
     protected String[] getDisallowedRegistrationFields() {
-        return DISALLOWED_REGISTRATION_FIELDS;
+        return RegisterCustomerForm.DISALLOWED_BINDING_FIELDS;
     }
 
     /**

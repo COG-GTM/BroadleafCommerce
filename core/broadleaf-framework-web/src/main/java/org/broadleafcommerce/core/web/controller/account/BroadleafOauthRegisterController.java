@@ -29,7 +29,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -130,10 +129,8 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             );
             assert (newCustomer != null);
 
-            Authentication principal = SecurityContextHolder.getContext().getAuthentication();
-            authorizedClientService.saveAuthorizedClient(authorizedClient, principal);
-
-            loginService.loginCustomer(registerCustomerForm.getCustomer());
+            Authentication customerAuthentication = loginService.loginCustomer(registerCustomerForm.getCustomer());
+            authorizedClientService.saveAuthorizedClient(authorizedClient, customerAuthentication);
 
             Order cart = CartState.getCart();
             if (cart != null && !(cart instanceof NullOrderImpl) && cart.getEmailAddress() == null) {
@@ -150,16 +147,19 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
         }
     }
 
+    /**
+     * Loads the authorized client of the OAuth user that is currently authenticated, so registration can only proceed
+     * for an identity that actually completed the OAuth login.
+     */
     protected OAuth2AuthorizedClient loadAuthorizedClient(RegisterCustomerForm registerCustomerForm) {
-        OAuth2UserRequest oAuth2UserRequest = registerCustomerForm.getOAuth2UserRequest();
-        if (authorizedClientService == null
-                || oAuth2UserRequest == null
-                || oAuth2UserRequest.getClientRegistration() == null) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authorizedClientService == null || !(authentication instanceof OAuth2AuthenticationToken)) {
             return null;
         }
+        OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
         return authorizedClientService.loadAuthorizedClient(
-                registerCustomerForm.getProviderId(),
-                oAuth2UserRequest.getClientRegistration().getRegistrationId()
+                oauthToken.getAuthorizedClientRegistrationId(),
+                oauthToken.getName()
         );
     }
 

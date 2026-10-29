@@ -26,14 +26,20 @@ import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.validator.RegisterCustomerValidator;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.beans.MutablePropertyValues;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
@@ -42,6 +48,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -58,6 +65,9 @@ public class BroadleafOauthRegisterControllerTest {
 
     private final List<Customer> registeredCustomers = new ArrayList<>();
     private final List<OAuth2AuthorizedClient> savedClients = new ArrayList<>();
+    private final List<Authentication> savedClientPrincipals = new ArrayList<>();
+    private final Authentication customerAuthentication =
+            new UsernamePasswordAuthenticationToken("mallory@example.com", null, Collections.emptyList());
 
     private OAuth2AuthorizedClient authorizedClient;
     private TestOauthRegisterController oauthController;
@@ -82,6 +92,7 @@ public class BroadleafOauthRegisterControllerTest {
                 (method, args) -> {
                     if ("saveAuthorizedClient".equals(method)) {
                         savedClients.add((OAuth2AuthorizedClient) args[0]);
+                        savedClientPrincipals.add((Authentication) args[1]);
                     }
                     return null;
                 });
@@ -89,6 +100,11 @@ public class BroadleafOauthRegisterControllerTest {
         registerController = new BroadleafRegisterController();
         wire(oauthController);
         wire(registerController);
+    }
+
+    @After
+    public void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -138,6 +154,29 @@ public class BroadleafOauthRegisterControllerTest {
         assertNull(registeredCustomers.get(0).getId());
         assertEquals(1, savedClients.size());
         assertSame(authorizedClient, savedClients.get(0));
+        assertSame(customerAuthentication, savedClientPrincipals.get(0));
+    }
+
+    @Test
+    public void authorizedClientIsLoadedForTheAuthenticatedOAuthUser() {
+        BroadleafOauthRegisterController controller = new BroadleafOauthRegisterController(proxy(
+                OAuth2AuthorizedClientService.class, (method, args) -> {
+                    boolean match = "loadAuthorizedClient".equals(method)
+                            && "google".equals(args[0]) && "mallory-oauth-id".equals(args[1]);
+                    return match ? authorizedClient : null;
+                }));
+        OAuth2User oauthUser = proxy(OAuth2User.class,
+                (method, args) -> "getName".equals(method) ? "mallory-oauth-id" : null);
+        SecurityContextHolder.getContext().setAuthentication(
+                new OAuth2AuthenticationToken(oauthUser, Collections.emptyList(), "google"));
+
+        assertSame(authorizedClient, controller.loadAuthorizedClient(attackerForm()));
+
+        SecurityContextHolder.getContext().setAuthentication(customerAuthentication);
+        assertNull(controller.loadAuthorizedClient(attackerForm()));
+
+        SecurityContextHolder.clearContext();
+        assertNull(controller.loadAuthorizedClient(attackerForm()));
     }
 
     @Test
@@ -185,7 +224,8 @@ public class BroadleafOauthRegisterControllerTest {
 
         controller.customerService = customerService;
         controller.registerCustomerValidator = validator;
-        controller.loginService = proxy(LoginService.class, (method, args) -> null);
+        controller.loginService = proxy(LoginService.class,
+                (method, args) -> "loginCustomer".equals(method) ? customerAuthentication : null);
         controller.orderService = proxy(OrderService.class, (method, args) -> null);
         controller.setUseEmailForLogin(true);
     }

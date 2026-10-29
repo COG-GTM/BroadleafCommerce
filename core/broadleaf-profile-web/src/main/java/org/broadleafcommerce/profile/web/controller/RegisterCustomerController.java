@@ -79,6 +79,8 @@ public class RegisterCustomerController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        // registration always creates a new customer; a submitted id would be merged over an existing row
+        registerCustomerForm.getCustomer().setId(null);
         registerCustomerValidator.validate(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             customerService.registerCustomer(
@@ -147,6 +149,7 @@ public class RegisterCustomerController {
     @InitBinder
     public void initBinder(WebDataBinder binder) {
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
+        binder.setDisallowedFields(RegisterCustomerForm.DISALLOWED_BINDING_FIELDS);
     }
 
 }
