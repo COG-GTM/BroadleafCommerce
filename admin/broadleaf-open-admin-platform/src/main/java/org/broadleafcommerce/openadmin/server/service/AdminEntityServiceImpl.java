@@ -55,6 +55,8 @@ import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao;
 import org.broadleafcommerce.openadmin.server.domain.FetchPageRequest;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.factory.PersistencePackageFactory;
+import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
+import org.broadleafcommerce.openadmin.server.security.remote.SecurityVerifier;
 import org.broadleafcommerce.openadmin.server.service.extension.CriteriaTransferObjectExtensionManager;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManagerFactory;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceResponse;
@@ -100,6 +102,9 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
     @Resource
     protected CriteriaTransferObjectExtensionManager extensionManager;
+
+    @Resource(name = "blAdminSecurityRemoteService")
+    protected SecurityVerifier adminRemoteSecurityService;
 
     protected DynamicDaoHelper dynamicDaoHelper = new DynamicDaoHelperImpl();
 
@@ -652,6 +657,10 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
             if (fmd.getAddMethodType().equals(AddMethodType.LOOKUP_FOR_UPDATE)) {
                 ppr.setUpdateLookupType(true);
+                // The looked-up child is authorized against its own ceiling by the persistence layer; re-parenting
+                // it also modifies the parent's collection, so the parent's server-side ceiling must allow UPDATE too.
+                adminRemoteSecurityService.securityCheck(StringUtils.isNotBlank(mainMetadata.getSecurityCeilingType())
+                        ? mainMetadata.getSecurityCeilingType() : mainMetadata.getCeilingType(), EntityOperationType.UPDATE);
             }
 
             Property fp = new Property();
