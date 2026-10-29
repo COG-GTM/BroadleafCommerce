@@ -114,8 +114,15 @@ public class Crop extends BaseFilter {
             }
         }
 
+        Rectangle bounded = region == null
+                ? new Rectangle()
+                : region.intersection(new Rectangle(0, 0, src.getWidth(), src.getHeight()));
+        if (bounded.isEmpty()) {
+            return src;
+        }
+
         java.awt.image.CropImageFilter cropfilter = new java.awt.image.CropImageFilter(
-                region.x, region.y, region.width, region.height
+                bounded.x, bounded.y, bounded.width, bounded.height
         );
         Image returnImage = Toolkit.getDefaultToolkit().createImage(
                 new java.awt.image.FilteredImageSource(src.getSource(), cropfilter)
