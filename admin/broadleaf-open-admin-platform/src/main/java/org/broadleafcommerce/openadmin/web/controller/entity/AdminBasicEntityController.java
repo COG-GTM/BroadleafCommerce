@@ -33,6 +33,7 @@ import org.broadleafcommerce.common.sandbox.SandBoxHelper;
 import org.broadleafcommerce.common.service.GenericEntityService;
 import org.broadleafcommerce.common.util.BLCArrayUtils;
 import org.broadleafcommerce.common.util.BLCMessageUtils;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.JsonResponse;
 import org.broadleafcommerce.openadmin.dto.AdornedTargetCollectionMetadata;
@@ -419,6 +420,7 @@ public class AdminBasicEntityController extends AdminAbstractController {
                 .getDynamicResultSet()
                 .getClassMetaData();
 
+        bindEntityFormToSection(entityForm, cmd, null);
         extractDynamicFormFields(cmd, entityForm);
         String[] sectionCriteria = customCriteriaService.mergeSectionCustomCriteria(
                 sectionClassName, getSectionCustomCriteria()
@@ -739,6 +741,7 @@ public class AdminBasicEntityController extends AdminAbstractController {
         PersistencePackageRequest ppr = getSectionPersistencePackageRequest(sectionClassName, sectionCrumbs, pathVars);
         ClassMetadata cmd = service.getClassMetadata(ppr).getDynamicResultSet().getClassMetaData();
 
+        bindEntityFormToSection(entityForm, cmd, id);
         extractDynamicFormFields(cmd, entityForm);
 
         String[] sectionCriteria = customCriteriaService.mergeSectionCustomCriteria(
@@ -771,6 +774,40 @@ public class AdminBasicEntityController extends AdminAbstractController {
         ra.addFlashAttribute("headerFlash", "save.successful");
 
         return "redirect:/" + sectionKey + "/" + id;
+    }
+
+    /**
+     * The submitted form carries the ceiling entity, entity type and id that will be persisted, but authorization is
+     * granted for the section in the URL. Tie the form to that section: the ceiling always comes from the section's
+     * metadata, the entity type has to belong to that ceiling's hierarchy and the id has to match the URL.
+     */
+    protected void bindEntityFormToSection(EntityForm entityForm, ClassMetadata sectionMetadata, String id)
+            throws SecurityServiceException {
+        String ceilingType = sectionMetadata.getCeilingType();
+        entityForm.setCeilingEntityClassname(ceilingType);
+
+        String entityType = entityForm.getEntityType();
+        if (StringUtils.isNotBlank(entityType) && !entityType.equals(ceilingType)
+                && !isEntityTypeOfCeiling(entityType, ceilingType, sectionMetadata)) {
+            throw new SecurityServiceException("Entity type (" + StringUtil.sanitize(entityType)
+                    + ") is not valid for the requested section (" + StringUtil.sanitize(ceilingType) + ")");
+        }
+
+        if (id != null) {
+            entityForm.setId(id);
+        }
+    }
+
+    protected boolean isEntityTypeOfCeiling(String entityType, String ceilingType, ClassMetadata sectionMetadata) {
+        if (sectionMetadata.getPolymorphicEntities() != null
+                && sectionMetadata.getPolymorphicEntities().find(entityType) != null) {
+            return true;
+        }
+        try {
+            return Class.forName(ceilingType).isAssignableFrom(Class.forName(entityType));
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 
     protected void modifyEntityForm(
@@ -827,6 +864,10 @@ public class AdminBasicEntityController extends AdminAbstractController {
         String sectionKey = getSectionKey(pathVars);
         String sectionClassName = getClassNameForSection(sectionKey);
         List<SectionCrumb> sectionCrumbs = getSectionCrumbs(request, sectionKey, id);
+        ClassMetadata sectionMetadata = service.getClassMetadata(
+                getSectionPersistencePackageRequest(sectionClassName, sectionCrumbs, pathVars)
+        ).getDynamicResultSet().getClassMetaData();
+        bindEntityFormToSection(entityForm, sectionMetadata, id);
 
         String[] sectionCriteria = customCriteriaService.mergeSectionCustomCriteria(
                 sectionClassName, getSectionCustomCriteria()

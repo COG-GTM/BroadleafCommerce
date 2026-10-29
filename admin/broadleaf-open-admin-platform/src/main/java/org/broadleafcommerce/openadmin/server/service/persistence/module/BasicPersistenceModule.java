@@ -834,6 +834,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             if (primaryKey == null) {
                 primaryKey = getPrimaryKey(entity, mergedProperties);
             }
+            validateEntityTypeForCeiling(persistencePackage, entities);
             Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(Class.forName(entity.getType()[0]), primaryKey);
 
             Assert.isTrue(instance != null, "Entity not found");
@@ -868,6 +869,35 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             }
         } catch (Exception e) {
             throw new ServiceException("Problem updating entity : " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * The metadata used to populate a record comes from the package's ceiling, while the record itself is loaded or
+     * instantiated from the entity type. Both arrive on the request, so make sure the entity type actually belongs to
+     * the ceiling's hierarchy before touching the record.
+     */
+    protected void validateEntityTypeForCeiling(PersistencePackage persistencePackage, Class<?>[] polymorphicEntities)
+            throws ClassNotFoundException, SecurityServiceException {
+        String ceilingClassname = persistencePackage.getCeilingEntityFullyQualifiedClassname();
+        String[] types = persistencePackage.getEntity().getType();
+        String entityType = ArrayUtils.isEmpty(types) ? null : types[0];
+        if (StringUtils.isBlank(entityType) || StringUtils.isBlank(ceilingClassname)) {
+            throw new SecurityServiceException("Entity type and ceiling entity must be specified");
+        }
+        if (entityType.equals(ceilingClassname)) {
+            return;
+        }
+        if (polymorphicEntities != null) {
+            for (Class<?> polymorphicEntity : polymorphicEntities) {
+                if (polymorphicEntity.getName().equals(entityType)) {
+                    return;
+                }
+            }
+        }
+        if (!Class.forName(ceilingClassname).isAssignableFrom(Class.forName(entityType))) {
+            throw new SecurityServiceException("Entity type (" + StringUtil.sanitize(entityType)
+                    + ") is not a member of the ceiling entity (" + StringUtil.sanitize(ceilingClassname) + ")");
         }
     }
 
@@ -1110,7 +1140,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
                 //don't do anything - this is a valid case
             }
             if (primaryKey == null) {
-
+                validateEntityTypeForCeiling(persistencePackage, entities);
                 Serializable instance = (Serializable) Class.forName(entity.getType()[0]).newInstance();
 
                 instance = createPopulatedInstance(instance, entity, mergedProperties, false);
@@ -1164,6 +1194,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             );
             Map<String, FieldMetadata> mergedProperties = filterOutCollectionMetadata(mergedUnfilteredProperties);
             Object primaryKey = getPrimaryKey(entity, mergedProperties);
+            validateEntityTypeForCeiling(persistencePackage, entities);
             Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(Class.forName(entity.getType()[0]), primaryKey);
 
             Assert.isTrue(instance != null, "Entity not found");
