@@ -42,6 +42,7 @@ import org.broadleafcommerce.openadmin.dto.PersistencePackage;
 import org.broadleafcommerce.openadmin.dto.PersistencePerspective;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.dto.SimpleValueMapStructure;
+import org.broadleafcommerce.openadmin.server.service.persistence.EntityTypeValidator;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.criteria.FilterMapping;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.RequiredPropertyValidator;
 import org.hibernate.mapping.PersistentClass;
@@ -211,8 +212,8 @@ public class MapStructurePersistenceModule extends BasicPersistenceModule {
                 throw new ServiceException("\"" + mapKey + "\" is a reserved property name.");
             }
 
-            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(Class.forName(entity.getType()
-                    [0]), Long.valueOf(entity.findProperty("symbolicId").getValue()));
+            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(EntityTypeValidator.resolveEntityClass(persistencePackage),
+                    Long.valueOf(entity.findProperty("symbolicId").getValue()));
 
             Assert.isTrue(instance != null, "Entity not found");
 
@@ -354,7 +355,7 @@ public class MapStructurePersistenceModule extends BasicPersistenceModule {
             }
 
             Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(
-                    Class.forName(entity.getType()[0]),
+                    EntityTypeValidator.resolveEntityClass(persistencePackage),
                     Long.valueOf(entity.findProperty("symbolicId").getValue())
             );
 
@@ -494,7 +495,7 @@ public class MapStructurePersistenceModule extends BasicPersistenceModule {
             }
 
             Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(
-                    Class.forName(entity.getType()[0]),
+                    EntityTypeValidator.resolveEntityClass(persistencePackage),
                     Long.valueOf(entity.findProperty("symbolicId").getValue())
             );
 

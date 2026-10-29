@@ -513,6 +513,19 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
         return resultSet;
     }
 
+    /**
+     * Rejects packages (and sub packages) whose entity type is not the ceiling entity or one of its subtypes, since
+     * security checks are performed against the ceiling entity.
+     */
+    protected void validateEntityTypes(PersistencePackage persistencePackage) throws ServiceException {
+        EntityTypeValidator.validate(persistencePackage);
+        if (!MapUtils.isEmpty(persistencePackage.getSubPackages())) {
+            for (PersistencePackage subPackage : persistencePackage.getSubPackages().values()) {
+                validateEntityTypes(subPackage);
+            }
+        }
+    }
+
     @Override
     public PersistenceResponse add(PersistencePackage persistencePackage) throws ServiceException {
         for (PersistenceManagerEventHandler handler : persistenceManagerEventHandlers) {
@@ -521,6 +534,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypes(persistencePackage);
         //check to see if there is a custom handler registered
         //execute the root PersistencePackage
         Entity response;
@@ -750,6 +764,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypes(persistencePackage);
         //check to see if there is a custom handler registered
         //execute the root PersistencePackage
         Entity response;
@@ -905,6 +920,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypes(persistencePackage);
         //check to see if there is a custom handler registered
         for (CustomPersistenceHandler handler : getCustomPersistenceHandlers()) {
             if (handler.canHandleRemove(persistencePackage)) {

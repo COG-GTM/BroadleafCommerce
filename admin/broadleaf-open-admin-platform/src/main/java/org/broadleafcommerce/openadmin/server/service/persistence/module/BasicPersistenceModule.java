@@ -62,6 +62,7 @@ import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.dto.SortDirection;
 import org.broadleafcommerce.openadmin.server.dao.provider.metadata.AdvancedCollectionFieldMetadataProvider;
 import org.broadleafcommerce.openadmin.server.service.ValidationException;
+import org.broadleafcommerce.openadmin.server.service.persistence.EntityTypeValidator;
 import org.broadleafcommerce.openadmin.server.service.persistence.ParentEntityPersistenceException;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceException;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManager;
@@ -834,7 +835,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             if (primaryKey == null) {
                 primaryKey = getPrimaryKey(entity, mergedProperties);
             }
-            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(EntityTypeValidator.resolveEntityClass(persistencePackage), primaryKey);
 
             Assert.isTrue(instance != null, "Entity not found");
 
@@ -1111,7 +1112,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             }
             if (primaryKey == null) {
 
-                Serializable instance = (Serializable) Class.forName(entity.getType()[0]).newInstance();
+                Serializable instance = (Serializable) EntityTypeValidator.resolveEntityClass(persistencePackage).newInstance();
 
                 instance = createPopulatedInstance(instance, entity, mergedProperties, false);
 
@@ -1164,7 +1165,7 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             );
             Map<String, FieldMetadata> mergedProperties = filterOutCollectionMetadata(mergedUnfilteredProperties);
             Object primaryKey = getPrimaryKey(entity, mergedProperties);
-            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Serializable instance = persistenceManager.getDynamicEntityDao().retrieve(EntityTypeValidator.resolveEntityClass(persistencePackage), primaryKey);
 
             Assert.isTrue(instance != null, "Entity not found");
 
