@@ -30,10 +30,19 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -45,8 +54,13 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider implemen
     @jakarta.annotation.Resource(name = "blMergedCacheConfigLocations")
     protected Set<String> mergedCacheConfigLocations;
 
-    protected URI cacheManagerUri = new File(System.getProperty("java.io.tmpdir"), "broadleaf-merged-jcache.xml")
-            .toURI();
+    protected static final String MERGED_CONFIG_FILE_NAME = "broadleaf-merged-jcache.xml";
+
+    /**
+     * Location of the merged Ehcache configuration. When not set, a file inside a freshly created, owner-only
+     * directory under {@code java.io.tmpdir} is used so that other local users cannot predict or pre-create it.
+     */
+    protected URI cacheManagerUri;
 
     protected List<Resource> configLocations;
 
@@ -58,8 +72,29 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider implemen
     }
 
     @Override
-    public URI getJCacheUri() {
+    public synchronized URI getJCacheUri() {
+        if (cacheManagerUri == null) {
+            try {
+                cacheManagerUri = createPrivateMergeDirectory().resolve(MERGED_CONFIG_FILE_NAME).toFile().toURI();
+            } catch (IOException e) {
+                throw new IllegalStateException("Unable to create a private directory for the merged JCache configuration", e);
+            }
+        }
         return cacheManagerUri;
+    }
+
+    protected Path createPrivateMergeDirectory() throws IOException {
+        Path dir;
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            FileAttribute<?> ownerOnly = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"));
+            dir = Files.createTempDirectory("broadleaf-jcache", ownerOnly);
+        } else {
+            dir = Files.createTempDirectory("broadleaf-jcache");
+        }
+        // deleteOnExit runs in reverse registration order: the file is removed before its directory
+        dir.toFile().deleteOnExit();
+        dir.resolve(MERGED_CONFIG_FILE_NAME).toFile().deleteOnExit();
+        return dir;
     }
 
     protected void mergeCacheLocations() throws IOException {
@@ -85,15 +120,25 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider implemen
     }
 
     protected File createTemporaryMergeXml(Resource mergedJcacheResource) throws FileNotFoundException, IOException {
-        File file = new File(getJCacheUri());
-        if (!file.exists()) {
-            file.getParentFile().mkdirs();
-            file.createNewFile();
+        Path target = Paths.get(getJCacheUri());
+        Path parent = target.toAbsolutePath().getParent();
+        if (!Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) {
+            Files.createDirectories(parent);
         }
-        try (OutputStream outputStream = new FileOutputStream(file)) {
-            IOUtils.copy(mergedJcacheResource.getInputStream(), outputStream);
+        // Write to a uniquely named owner-only file (created with CREATE_NEW, so it never follows a planted link)
+        // and atomically rename it over the target; a symlink at the target is replaced, not followed.
+        Path staging = Files.createTempFile(parent, ".broadleaf-jcache-", ".xml");
+        try {
+            try (InputStream in = mergedJcacheResource.getInputStream();
+                    OutputStream out = Files.newOutputStream(staging, StandardOpenOption.WRITE,
+                            StandardOpenOption.TRUNCATE_EXISTING, LinkOption.NOFOLLOW_LINKS)) {
+                IOUtils.copy(in, out);
+            }
+            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(staging);
         }
-        return file;
+        return target.toFile();
     }
 
     @Override
