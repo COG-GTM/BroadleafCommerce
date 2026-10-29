@@ -34,7 +34,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -67,7 +66,7 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
     protected static final String[] NON_ENTITY_TYPE_PREFIXES = {"java.", "javax.", "jakarta.", "org.hibernate."};
     /**
      * Names of the registered entity classes, the application supertypes/interfaces in their hierarchy, and the
-     * entity bean ids. {@link #validateEntityClassName(String)} checks untrusted names against this set before
+     * entity bean ids whose bean type is one of those entity classes. {@link #validateEntityClassName(String)} checks untrusted names against this set before
      * anything is resolved reflectively.
      */
     private final Set<String> ALLOWED_ENTITY_NAMES = ConcurrentHashMap.newKeySet();
@@ -114,7 +113,6 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
     }
 
     protected void initializeEntityManagerCache() {
-        registerEntityBeanNames();
         for (Map<String, Map<String, Object>> targetModeMap : targetModeMaps) {
             for (final String targetMode : targetModeMap.keySet()) {
                 final Map<String, Object> managerMap = targetModeMap.get(targetMode);
@@ -127,6 +125,7 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
                 }, RuntimeException.class, getTransactionManager(managerMap));
             }
         }
+        registerEntityBeanNames();
     }
 
     protected void populateCaches(String targetMode, Map<String, Object> managerMap) {
@@ -148,14 +147,30 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
         TRANSACTION_MANAGER_CACHE.put(managerCacheKey, txManager);
     }
 
+    /**
+     * Allows the entity bean ids whose bean type is a registered entity type. Must run after the entity types have
+     * been registered. Bean types are read from the definitions, so no bean is instantiated.
+     */
     protected void registerEntityBeanNames() {
         if (entityConfiguration == null) {
             return;
         }
         String[] beanNames = entityConfiguration.getEntityBeanNames();
-        if (beanNames != null) {
-            Collections.addAll(ALLOWED_ENTITY_NAMES, beanNames);
+        if (beanNames == null) {
+            return;
         }
+        Set<String> entityBeanNames = new HashSet<>();
+        for (String beanName : beanNames) {
+            try {
+                Class<?> beanType = entityConfiguration.getEntityBeanType(beanName);
+                if (beanType != null && ALLOWED_ENTITY_NAMES.contains(beanType.getName())) {
+                    entityBeanNames.add(beanName);
+                }
+            } catch (RuntimeException e) {
+                LOG.debug("Unable to determine the type of entity bean " + beanName, e);
+            }
+        }
+        ALLOWED_ENTITY_NAMES.addAll(entityBeanNames);
     }
 
     protected void registerEntityTypeNames(Class<?> mappedClass) {

@@ -46,19 +46,23 @@ public class PersistenceServiceImplTest {
     private static final String ENTITY_BEAN_ID = PREFIX + "FakeEntity";
     private static final String ENTITY_IMPL = PREFIX + "FakeEntityImpl";
     private static final String BROKEN_BEAN_ID = "brokenEntityBean";
+    private static final String NON_ENTITY_BEAN_ID = "nonEntityConfigBean";
 
     private RecordingPersistenceService service;
+    private StubEntityConfiguration entityConfiguration;
 
     @Before
     public void setUp() {
         System.clearProperty(CANARY_PROPERTY);
         System.clearProperty(LOOKUP_CANARY_PROPERTY);
         service = new RecordingPersistenceService();
-        service.entityConfiguration = new StubEntityConfiguration();
-        service.registerEntityBeanNames();
+        entityConfiguration = new StubEntityConfiguration();
+        service.entityConfiguration = entityConfiguration;
         service.registerEntity(TargetModeType.SANDBOX.getType(), FakeEntityImpl.class,
                 proxy(EntityManager.class), proxy(PlatformTransactionManager.class));
+        service.registerEntityBeanNames();
         service.resolvedNames.clear();
+        entityConfiguration.lookedUpBeanIds.clear();
     }
 
     @After
@@ -89,6 +93,14 @@ public class PersistenceServiceImplTest {
         assertFalse(service.validateEntityClassName("java.io.Serializable"));
         assertFalse(service.validateEntityClassName(""));
         assertFalse(service.validateEntityClassName(null));
+        assertTrue(service.resolvedNames.isEmpty());
+    }
+
+    @Test
+    public void nonEntityBeanIsRejectedWithoutBeingInstantiated() {
+        assertFalse(service.validateEntityClassName(NON_ENTITY_BEAN_ID));
+
+        assertTrue("bean must not be created", entityConfiguration.lookedUpBeanIds.isEmpty());
         assertTrue(service.resolvedNames.isEmpty());
     }
 
@@ -132,8 +144,11 @@ public class PersistenceServiceImplTest {
 
     private static class StubEntityConfiguration extends EntityConfiguration {
 
+        private final List<String> lookedUpBeanIds = new ArrayList<>();
+
         @Override
         public Class<?> lookupEntityClass(String beanId) {
+            lookedUpBeanIds.add(beanId);
             if (ENTITY_BEAN_ID.equals(beanId)) {
                 return FakeEntityImpl.class;
             }
@@ -145,7 +160,15 @@ public class PersistenceServiceImplTest {
 
         @Override
         public String[] getEntityBeanNames() {
-            return new String[]{ENTITY_BEAN_ID, BROKEN_BEAN_ID};
+            return new String[]{ENTITY_BEAN_ID, BROKEN_BEAN_ID, NON_ENTITY_BEAN_ID};
+        }
+
+        @Override
+        public Class<?> getEntityBeanType(String beanId) {
+            if (NON_ENTITY_BEAN_ID.equals(beanId)) {
+                return StringBuilder.class;
+            }
+            return FakeEntityImpl.class;
         }
     }
 
