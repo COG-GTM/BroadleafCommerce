@@ -21,6 +21,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.text.StringEscapeUtils;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.core.catalog.domain.Sku;
@@ -140,11 +141,11 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
                 String trackerName = tracker.getKey();
                 String trackerPrefix = "";
                 String id = tracker.getValue();
-                sb.append("ga('create', '" + id + "', 'auto', {");
+                sb.append("ga('create', '" + escapeJs(id) + "', 'auto', {");
 
                 if (!"webProperty".equals(trackerName)) {
                     trackerPrefix = trackerName + ".";
-                    sb.append("'name': '" + trackerName + "'");
+                    sb.append("'name': '" + escapeJs(trackerName) + "'");
                     if (testLocal) {
                         sb.append(",");
                     }
@@ -244,16 +245,16 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
         sb.append("ga('" + trackerPrefix + "require', 'ecommerce', 'ecommerce.js');");
 
         sb.append("ga('" + trackerPrefix + "ecommerce:addTransaction', {");
-        sb.append("'id': '" + order.getOrderNumber() + "'");
+        sb.append("'id': '" + escapeJs(order.getOrderNumber()) + "'");
         if (StringUtils.isNotBlank(getAffiliation())) {
-            sb.append(",'affiliation': '" + getAffiliation() + "'");
+            sb.append(",'affiliation': '" + escapeJs(getAffiliation()) + "'");
         }
-        sb.append(",'revenue': '" + order.getTotal() + "'");
-        sb.append(",'shipping':'" + order.getTotalShipping() + "'");
-        sb.append(",'tax': '" + order.getTotalTax() + "'");
+        sb.append(",'revenue': '" + escapeJs(order.getTotal()) + "'");
+        sb.append(",'shipping':'" + escapeJs(order.getTotalShipping()) + "'");
+        sb.append(",'tax': '" + escapeJs(order.getTotalTax()) + "'");
 
         if (order.getCurrency() != null) {
-            sb.append(",'currency': '" + order.getCurrency().getCurrencyCode() + "'");
+            sb.append(",'currency': '" + escapeJs(order.getCurrency().getCurrencyCode()) + "'");
         }
         sb.append("});");
 
@@ -274,12 +275,12 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
                     if (SkuAccessor.class.isAssignableFrom(orderItem.getClass())) {
                         Sku sku = ((SkuAccessor) orderItem).getSku();
                         sb.append("ga('" + trackerPrefix + "ecommerce:addItem', {");
-                        sb.append("'id': '" + order.getOrderNumber() + "'");
-                        sb.append(",'name': '" + sku.getName() + "'");
-                        sb.append(",'sku': '" + sku.getId() + "'");
-                        sb.append(",'category': '" + getVariation(orderItem) + "'");
-                        sb.append(",'price': '" + orderItem.getAveragePrice() + "'");
-                        sb.append(",'quantity': '" + orderItem.getQuantity() + "'");
+                        sb.append("'id': '" + escapeJs(order.getOrderNumber()) + "'");
+                        sb.append(",'name': '" + escapeJs(sku.getName()) + "'");
+                        sb.append(",'sku': '" + escapeJs(sku.getId()) + "'");
+                        sb.append(",'category': '" + escapeJs(getVariation(orderItem)) + "'");
+                        sb.append(",'price': '" + escapeJs(orderItem.getAveragePrice()) + "'");
+                        sb.append(",'quantity': '" + escapeJs(orderItem.getQuantity()) + "'");
                         sb.append("});");
                     }
                 }
@@ -307,6 +308,19 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
 
         //the result has a space at the end, ensure that is stripped out
         return result.substring(0, result.length() - 1);
+    }
+
+    /**
+     * Escapes a value for use inside a single- or double-quoted JavaScript string literal that is emitted into an
+     * inline {@code <script>} element. Angle brackets are also encoded so the value cannot close the script element.
+     */
+    protected String escapeJs(Object value) {
+        if (value == null) {
+            return "";
+        }
+        return StringEscapeUtils.escapeEcmaScript(String.valueOf(value))
+                .replace("<", "\\u003C")
+                .replace(">", "\\u003E");
     }
 
     public String getMasterWebPropertyId() {
