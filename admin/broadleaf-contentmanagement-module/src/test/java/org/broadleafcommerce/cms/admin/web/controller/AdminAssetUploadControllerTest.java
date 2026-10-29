@@ -131,19 +131,21 @@ public class AdminAssetUploadControllerTest {
     }
 
     @Test
-    public void testUploadWithSectionUpdatePermissionIsAllowed() throws Exception {
+    public void testUploadWithOnlySectionUpdatePermissionIsForbidden() throws Exception {
         grants.add(PRODUCT_CLASS + ":" + EntityOperationType.UPDATE);
         ResponseEntity<Map<String, Object>> response = controller.upload(
                 new MockHttpServletRequest(), file, "product", "1");
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertTrue(serviceCalls.isEmpty());
     }
 
     @Test
     public void testAssetSectionUploadRequiresAssetCreatePermission() throws Exception {
-        grants.add("assets:" + EntityOperationType.UPDATE);
+        grants.add(StaticAssetImpl.class.getName() + ":" + EntityOperationType.UPDATE);
         ResponseEntity<Map<String, Object>> response = controller.upload(
-                new MockHttpServletRequest(), file, AdminAssetController.SECTION_KEY, "1");
+                new MockHttpServletRequest(), file, StaticAssetImpl.class.getName(), "1");
         assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertTrue(serviceCalls.isEmpty());
     }
 
     @Test
