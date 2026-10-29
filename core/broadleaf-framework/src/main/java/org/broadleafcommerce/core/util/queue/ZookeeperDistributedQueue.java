@@ -871,31 +871,58 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     }
 
     /**
-     * {@link ZookeeperUtil#makePath} leaves existing nodes untouched, so queue folders created before restrictive ACLs were
-     * configured would otherwise stay world-writable.  This replaces a world-accessible ACL on the queue's folders with
-     * {@link #getAcls()} when those are restrictive.
+     * {@link ZookeeperUtil#makePath} leaves existing nodes untouched, so a queue created before restrictive ACLs were
+     * configured would otherwise stay world-writable.  When {@link #getAcls()} is restrictive, this replaces a
+     * world-accessible ACL on the queue's folders and on the entries and configs already in them.
      */
     protected void restrictExistingFolderAcls() throws InterruptedException {
         if (isWorldAccessible(getAcls())) {
             return;
         }
-        for (final String folder : Arrays.asList(getQueueFolderPath(), getQueueEntryFolder(), getLocksFolder(), getConfigsFolder())) {
-            executeOperation(new GenericOperation<Void>() {
+        for (String folder : Arrays.asList(getQueueFolderPath(), getQueueEntryFolder(), getLocksFolder(), getConfigsFolder())) {
+            restrictIfWorldAccessible(folder);
+        }
+        for (final String folder : Arrays.asList(getQueueEntryFolder(), getConfigsFolder())) {
+            List<String> children = executeOperation(new GenericOperation<List<String>>() {
                 @Override
-                public Void execute() throws Exception {
-                    if (isWorldAccessible(getZookeeperClient().getACL(folder, null))) {
-                        LOG.warn("Replacing the world-accessible ACL on the existing Zookeeper queue folder " + folder);
-                        try {
-                            getZookeeperClient().setACL(folder, getAcls(), -1);
-                        } catch (KeeperException.NoAuthException e) {
-                            throw new DistributedQueueException("Restrictive ACLs are configured, but the existing Zookeeper queue folder "
-                                    + folder + " is world-accessible and this client is not allowed to change its ACL.", e);
-                        }
-                    }
-                    return null;
+                public List<String> execute() throws Exception {
+                    return getZookeeperClient().getChildren(folder, false);
                 }
             });
+            for (String child : children) {
+                restrictIfWorldAccessible(folder + '/' + child);
+            }
         }
+    }
+
+    protected void restrictIfWorldAccessible(final String path) throws InterruptedException {
+        executeOperation(new GenericOperation<Void>() {
+            @Override
+            public Void execute() throws Exception {
+                List<ACL> current;
+                try {
+                    current = getZookeeperClient().getACL(path, null);
+                } catch (KeeperException.NoNodeException e) {
+                    //Consumed by another reader.
+                    return null;
+                } catch (KeeperException.NoAuthException e) {
+                    //Not readable by this client, so it is not readable by anyone either.
+                    return null;
+                }
+                if (isWorldAccessible(current)) {
+                    LOG.warn("Replacing the world-accessible ACL on the existing Zookeeper queue node " + path);
+                    try {
+                        getZookeeperClient().setACL(path, getAcls(), -1);
+                    } catch (KeeperException.NoNodeException e) {
+                        //Consumed by another reader.
+                    } catch (KeeperException.NoAuthException e) {
+                        throw new DistributedQueueException("Restrictive ACLs are configured, but the existing Zookeeper queue node "
+                                + path + " is world-accessible and this client is not allowed to change its ACL.", e);
+                    }
+                }
+                return null;
+            }
+        });
     }
 
     protected static boolean isWorldAccessible(List<ACL> acls) {

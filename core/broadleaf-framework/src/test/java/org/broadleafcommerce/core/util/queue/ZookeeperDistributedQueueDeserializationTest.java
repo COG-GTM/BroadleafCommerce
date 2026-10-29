@@ -23,8 +23,10 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
+import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 import org.broadleafcommerce.core.search.service.solr.indexer.CatalogReindexCommand;
 import org.broadleafcommerce.core.search.service.solr.indexer.DefaultSolrIndexQueueProvider;
 import org.broadleafcommerce.core.search.service.solr.indexer.FullReindexCommand;
@@ -338,6 +340,8 @@ public class ZookeeperDistributedQueueDeserializationTest {
                 DefaultSolrIndexQueueProvider.QUEUE_PATH + '/' + queueName, zk, 500
         );
         assertEquals(ZooDefs.Ids.OPEN_ACL_UNSAFE, zk.getACL(legacy.getQueueEntryFolder(), null));
+        assertTrue(legacy.offer(new CatalogReindexCommand(9L)));
+        String pendingEntry = legacy.getQueueEntryFolder() + '/' + zk.getChildren(legacy.getQueueEntryFolder(), null).get(0);
 
         ZooKeeper appClient = newClient();
         MockEnvironment env = new MockEnvironment()
@@ -347,7 +351,7 @@ public class ZookeeperDistributedQueueDeserializationTest {
         String entryFolder = entryFolder(queue);
         assertEquals(legacy.getQueueEntryFolder(), entryFolder);
 
-        for (String folder : Arrays.asList(legacy.getQueueFolderPath(), entryFolder)) {
+        for (String folder : Arrays.asList(legacy.getQueueFolderPath(), entryFolder, pendingEntry)) {
             List<ACL> acls = appClient.getACL(folder, null);
             assertEquals(folder, 1, acls.size());
             assertEquals(folder, "digest", acls.get(0).getId().getScheme());
@@ -359,6 +363,35 @@ public class ZookeeperDistributedQueueDeserializationTest {
         } catch (KeeperException.NoAuthException expected) {
             // expected
         }
+        try {
+            newClient().setData(pendingEntry, serialize(FullReindexCommand.DEFAULT_INSTANCE), -1);
+            fail("An unauthenticated client must not be able to alter entries that were pending before the upgrade.");
+        } catch (KeeperException.NoAuthException expected) {
+            // expected
+        }
+        assertEquals(new CatalogReindexCommand(9L), ((BlockingQueue<?>) queue).poll());
+
+    }
+
+    @Test
+    public void restrictedQueuesDoNotRequireAdminPermission() throws Exception {
+        String path = DefaultSolrIndexQueueProvider.QUEUE_PATH + "/least-privilege-" + UUID.randomUUID();
+        ZooKeeper administrator = newClient();
+        administrator.addAuthInfo("digest", "admin:pw".getBytes());
+        List<ACL> leastPrivilege = Arrays.asList(
+                new ACL(ZooDefs.Perms.ALL, new Id("digest", DigestAuthenticationProvider.generateDigest("admin:pw"))),
+                new ACL(ZooDefs.Perms.READ | ZooDefs.Perms.WRITE | ZooDefs.Perms.CREATE | ZooDefs.Perms.DELETE,
+                        new Id("digest", DigestAuthenticationProvider.generateDigest("broadleaf:s3cret"))));
+        new ZookeeperDistributedQueue<SolrUpdateCommand>(path, administrator, 500, true, leastPrivilege);
+
+        ZooKeeper indexer = newClient();
+        indexer.addAuthInfo("digest", "broadleaf:s3cret".getBytes());
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>(
+                path, indexer, 500, true, ZooDefs.Ids.CREATOR_ALL_ACL
+        );
+        assertTrue(queue.offer(new CatalogReindexCommand(3L)));
+        assertEquals(new CatalogReindexCommand(3L), queue.poll());
+        assertEquals(leastPrivilege.size(), administrator.getACL(queue.getQueueEntryFolder(), null).size());
     }
 
     @Test
