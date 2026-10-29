@@ -214,7 +214,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
         OrderPayment tempOrderPayment = orderPaymentService.create();
         tempOrderPayment.setType(PaymentType.CREDIT_CARD);
         tempOrderPayment.setPaymentGatewayType(PaymentGatewayType.TEMPORARY);
-        tempOrderPayment.setBillingAddress(paymentForm.getAddress());
+        tempOrderPayment.setBillingAddress(addressService.copyAddress(paymentForm.getAddress()));
         tempOrderPayment.setOrder(cart);
         cart.getPayments().add(tempOrderPayment);
     }
