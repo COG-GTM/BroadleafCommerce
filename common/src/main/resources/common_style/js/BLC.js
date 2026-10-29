@@ -171,13 +171,17 @@ var BLC = (function($) {
                 }
             }
             if (typeof FormData != 'undefined' && options.data instanceof FormData) {
-                if (!options.data.has('csrfToken')) {
+                // FormData.has is missing in some older browsers (e.g. IE11); a duplicate token field is harmless
+                var formDataHas = function(name) {
+                    return typeof options.data.has == 'function' && options.data.has(name);
+                };
+                if (!formDataHas('csrfToken')) {
                     var csrfToken = getCsrfToken();
                     if (csrfToken != null) {
                         options.data.append('csrfToken', csrfToken);
                     }
                 }
-                if (!options.data.has('stateVersionToken')) {
+                if (!formDataHas('stateVersionToken')) {
                     var stateVersionToken = getStateVersionToken();
                     if (stateVersionToken != null) {
                         options.data.append('stateVersionToken', stateVersionToken);
