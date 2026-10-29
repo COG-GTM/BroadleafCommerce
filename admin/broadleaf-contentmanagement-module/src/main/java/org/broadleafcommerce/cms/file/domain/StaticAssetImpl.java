@@ -29,7 +29,9 @@ import org.broadleafcommerce.common.locale.domain.LocaleImpl;
 import org.broadleafcommerce.common.persistence.IdOverrideTableGenerator;
 import org.broadleafcommerce.common.presentation.AdminPresentation;
 import org.broadleafcommerce.common.presentation.AdminPresentationMap;
+import org.broadleafcommerce.common.presentation.ConfigurationItem;
 import org.broadleafcommerce.common.presentation.RequiredOverride;
+import org.broadleafcommerce.common.presentation.ValidationConfiguration;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
 import org.broadleafcommerce.common.presentation.override.AdminPresentationMergeEntry;
 import org.broadleafcommerce.common.presentation.override.AdminPresentationMergeOverride;
@@ -154,6 +156,11 @@ public class StaticAssetImpl implements StaticAsset, AdminMainEntity, StaticAsse
 
     private static final long serialVersionUID = 6990685254640110350L;
 
+    /**
+     * Matches any full url that does not contain a parent directory ("..") segment.
+     */
+    public static final String FULL_URL_REGEX = "(?s)^(?!(.*[/\\\\])?\\.\\.([/\\\\].*)?$).*$";
+
     @Id
     @GeneratedValue(generator = "StaticAssetId")
     @GenericGenerator(
@@ -185,7 +192,14 @@ public class StaticAssetImpl implements StaticAsset, AdminMainEntity, StaticAsse
             gridOrder = 2000,
             requiredOverride = RequiredOverride.REQUIRED,
             fieldType = SupportedFieldType.ASSET_URL,
-            prominent = true)
+            prominent = true,
+            validationConfigurations = {
+                    @ValidationConfiguration(validationImplementation = "blRegexPropertyValidator",
+                            configurationItems = {
+                                    @ConfigurationItem(itemName = ConfigurationItem.ERROR_MESSAGE,
+                                            itemValue = "The URL must not contain \"..\" path segments"),
+                                    @ConfigurationItem(itemName = "regularExpression",
+                                            itemValue = StaticAssetImpl.FULL_URL_REGEX)})})
     protected String fullUrl;
 
     @Column(name = "TITLE", nullable = true)

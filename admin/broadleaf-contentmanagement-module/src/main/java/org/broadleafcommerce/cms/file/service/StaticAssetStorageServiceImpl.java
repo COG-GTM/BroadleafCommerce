@@ -33,6 +33,7 @@ import org.broadleafcommerce.cms.file.service.operation.NamedOperationManager;
 import org.broadleafcommerce.common.audit.Auditable;
 import org.broadleafcommerce.common.extension.ExtensionResultHolder;
 import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
+import org.broadleafcommerce.common.file.ResourcePathUtils;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 import org.broadleafcommerce.common.file.service.BroadleafFileService;
 import org.broadleafcommerce.common.file.service.GloballySharedInputStream;
@@ -194,8 +195,11 @@ public class StaticAssetStorageServiceImpl implements StaticAssetStorageService 
 
     @Override
     public Map<String, String> getCacheFileModel(String fullUrl, Map<String, String> parameterMap) throws Exception {
+        if (ResourcePathUtils.containsParentDirectorySegment(fullUrl)) {
+            throw new AssetNotFoundException("Unable to find an asset for the url (" + fullUrl + ")");
+        }
         StaticAsset staticAsset = findStaticAsset(fullUrl);
-        if (staticAsset == null) {
+        if (staticAsset == null || ResourcePathUtils.containsParentDirectorySegment(staticAsset.getFullUrl())) {
             throw new AssetNotFoundException("Unable to find an asset for the url (" + fullUrl + ")");
         }
         String mimeType = staticAsset.getMimeType();
