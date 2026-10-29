@@ -18,6 +18,7 @@
 package org.broadleafcommerce.openadmin.server.service;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.collections4.map.LRUMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -41,6 +42,7 @@ import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceMan
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManagerFactory;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceResponse;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceThreadManager;
+import org.broadleafcommerce.openadmin.web.form.entity.DynamicEntityFormInfo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -48,6 +50,7 @@ import org.springframework.transaction.TransactionDefinition;
 
 import java.lang.reflect.Constructor;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -175,6 +178,63 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         });
     }
 
+    /**
+     * Applies the AntiSamy policy to the root entity and, recursively, to every sub-package entity (e.g. the dynamic
+     * form fields of CMS pages and structured content), unless cleaning is disabled for the request or the ceiling
+     * entity is in the ignore list.
+     */
+    protected void cleanPersistencePackage(PersistencePackage persistencePackage) throws ServiceException {
+        if (!isShouldClean() || isIgnoredForCleaning(persistencePackage)) {
+            return;
+        }
+        cleanEntity(persistencePackage.getEntity());
+        cleanSubPackages(persistencePackage);
+    }
+
+    protected void cleanSubPackages(PersistencePackage persistencePackage) throws ServiceException {
+        if (MapUtils.isEmpty(persistencePackage.getSubPackages())) {
+            return;
+        }
+        for (PersistencePackage subPackage : persistencePackage.getSubPackages().values()) {
+            if (subPackage == null || isIgnoredForCleaning(subPackage)) {
+                continue;
+            }
+            if (subPackage.getEntity() != null) {
+                cleanEntity(subPackage.getEntity());
+            }
+            cleanSubPackages(subPackage);
+            propagateNestedValidationErrors(subPackage);
+        }
+    }
+
+    /**
+     * PersistenceManagerImpl only collects the validation errors of the root's direct sub-packages, so errors found on
+     * deeper sub-packages are copied up (keyed as {@code nestedKey|field}) to make the direct sub-package fail as well.
+     */
+    protected void propagateNestedValidationErrors(PersistencePackage subPackage) {
+        if (subPackage.getEntity() == null || MapUtils.isEmpty(subPackage.getSubPackages())) {
+            return;
+        }
+        for (Map.Entry<String, PersistencePackage> nested : subPackage.getSubPackages().entrySet()) {
+            Entity nestedEntity = nested.getValue() == null ? null : nested.getValue().getEntity();
+            if (nestedEntity == null || MapUtils.isEmpty(nestedEntity.getPropertyValidationErrors())) {
+                continue;
+            }
+            for (Map.Entry<String, List<String>> error : nestedEntity.getPropertyValidationErrors().entrySet()) {
+                for (String message : error.getValue()) {
+                    subPackage.getEntity().addValidationError(
+                            nested.getKey() + DynamicEntityFormInfo.FIELD_SEPARATOR + error.getKey(), message
+                    );
+                }
+            }
+        }
+    }
+
+    protected boolean isIgnoredForCleaning(PersistencePackage persistencePackage) {
+        return CollectionUtils.isNotEmpty(entitiesIgnoreList)
+                && entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname());
+    }
+
     protected void cleanEntity(Entity entity) throws ServiceException {
         Property currentProperty = null;
         for (Property property : entity.getProperties()) {
@@ -278,11 +338,7 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         return persistenceThreadManager.operation(TargetModeType.SANDBOX, persistencePackage, new Persistable<PersistenceResponse, ServiceException>() {
             @Override
             public PersistenceResponse execute() throws ServiceException {
-                boolean shouldClean = isShouldClean();
-                if (shouldClean && (CollectionUtils.isEmpty(entitiesIgnoreList) ||
-                        !entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname()))) {
-                    cleanEntity(persistencePackage.getEntity());
-                }
+                cleanPersistencePackage(persistencePackage);
                 try {
                     PersistenceManager persistenceManager = PersistenceManagerFactory.getPersistenceManager();
                     return persistenceManager.add(persistencePackage);
@@ -305,11 +361,7 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         return persistenceThreadManager.operation(TargetModeType.SANDBOX, persistencePackage, new Persistable<PersistenceResponse, ServiceException>() {
             @Override
             public PersistenceResponse execute() throws ServiceException {
-                boolean shouldClean = isShouldClean();
-                if (shouldClean && (CollectionUtils.isEmpty(entitiesIgnoreList) ||
-                        !entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname()))) {
-                    cleanEntity(persistencePackage.getEntity());
-                }
+                cleanPersistencePackage(persistencePackage);
                 try {
                     PersistenceManager persistenceManager = PersistenceManagerFactory.getPersistenceManager();
                     return persistenceManager.update(persistencePackage);

@@ -572,6 +572,9 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
 
             Map<String, List<String>> subPackageValidationErrors = new HashMap<>();
             for (Map.Entry<String, PersistencePackage> subPackage : persistencePackage.getSubPackages().entrySet()) {
+                if (isSubPackageValidationFailure(subPackage.getValue())) {
+                    continue;
+                }
                 Entity subResponse;
                 try {
                     subPackage.getValue().getCustomCriteria()[1] = idVal;
@@ -789,6 +792,9 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
 
         Map<String, List<String>> subPackageValidationErrors = new HashMap<>();
         for (Map.Entry<String, PersistencePackage> subPackage : persistencePackage.getSubPackages().entrySet()) {
+            if (isSubPackageValidationFailure(subPackage.getValue())) {
+                continue;
+            }
             try {
                 //Run through any subPackages -- add up any validation errors
                 checkHandler:
@@ -845,6 +851,15 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
         }
 
         return executePostUpdateHandlers(persistencePackage, new PersistenceResponse().withEntity(response));
+    }
+
+    /**
+     * A sub-package whose entity already failed validation before persistence (e.g. AntiSamy rejected one of its
+     * values) is not handed to its persistence handler, so the rejected values are never written. Its errors are still
+     * collected into the root response.
+     */
+    protected boolean isSubPackageValidationFailure(PersistencePackage subPackage) {
+        return subPackage.getEntity() != null && subPackage.getEntity().isValidationFailure();
     }
 
     protected void logValidationError(Entity response) {
