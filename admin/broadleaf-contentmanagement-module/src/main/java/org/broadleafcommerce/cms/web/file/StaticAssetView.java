@@ -20,6 +20,8 @@ package org.broadleafcommerce.cms.web.file;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.tika.mime.MediaType;
+import org.broadleafcommerce.cms.file.service.StaticAssetServiceImpl;
 import org.springframework.web.servlet.View;
 
 import java.io.BufferedInputStream;
@@ -42,6 +44,7 @@ public class StaticAssetView implements View {
 
     protected boolean browserAssetCachingEnabled = true;
     protected long cacheSeconds = 60 * 60 * 24;
+    protected boolean forceDownloadActiveContent = true;
 
     @Override
     public String getContentType() {
@@ -53,8 +56,12 @@ public class StaticAssetView implements View {
         String cacheFilePath = (String) model.get("cacheFilePath");
         BufferedInputStream bis = new BufferedInputStream(new FileInputStream(cacheFilePath));
         try {
-            String mimeType = (String) model.get("mimeType");
+            String mimeType = StringUtils.defaultIfBlank((String) model.get("mimeType"), MediaType.OCTET_STREAM.toString());
             response.setContentType(mimeType);
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            if (shouldForceDownload(mimeType)) {
+                response.setHeader("Content-Disposition", "attachment");
+            }
             if (!browserAssetCachingEnabled) {
                 response.setHeader("Cache-Control", "no-cache");
                 response.setHeader("Pragma", "no-cache");
@@ -109,6 +116,26 @@ public class StaticAssetView implements View {
                 //do nothing
             }
         }
+    }
+
+    /**
+     * Assets of a type that a browser renders as an active document (HTML, XML, SVG) are served as attachments so
+     * they cannot run script in the context of the site's origin when opened directly.
+     */
+    protected boolean shouldForceDownload(String mimeType) {
+        if (!forceDownloadActiveContent) {
+            return false;
+        }
+        MediaType type = MediaType.parse(mimeType);
+        return type == null || StaticAssetServiceImpl.isActiveContentType(type);
+    }
+
+    public boolean isForceDownloadActiveContent() {
+        return forceDownloadActiveContent;
+    }
+
+    public void setForceDownloadActiveContent(boolean forceDownloadActiveContent) {
+        this.forceDownloadActiveContent = forceDownloadActiveContent;
     }
 
     public boolean isBrowserAssetCachingEnabled() {

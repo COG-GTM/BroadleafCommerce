@@ -21,11 +21,14 @@ import org.broadleafcommerce.common.file.service.StaticAssetPathServiceImpl;
 import org.junit.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
+import static junit.framework.TestCase.assertEquals;
 import static junit.framework.TestCase.assertTrue;
 
 /**
@@ -187,6 +190,42 @@ public class StaticAssetServiceImplTest {
         assetService.validateFileExtension(upload("data.json", "{\"a\": 1}\n".getBytes(StandardCharsets.UTF_8)));
         assetService.validateFileExtension(upload("page.html", HTML_PAYLOAD.getBytes(StandardCharsets.UTF_8)));
         assetService.validateFileExtension(upload("img.png", resource("/testfile/img.png")));
+    }
+
+    @Test
+    public void testStoredMimeTypeComesFromContentNotName() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("image/png", assetService.resolveMimeType(stream(pngWithHtmlPayload()), "promo.html"));
+        assertEquals("image/png", assetService.resolveMimeType(stream(pngWithHtmlPayload()), "test.png"));
+    }
+
+    @Test
+    public void testStoredMimeTypeUsesNameSpecializationOfContentType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assertEquals("text/css", assetService.resolveMimeType(
+                stream("body { color: red; }\n".getBytes(StandardCharsets.UTF_8)), "site.css"));
+        assertEquals("image/jpeg", assetService.resolveMimeType(stream(JPEG_HEADER), "photo.jpg"));
+    }
+
+    @Test
+    public void testUndetectableContentIsNotStoredAsActiveType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        byte[] binary = {0x00, 0x01, 0x02, 0x03, (byte) 0xFE, (byte) 0xFD, 0x00, 0x7F, 0x10, 0x11};
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(binary), "promo.html"));
+        assertEquals("application/octet-stream", assetService.resolveMimeType(stream(binary), "promo.svg"));
+    }
+
+    @Test
+    public void testResolveMimeTypeResetsStream() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        byte[] png = resource("/testfile/img.png");
+        InputStream in = stream(png);
+        assetService.resolveMimeType(in, "img.png");
+        assertTrue(Arrays.equals(png, in.readAllBytes()));
+    }
+
+    private static InputStream stream(byte[] content) {
+        return new ByteArrayInputStream(content);
     }
 
     private static final String HTML_PAYLOAD = "<html><body><script>alert(document.cookie)</script></body></html>";

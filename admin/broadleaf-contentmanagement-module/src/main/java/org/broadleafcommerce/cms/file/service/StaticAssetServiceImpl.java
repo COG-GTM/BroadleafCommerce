@@ -45,6 +45,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -121,6 +122,20 @@ public class StaticAssetServiceImpl implements StaticAssetService {
      */
     protected MediaType detectContentType(MultipartFile file) {
         try (TikaInputStream stream = TikaInputStream.get(file.getBytes())) {
+            return detectContentType(stream);
+        } catch (IOException ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Detects the media type of a stream from its leading bytes only. The stream must support mark/reset; it is
+     * reset to its original position afterwards.
+     *
+     * @return the detected type, or null if detection failed or only yielded {@code application/octet-stream}
+     */
+    protected MediaType detectContentType(InputStream stream) {
+        try {
             MediaType detected = new Tika().getDetector().detect(stream, new Metadata());
             if (detected != null && !MediaType.OCTET_STREAM.equals(detected)) {
                 return MIME_TYPES.getMediaTypeRegistry().normalize(detected.getBaseType());
@@ -128,6 +143,43 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         } catch (IOException ignored) {
         }
         return null;
+    }
+
+    /**
+     * Resolves the MIME type to store for an asset. The type detected from the content wins; the more specific
+     * name-derived type is only used when it is a specialization of the detected type (e.g. {@code text/css} for
+     * {@code text/plain} content). When the content type cannot be detected, the name-derived type is used unless
+     * it is a type browsers render as an active document (HTML, XML, SVG), in which case
+     * {@code application/octet-stream} is stored.
+     */
+    protected String resolveMimeType(InputStream stream, String fileName) {
+        MediaType contentType = detectContentType(stream);
+        MediaType nameType = detectNameType(fileName);
+        if (contentType != null) {
+            if (nameType != null && MIME_TYPES.getMediaTypeRegistry().isInstanceOf(nameType, contentType)) {
+                return nameType.toString();
+            }
+            return contentType.toString();
+        }
+        if (nameType == null || isActiveContentType(nameType)) {
+            return MediaType.OCTET_STREAM.toString();
+        }
+        return nameType.toString();
+    }
+
+    /**
+     * Whether a browser navigating to a resource of this type would render it as a document able to run script.
+     */
+    public static boolean isActiveContentType(MediaType type) {
+        if (type == null) {
+            return false;
+        }
+        String baseType = type.getBaseType().toString().toLowerCase();
+        return baseType.contains("html")
+                || baseType.endsWith("+xml")
+                || baseType.equals("text/xml")
+                || baseType.equals("application/xml")
+                || baseType.equals("text/xsl");
     }
 
     protected MediaType detectNameType(String fileName) {
@@ -248,8 +300,8 @@ public class StaticAssetServiceImpl implements StaticAssetService {
 
     /**
      * Validates both the file name extension and the type detected from the file content against
-     * {@code allowed.file.extensions} / {@code disabled.file.extensions}. The stored MIME type of an asset is
-     * derived from its file name, so uploads whose name does not match their content are rejected as well
+     * {@code allowed.file.extensions} / {@code disabled.file.extensions}. The stored name and extension of an asset
+     * come from the uploaded file name, so uploads whose name does not match their content are rejected as well
      * (see {@code static.asset.reject.mismatched.content.type}).
      */
     public void validateFileExtension(MultipartFile file) throws IOException {
@@ -325,6 +377,10 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         if (properties == null) {
             properties = new HashMap<>();
         }
+        if (!inputStream.markSupported()) {
+            inputStream = new BufferedInputStream(inputStream);
+        }
+        String mimeType = resolveMimeType(inputStream, fileName);
 
         String fullUrl = buildAssetURL(properties, fileName);
         StringBuilder urlBuilder = new StringBuilder();
@@ -373,7 +429,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         }
 
         newAsset.setName(fileName);
-        getMimeType(inputStream, fileName, newAsset);
+        newAsset.setMimeType(mimeType);
         newAsset.setFileExtension(getFileExtension(fileName));
         newAsset.setFileSize(fileSize);
         newAsset.setFullUrl(fullUrl);
@@ -416,19 +472,16 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         return countUrl;
     }
 
+    /**
+     * @deprecated use {@link #resolveMimeType(InputStream, String)}, which must be given the stream before any of
+     * it has been consumed
+     */
+    @Deprecated
     protected void getMimeType(InputStream inputStream, String fileName, StaticAsset newAsset) {
-        Tika tika = new Tika();
-        String tikaMimeType = tika.detect(fileName);
-        if (tikaMimeType == null) {
-            try {
-                tikaMimeType = tika.detect(inputStream);
-            } catch (IOException e) {
-                //if tika can't resolve, don't throw exception
-            }
+        if (!inputStream.markSupported()) {
+            inputStream = new BufferedInputStream(inputStream);
         }
-        if (tikaMimeType != null) {
-            newAsset.setMimeType(tikaMimeType);
-        }
+        newAsset.setMimeType(resolveMimeType(inputStream, fileName));
     }
 
     @Override
