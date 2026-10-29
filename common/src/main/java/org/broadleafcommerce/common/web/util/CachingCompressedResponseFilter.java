@@ -287,19 +287,20 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
                 return false;
             }
             File targetFile = prepareTargetFile(request);
-            if (!targetFile.exists() && (!isStaticCachePopulatingRequest(request) || isStaticCacheFull(targetFile))) {
+            if (!targetFile.exists() && (!isStaticCachePopulatingRequest(request) || !reserveStaticCacheEntry(targetFile))) {
                 return false;
             }
             if (targetFile.exists() && targetFile.length() == 0L) {
                 //TODO Do something to check the validity of the cached file before returning. This would be an extra layer
                 // of protection against any corruption. I would not expect any corruption given the cache file creation code.
                 // We should not make it into here. Ignoring anything other than non-empty file validation for now.
-                targetFile.delete();
+                if (targetFile.delete()) {
+                    releaseStaticCacheEntry();
+                }
                 success = false;
             } else {
                 if (!targetFile.exists()) {
-                    cacheStaticCompressedFileInFileSystem(request, response, chain, targetFile);
-                    if (!targetFile.exists()) {
+                    if (!cacheStaticCompressedFileInFileSystem(request, response, chain, targetFile)) {
                         // the downstream response was not cacheable and has already been written
                         return true;
                     }
@@ -316,19 +317,13 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
     }
 
     /**
-     * Whether an existing cached file may be served for this request. Only GET and HEAD are served from the cache.
+     * Whether the static cache may handle this request at all. Only GET and HEAD without Range or conditional headers
+     * are eligible: the cache cannot evaluate those headers, so such requests go to the downstream handler, which
+     * answers with the correct 206/304/412.
      */
     protected boolean isStaticCacheReadableRequest(HttpServletRequest request) {
         String method = request.getMethod();
-        return "GET".equals(method) || "HEAD".equals(method);
-    }
-
-    /**
-     * Whether the response to this request may be stored in the cache. Only a plain GET is eligible; HEAD, Range and
-     * conditional requests produce an empty or partial body (or a 304/206/412) and must never populate the cache.
-     */
-    protected boolean isStaticCachePopulatingRequest(HttpServletRequest request) {
-        if (!"GET".equals(request.getMethod())) {
+        if (!"GET".equals(method) && !"HEAD".equals(method)) {
             return false;
         }
         for (String header : UNCACHEABLE_REQUEST_HEADERS) {
@@ -337,6 +332,14 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
             }
         }
         return true;
+    }
+
+    /**
+     * Whether the response to this request may be stored in the cache. Only a plain GET is eligible; a HEAD response
+     * has no body and must never populate the cache.
+     */
+    protected boolean isStaticCachePopulatingRequest(HttpServletRequest request) {
+        return "GET".equals(request.getMethod()) && isStaticCacheReadableRequest(request);
     }
 
     /**
@@ -355,9 +358,14 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
         return true;
     }
 
-    protected boolean isStaticCacheFull(File targetFile) {
+    /**
+     * Atomically reserve a slot for a new cache entry. Returns false when the cache has reached
+     * {@code filter.compression.static.file.cache.max.entries}. A reservation that does not end up as a new cache file
+     * must be returned with {@link #releaseStaticCacheEntry()}.
+     */
+    protected boolean reserveStaticCacheEntry(File targetFile) {
         if (staticFileCacheMaxEntries <= 0) {
-            return false;
+            return true;
         }
         if (staticFileCacheEntries == null) {
             synchronized (this) {
@@ -369,16 +377,27 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
                 }
             }
         }
-        if (staticFileCacheEntries.get() >= staticFileCacheMaxEntries) {
-            if (!staticFileCacheFullLogged) {
-                staticFileCacheFullLogged = true;
-                LOG.warn(String.format("Static file compression cache has reached its limit of %s entries "
-                        + "('filter.compression.static.file.cache.max.entries'). Further static files will be compressed "
-                        + "dynamically.", staticFileCacheMaxEntries));
+        while (true) {
+            int current = staticFileCacheEntries.get();
+            if (current >= staticFileCacheMaxEntries) {
+                if (!staticFileCacheFullLogged) {
+                    staticFileCacheFullLogged = true;
+                    LOG.warn(String.format("Static file compression cache has reached its limit of %s entries "
+                            + "('filter.compression.static.file.cache.max.entries'). Further static files will be compressed "
+                            + "dynamically.", staticFileCacheMaxEntries));
+                }
+                return false;
             }
-            return true;
+            if (staticFileCacheEntries.compareAndSet(current, current + 1)) {
+                return true;
+            }
         }
-        return false;
+    }
+
+    protected void releaseStaticCacheEntry() {
+        if (staticFileCacheMaxEntries > 0 && staticFileCacheEntries != null) {
+            staticFileCacheEntries.updateAndGet(count -> Math.max(0, count - 1));
+        }
     }
 
     protected void emitStaticFileToResponse(HttpServletRequest request, HttpServletResponse response, File targetFile) throws IOException {
@@ -409,12 +428,21 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
         return new File(targetDir, uriHash + ".gz");
     }
 
-    protected void cacheStaticCompressedFileInFileSystem(
+    /**
+     * Run the downstream chain and store its response in {@code targetFile} if it is cacheable. Expects a cache entry
+     * to have been reserved via {@link #reserveStaticCacheEntry(File)}; the reservation is released unless a new cache
+     * file is created.
+     *
+     * @return true if this request's response was stored in the cache and still needs to be emitted, false if the
+     * response was not cacheable and has already been written to the caller
+     */
+    protected boolean cacheStaticCompressedFileInFileSystem(
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain chain,
             File targetFile
     ) throws IOException, ServletException {
+        boolean newEntry = false;
         String tempRoot = UUID.randomUUID().toString();
         File tempFile = File.createTempFile(tempRoot, ".tmp");
         FileSystemResponseWrapper wrapper = new FileSystemResponseWrapper(response, tempFile);
@@ -423,7 +451,7 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
             wrapper.closeFileOutputStream();
             if (!isStaticCacheableResponse(wrapper)) {
                 emitUncachedResponse(response, tempFile);
-                return;
+                return false;
             }
             File compressedFile = File.createTempFile(tempRoot, ".tmpgz");
             OutputStream compressedOut = new GZIPOutputStream(new FileOutputStream(compressedFile));
@@ -432,12 +460,13 @@ public class CachingCompressedResponseFilter extends AbstractIgnorableOncePerReq
             } finally {
                 IOUtils.closeQuietly(compressedOut);
             }
-            boolean isNew = !targetFile.exists();
+            newEntry = !targetFile.exists();
             atomicMove.replaceExisting(compressedFile, targetFile);
-            if (isNew && staticFileCacheEntries != null) {
-                staticFileCacheEntries.incrementAndGet();
-            }
+            return true;
         } finally {
+            if (!newEntry) {
+                releaseStaticCacheEntry();
+            }
             wrapper.closeFileOutputStream();
             tempFile.delete();
         }

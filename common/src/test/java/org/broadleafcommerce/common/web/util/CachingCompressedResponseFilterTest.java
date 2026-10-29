@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.common.web.util;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -31,6 +32,13 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
 
@@ -40,6 +48,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class CachingCompressedResponseFilterTest {
 
@@ -133,16 +142,93 @@ public class CachingCompressedResponseFilterTest {
     }
 
     @Test
-    public void testCachedFileIsServedWithoutBackendForHeadAndConditionalRequests() throws Exception {
+    public void testCachedFileServesHeadButDefersRangeAndConditionalRequestsToBackend() throws Exception {
         assertFullScriptServedAndCached();
         int calls = backendCalls.get();
 
         MockHttpServletResponse head = execute(request("HEAD", "/js/checkout.js"));
         assertEquals(200, head.getStatus());
-        MockHttpServletRequest conditional = request("GET", "/js/checkout.js");
-        conditional.addHeader("If-None-Match", "\"abc\"");
-        assertEquals(SCRIPT, gunzip(execute(conditional)));
         assertEquals(calls, backendCalls.get());
+
+        MockHttpServletRequest range = request("GET", "/js/checkout.js");
+        range.addHeader("Range", "bytes=0-0");
+        MockHttpServletResponse partial = execute(range);
+        assertEquals(206, partial.getStatus());
+        assertEquals(SCRIPT.substring(0, 1), gunzip(partial));
+
+        MockHttpServletRequest conditional = request("GET", "/js/checkout.js");
+        conditional.addHeader("If-Modified-Since", "Thu, 01 Jan 2026 00:00:00 GMT");
+        assertEquals(304, execute(conditional).getStatus());
+        assertEquals(calls + 2, backendCalls.get());
+
+        assertFullScriptServedAndCached();
+    }
+
+    @Test
+    public void testConcurrentCacheFillDoesNotAppendCachedBody() throws Exception {
+        FilterChain privateResponseWhileAnotherRequestCaches = (req, res) -> {
+            filter.doFilter(request("GET", "/js/race.js"), new MockHttpServletResponse(), backend());
+            HttpServletResponse response = (HttpServletResponse) res;
+            response.setHeader("Cache-Control", "private");
+            response.setStatus(200);
+            response.getOutputStream().write("private body".getBytes(StandardCharsets.UTF_8));
+        };
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/js/race.js"), response, privateResponseWhileAnotherRequestCaches);
+        assertEquals("private body", gunzip(response));
+        assertEquals(1, cacheFileCount());
+    }
+
+    @Test
+    public void testCacheEntryLimitUnderConcurrency() throws Exception {
+        filter.staticFileCacheMaxEntries = 2;
+        int threads = 5;
+        CountDownLatch allInBackend = new CountDownLatch(threads);
+        FilterChain slowBackend = (req, res) -> {
+            allInBackend.countDown();
+            try {
+                allInBackend.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            backend().doFilter(req, res);
+        };
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        try {
+            List<Future<MockHttpServletResponse>> responses = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                String uri = "/js/concurrent" + i + ".js";
+                responses.add(executor.submit(() -> {
+                    MockHttpServletResponse response = new MockHttpServletResponse();
+                    filter.doFilter(request("GET", uri), response, slowBackend);
+                    return response;
+                }));
+            }
+            for (Future<MockHttpServletResponse> response : responses) {
+                assertEquals(SCRIPT, gunzip(response.get(10, TimeUnit.SECONDS)));
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        assertEquals(2, cacheFileCount());
+    }
+
+    @Test
+    public void testDeletedEmptyCacheFileFreesEntry() throws Exception {
+        filter.staticFileCacheMaxEntries = 1;
+        File empty = new File(cacheDir, DigestUtils.md5Hex("/js/empty.js") + ".gz");
+        assertTrue(empty.createNewFile());
+
+        assertEquals(SCRIPT, gunzip(execute(request("GET", "/js/other.js"))));
+        assertEquals(1, cacheFileCount());
+        assertTrue(empty.exists());
+
+        assertEquals(SCRIPT, gunzip(execute(request("GET", "/js/empty.js"))));
+        assertEquals(0, cacheFileCount());
+
+        assertEquals(SCRIPT, gunzip(execute(request("GET", "/js/other.js"))));
+        assertTrue(new File(cacheDir, DigestUtils.md5Hex("/js/other.js") + ".gz").exists());
+        assertEquals(1, cacheFileCount());
     }
 
     @Test
