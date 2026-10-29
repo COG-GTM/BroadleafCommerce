@@ -580,6 +580,11 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                     {
                         for (CustomPersistenceHandler handler : getCustomPersistenceHandlers()) {
                             if (handler.canHandleAdd(subPackage.getValue())) {
+                                if (!handler.willHandleSecurity(subPackage.getValue())) {
+                                    adminRemoteSecurityService.securityCheck(
+                                            subPackage.getValue(), EntityOperationType.ADD
+                                    );
+                                }
                                 subResponse = handler.add(
                                         subPackage.getValue(),
                                         dynamicEntityDao,
@@ -590,10 +595,11 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                                 break checkHandler;
                             }
                         }
+                        adminRemoteSecurityService.securityCheck(subPackage.getValue(), EntityOperationType.ADD);
                         PersistenceModule subModule = getCompatibleModule(
                                 subPackage.getValue().getPersistencePerspective().getOperationTypes().getAddType()
                         );
-                        subResponse = subModule.add(persistencePackage);
+                        subResponse = subModule.add(subPackage.getValue());
                         subPackage.getValue().setEntity(subResponse);
                     }
                 } catch (ValidationException e) {
@@ -795,6 +801,11 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 {
                     for (CustomPersistenceHandler handler : getCustomPersistenceHandlers()) {
                         if (handler.canHandleUpdate(subPackage.getValue())) {
+                            if (!handler.willHandleSecurity(subPackage.getValue())) {
+                                adminRemoteSecurityService.securityCheck(
+                                        subPackage.getValue(), EntityOperationType.UPDATE
+                                );
+                            }
                             Entity subResponse = handler.update(
                                     subPackage.getValue(),
                                     dynamicEntityDao,
@@ -804,10 +815,11 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                             break checkHandler;
                         }
                     }
+                    adminRemoteSecurityService.securityCheck(subPackage.getValue(), EntityOperationType.UPDATE);
                     PersistenceModule subModule = getCompatibleModule(
                             subPackage.getValue().getPersistencePerspective().getOperationTypes().getUpdateType()
                     );
-                    Entity subResponse = subModule.update(persistencePackage);
+                    Entity subResponse = subModule.update(subPackage.getValue());
                     subPackage.getValue().setEntity(subResponse);
                 }
             } catch (ValidationException e) {
