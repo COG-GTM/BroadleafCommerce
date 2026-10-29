@@ -20,6 +20,8 @@ package org.broadleafcommerce.common.util;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.owasp.esapi.ESAPI;
@@ -119,6 +121,36 @@ public class UrlUtil {
         }
         // if so, we've got an absolute url
         return true;
+    }
+
+    /**
+     * Returns <tt>true</tt> if the url is a same-site absolute path that is safe to use as a redirect target
+     * supplied by the client (e.g. a <tt>successUrl</tt> parameter). The url must start with a single <tt>/</tt>,
+     * must not be protocol-relative (<tt>//host</tt>, <tt>/\\host</tt>), and must not contain a scheme, a host,
+     * user info, backslashes, whitespace or control characters.
+     *
+     * @param url the url to check
+     * @return true if the url is a local path
+     */
+    public static boolean isLocalRedirectPath(String url) {
+        if (StringUtils.isEmpty(url) || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c <= ' ' || c == 0x7f || c == '\\' || c == ':' || c == '@') {
+                return false;
+            }
+        }
+        try {
+            URI uri = new URI(url);
+            return uri.getScheme() == null && uri.getRawAuthority() == null && uri.getHost() == null;
+        } catch (URISyntaxException e) {
+            return false;
+        }
     }
 
 }
