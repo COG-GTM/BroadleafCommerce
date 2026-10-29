@@ -20,14 +20,8 @@ package org.broadleafcommerce.openadmin.server.service.persistence;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.SecurityServiceException;
-import org.broadleafcommerce.common.presentation.client.PersistencePerspectiveItemType;
-import org.broadleafcommerce.openadmin.dto.AdornedTargetList;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.PersistencePackage;
-import org.broadleafcommerce.openadmin.dto.PersistencePerspective;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Ensures the entity type carried by a {@link PersistencePackage} (which may come from the posted {@code entityType}
@@ -50,8 +44,8 @@ public final class EntityTypeValidator {
     }
 
     /**
-     * @return the class named by the package's entity type, after verifying it is the ceiling entity (or, for
-     * adorned target lists, the adorned target entity) or one of its subtypes
+     * @return the class named by the package's entity type, after verifying it is the ceiling entity or one of its
+     * subtypes
      */
     public static Class<?> resolveEntityClass(PersistencePackage persistencePackage) throws SecurityServiceException {
         String entityType = getEntityType(persistencePackage);
@@ -59,21 +53,22 @@ public final class EntityTypeValidator {
             throw new SecurityServiceException("No entity type was supplied");
         }
         Class<?> entityClass = loadClass(entityType);
-        for (String allowedType : getAllowedTypes(persistencePackage)) {
-            if (allowedType.equals(entityType)) {
-                return entityClass;
-            }
+        String ceilingEntity = persistencePackage.getCeilingEntityFullyQualifiedClassname();
+        if (entityType.equals(ceilingEntity)) {
+            return entityClass;
+        }
+        if (StringUtils.isNotEmpty(ceilingEntity)) {
             try {
-                if (Class.forName(allowedType).isAssignableFrom(entityClass)) {
+                if (Class.forName(ceilingEntity).isAssignableFrom(entityClass)) {
                     return entityClass;
                 }
             } catch (ClassNotFoundException e) {
-                // not a class, so it can only match by name
+                // the ceiling is not a class, so it can only match by name
             }
         }
         throw new SecurityServiceException(String.format(
                 "Entity type %s is not compatible with ceiling entity %s",
-                entityType, persistencePackage.getCeilingEntityFullyQualifiedClassname()
+                entityType, ceilingEntity
         ));
     }
 
@@ -83,23 +78,6 @@ public final class EntityTypeValidator {
             return null;
         }
         return entity.getType()[0];
-    }
-
-    private static List<String> getAllowedTypes(PersistencePackage persistencePackage) {
-        List<String> allowedTypes = new ArrayList<>();
-        if (StringUtils.isNotEmpty(persistencePackage.getCeilingEntityFullyQualifiedClassname())) {
-            allowedTypes.add(persistencePackage.getCeilingEntityFullyQualifiedClassname());
-        }
-        PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-        if (persistencePerspective != null && persistencePerspective.getPersistencePerspectiveItems() != null) {
-            AdornedTargetList adornedTargetList = (AdornedTargetList) persistencePerspective
-                    .getPersistencePerspectiveItems().get(PersistencePerspectiveItemType.ADORNEDTARGETLIST);
-            if (adornedTargetList != null
-                    && StringUtils.isNotEmpty(adornedTargetList.getAdornedTargetEntityClassname())) {
-                allowedTypes.add(adornedTargetList.getAdornedTargetEntityClassname());
-            }
-        }
-        return allowedTypes;
     }
 
     private static Class<?> loadClass(String className) throws SecurityServiceException {

@@ -60,7 +60,7 @@ class EntityTypeValidatorSpec extends Specification {
         EntityTypeValidator.resolveEntityClass(buildPackage(Number.name, Long.name)) == Long
     }
 
-    def "entity type matching the adorned target entity is allowed"() {
+    def "adorned target entity unrelated to the ceiling entity is rejected"() {
         given:
         PersistencePackage persistencePackage = buildPackage(Number.name, String.name)
         AdornedTargetList adornedTargetList = new AdornedTargetList()
@@ -68,8 +68,11 @@ class EntityTypeValidatorSpec extends Specification {
         persistencePackage.getPersistencePerspective()
                 .addPersistencePerspectiveItem(PersistencePerspectiveItemType.ADORNEDTARGETLIST, adornedTargetList)
 
-        expect:
-        EntityTypeValidator.resolveEntityClass(persistencePackage) == String
+        when:
+        EntityTypeValidator.resolveEntityClass(persistencePackage)
+
+        then:
+        thrown(SecurityServiceException)
     }
 
     def "entity type unrelated to the ceiling entity is rejected"() {
