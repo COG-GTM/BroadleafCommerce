@@ -101,7 +101,32 @@ public class ForgotPasswordRequestThrottleTest {
                 blocked++;
             }
         }
-        assertTrue("blocked " + blocked, blocked <= 1);
+        assertTrue("blocked " + blocked, blocked == 0);
+    }
+
+    @Test
+    public void usernamesSharingABucketInOneRowAreCountedSeparately() {
+        throttle.setHashKey(new byte[32]);
+        throttle.setBucketsPerRow(8);
+        for (int i = 0; i < 2; i++) {
+            throttle.tryAcquire(request("10.0.1." + i), "alice");
+        }
+        int blocked = 0;
+        for (int i = 0; i < 8; i++) {
+            if (!throttle.tryAcquire(request("10.0.2." + i), "user" + i)) {
+                blocked++;
+            }
+        }
+        assertTrue("blocked " + blocked, blocked < 4);
+    }
+
+    @Test
+    public void clientAndUsernameCountsAreIndependent() {
+        throttle.setMaxRequestsPerUsername(1);
+        for (int i = 0; i < 3; i++) {
+            throttle.tryAcquire(request("alice"), "u" + i);
+        }
+        assertTrue(throttle.tryAcquire(request("10.0.0.9"), "alice"));
     }
 
     private void flood(int distinctKeys) {

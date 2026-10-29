@@ -38,14 +38,17 @@ import jakarta.servlet.http.HttpServletRequest;
  * username. This is a first line of defense; {@code CustomerServiceImpl} also caps the number of reset tokens a
  * customer can be issued, which holds across nodes.
  * <p>
- * Counters live in a fixed number of buckets selected by a keyed hash (HMAC with a per-instance random key), so
- * memory is bounded without ever dropping or sharing counters wholesale. Flooding with many distinct keys only
- * raises counts in the buckets those keys land in, and an attacker cannot aim collisions at a particular username.
+ * Client addresses and usernames are counted in two separate count-min sketches: each key maps to one cell in each
+ * of {@link #ROWS} rows via a keyed hash (HMAC with a per-instance random key), and its count is the minimum across
+ * those cells. Memory is fixed and counters are never evicted or pooled, yet a key is only over-counted when every
+ * one of its cells collides with busier keys, and an attacker cannot aim collisions at a particular username.
  */
 @Service("blForgotPasswordRequestThrottle")
 public class ForgotPasswordRequestThrottle {
 
-    protected static final int DEFAULT_BUCKET_COUNT = 131_072;
+    protected static final int ROWS = 4;
+
+    protected static final int DEFAULT_BUCKETS_PER_ROW = 32_768;
 
     protected static final String HASH_ALGORITHM = "HmacSHA256";
 
@@ -58,14 +61,14 @@ public class ForgotPasswordRequestThrottle {
     @Value("${forgot.password.throttle.max.requests.per.username:5}")
     protected int maxRequestsPerUsername = 5;
 
-    protected long[] windowStarts;
+    protected CountMinSketch clientCounts;
 
-    protected int[] counts;
+    protected CountMinSketch usernameCounts;
 
     protected SecretKeySpec hashKey;
 
     public ForgotPasswordRequestThrottle() {
-        setBucketCount(DEFAULT_BUCKET_COUNT);
+        setBucketsPerRow(DEFAULT_BUCKETS_PER_ROW);
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
         setHashKey(key);
@@ -78,36 +81,25 @@ public class ForgotPasswordRequestThrottle {
     public boolean tryAcquire(HttpServletRequest request, String username) {
         long now = SystemTime.asMillis();
         if (maxRequestsPerClient > 0 && request != null && request.getRemoteAddr() != null
-                && increment("client:" + request.getRemoteAddr(), now) > maxRequestsPerClient) {
+                && clientCounts.increment(request.getRemoteAddr(), now) > maxRequestsPerClient) {
             return false;
         }
         if (maxRequestsPerUsername > 0 && StringUtils.isNotBlank(username)) {
-            String key = "username:" + username.trim().toLowerCase(Locale.ROOT);
-            return increment(key, now) <= maxRequestsPerUsername;
+            return usernameCounts.increment(username.trim().toLowerCase(Locale.ROOT), now) <= maxRequestsPerUsername;
         }
         return true;
     }
 
-    /**
-     * Returns the request count in the current window for the bucket that {@code key} hashes to.
-     */
-    protected synchronized int increment(String key, long now) {
-        int bucket = bucketFor(key);
-        if (counts[bucket] == 0 || now - windowStarts[bucket] >= windowSeconds * 1000L) {
-            windowStarts[bucket] = now;
-            counts[bucket] = 1;
-        } else if (counts[bucket] < Integer.MAX_VALUE) {
-            counts[bucket]++;
-        }
-        return counts[bucket];
-    }
-
-    protected int bucketFor(String key) {
+    protected long[] hash(String key) {
         try {
             Mac mac = Mac.getInstance(HASH_ALGORITHM);
             mac.init(hashKey);
-            byte[] digest = mac.doFinal(key.getBytes(StandardCharsets.UTF_8));
-            return (int) Long.remainderUnsigned(ByteBuffer.wrap(digest).getLong(), counts.length);
+            ByteBuffer digest = ByteBuffer.wrap(mac.doFinal(key.getBytes(StandardCharsets.UTF_8)));
+            long[] hashes = new long[ROWS];
+            for (int row = 0; row < ROWS; row++) {
+                hashes[row] = digest.getLong();
+            }
+            return hashes;
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
         }
@@ -125,13 +117,45 @@ public class ForgotPasswordRequestThrottle {
         this.maxRequestsPerUsername = maxRequestsPerUsername;
     }
 
-    public synchronized void setBucketCount(int bucketCount) {
-        this.windowStarts = new long[bucketCount];
-        this.counts = new int[bucketCount];
+    public void setBucketsPerRow(int bucketsPerRow) {
+        this.clientCounts = new CountMinSketch(bucketsPerRow);
+        this.usernameCounts = new CountMinSketch(bucketsPerRow);
     }
 
     protected void setHashKey(byte[] key) {
         this.hashKey = new SecretKeySpec(key, HASH_ALGORITHM);
+    }
+
+    protected class CountMinSketch {
+
+        protected final long[][] windowStarts;
+
+        protected final int[][] counts;
+
+        protected CountMinSketch(int bucketsPerRow) {
+            windowStarts = new long[ROWS][bucketsPerRow];
+            counts = new int[ROWS][bucketsPerRow];
+        }
+
+        /**
+         * Records one request for {@code key} and returns its estimated count in the current window.
+         */
+        protected synchronized int increment(String key, long now) {
+            long[] hashes = hash(key);
+            long windowMillis = windowSeconds * 1000L;
+            int estimate = Integer.MAX_VALUE;
+            for (int row = 0; row < ROWS; row++) {
+                int cell = (int) Long.remainderUnsigned(hashes[row], counts[row].length);
+                if (counts[row][cell] == 0 || now - windowStarts[row][cell] >= windowMillis) {
+                    windowStarts[row][cell] = now;
+                    counts[row][cell] = 1;
+                } else if (counts[row][cell] < Integer.MAX_VALUE) {
+                    counts[row][cell]++;
+                }
+                estimate = Math.min(estimate, counts[row][cell]);
+            }
+            return estimate;
+        }
     }
 
 }
