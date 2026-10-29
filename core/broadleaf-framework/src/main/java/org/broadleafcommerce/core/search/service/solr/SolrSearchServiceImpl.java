@@ -31,6 +31,7 @@ import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.extension.ExtensionResultHolder;
 import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.locale.domain.Locale;
+import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.core.catalog.dao.ProductDao;
 import org.broadleafcommerce.core.catalog.dao.SkuDao;
@@ -222,7 +223,7 @@ public class SolrSearchServiceImpl implements SearchService, DisposableBean {
                 .setQuery(searchCriteria.getQuery())
                 .setRows(searchCriteria.getPageSize())
                 .setStart((start) * searchCriteria.getPageSize())
-                .setRequestHandler(searchCriteria.getRequestHandler());
+                .setRequestHandler(getRequestHandler(searchCriteria));
 
         solrQuery.setFields(shs.getIndexableIdFieldName());
         if (filterQueries != null) {
@@ -732,6 +733,34 @@ public class SolrSearchServiceImpl implements SearchService, DisposableBean {
      */
     protected METHOD getSolrQueryMethod() {
         return solrSearchMethod;
+    }
+
+    /**
+     * Only request handlers allowlisted in {@code solr.search.allowedRequestHandlers} are honored; anything else
+     * returns null so that SolrJ uses its default handler.
+     *
+     * @see SolrRequestHandlerPolicy
+     */
+    protected String getRequestHandler(SearchCriteria searchCriteria) {
+        String requested = searchCriteria.getRequestHandler();
+        if (requested == null) {
+            return null;
+        }
+        String handler = SolrRequestHandlerPolicy.resolve(requested, getAllowedRequestHandlers());
+        if (handler == null && LOG.isWarnEnabled()) {
+            LOG.warn("Ignoring Solr request handler that is not allowlisted in "
+                    + SolrRequestHandlerPolicy.ALLOWED_REQUEST_HANDLERS_PROPERTY);
+        }
+        return handler;
+    }
+
+    /**
+     * Resolved per request so that site-specific values of {@code solr.search.allowedRequestHandlers} are honored.
+     *
+     * @return comma-separated Solr request handlers that a search may target
+     */
+    protected String getAllowedRequestHandlers() {
+        return BLCSystemProperty.resolveSystemProperty(SolrRequestHandlerPolicy.ALLOWED_REQUEST_HANDLERS_PROPERTY, "");
     }
 
     @Override
