@@ -89,9 +89,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
             }
 
             if (paymentForm.getShouldUseCustomerPayment()) {
-                CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                        paymentForm.getCustomerPaymentId()
-                );
+                CustomerPayment customerPayment = readCustomerOwnedPayment(paymentForm.getCustomerPaymentId());
 
                 if (!cartStateService.cartHasCreditCardPaymentWithSameToken(customerPayment.getPaymentToken())) {
                     orderService.removeCreditCardPaymentsFromOrder(cart);
@@ -195,15 +193,35 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
     }
 
     protected void copyCustomerPaymentAddressToBillingAddress(PaymentInfoForm paymentForm) {
-        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                paymentForm.getCustomerPaymentId()
-        );
+        CustomerPayment customerPayment = readCustomerOwnedPayment(paymentForm.getCustomerPaymentId());
 
-        if (customerPayment != null) {
-            Address address = customerPayment.getBillingAddress();
-            if (address != null) {
-                paymentForm.setAddress(addressService.copyAddress(address));
-            }
+        Address address = customerPayment.getBillingAddress();
+        if (address != null) {
+            paymentForm.setAddress(addressService.copyAddress(address));
+        }
+    }
+
+    /**
+     * Reads the {@link CustomerPayment} with the given id, ensuring that it belongs to the active customer.
+     *
+     * @throws SecurityException if the payment does not exist or is not owned by the active customer
+     */
+    protected CustomerPayment readCustomerOwnedPayment(Long customerPaymentId) {
+        CustomerPayment customerPayment = customerPaymentId == null
+                ? null
+                : customerPaymentService.readCustomerPaymentById(customerPaymentId);
+        validateCustomerOwnedPayment(customerPayment);
+        return customerPayment;
+    }
+
+    protected void validateCustomerOwnedPayment(CustomerPayment customerPayment) {
+        Customer activeCustomer = CustomerState.getCustomer();
+        Customer paymentOwner = customerPayment == null ? null : customerPayment.getCustomer();
+        if (activeCustomer == null
+                || activeCustomer.getId() == null
+                || paymentOwner == null
+                || !activeCustomer.getId().equals(paymentOwner.getId())) {
+            throw new SecurityException("The active customer does not own the requested customer payment.");
         }
     }
 
