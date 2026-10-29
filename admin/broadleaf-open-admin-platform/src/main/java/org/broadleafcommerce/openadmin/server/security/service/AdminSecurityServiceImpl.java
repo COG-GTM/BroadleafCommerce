@@ -421,7 +421,7 @@ public class AdminSecurityServiceImpl implements AdminSecurityService {
                     user.getId()
             );
             for (ForgotPasswordSecurityToken fpstok : fpstoks) {
-                if (isPasswordValid(fpstok.getToken(), token)) {
+                if (isPasswordValid(token, fpstok.getToken())) {
                     fpst = fpstok;
                     break;
                 }

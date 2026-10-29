@@ -24,6 +24,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -42,7 +43,7 @@ import jakarta.annotation.Resource;
  * @author Phillip Verheyden (phillipuniverse)
  */
 @Service("blUserDetailsService")
-public class UserDetailsServiceImpl implements UserDetailsService {
+public class UserDetailsServiceImpl implements UserDetailsService, UserDetailsPasswordService {
 
     @Resource(name = "blCustomerService")
     protected CustomerService customerService;
@@ -73,6 +74,21 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 true,
                 grantedAuthorities
         );
+    }
+
+    /**
+     * Persists a re-encoded password, e.g. when the configured {@code blPasswordEncoder} reports that the stored value
+     * needs an upgrade after a successful login.
+     */
+    @Override
+    public UserDetails updatePassword(UserDetails user, String newPassword) {
+        Customer customer = customerService.readCustomerByUsername(user.getUsername(), false);
+        if (customer == null) {
+            return user;
+        }
+        customer.setPassword(newPassword);
+        customerService.saveCustomer(customer);
+        return loadUserByUsername(user.getUsername());
     }
 
     protected List<GrantedAuthority> createGrantedAuthorities(List<CustomerRole> customerRoles) {
