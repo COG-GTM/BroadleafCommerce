@@ -72,4 +72,38 @@ class AdminAccountRecoveryRateLimiterSpec extends Specification {
         limiter.tryAcquire("resetPassword", "10.0.0.2", "admin")
         limiter.tryAcquire("resetPassword", "10.0.0.3", "admin")
     }
+
+    def "requests rejected by the client limit do not consume the identifier allowance"() {
+        expect:
+        (1..3).every { limiter.tryAcquire("resetPassword", "10.0.0.1", "user" + it) }
+        !limiter.tryAcquire("resetPassword", "10.0.0.1", "alice")
+        !limiter.tryAcquire("resetPassword", "10.0.0.1", "alice")
+        !limiter.tryAcquire("resetPassword", "10.0.0.1", "alice")
+        limiter.tryAcquire("resetPassword", "10.0.0.2", "alice")
+        limiter.tryAcquire("resetPassword", "10.0.0.3", "alice")
+    }
+
+    def "tracked keys are capped and new keys are rejected once the cap is reached"() {
+        given:
+        limiter.maxTrackedKeys = 4
+
+        expect:
+        limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
+        limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
+        !limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
+        limiter.attempts.size() == 4
+
+        and: "callers that are already tracked keep working"
+        limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
+    }
+
+    def "expired keys are pruned to make room once the cap is reached"() {
+        given:
+        limiter.maxTrackedKeys = 4
+        limiter.windowSeconds = 0
+
+        expect:
+        (1..10).every { limiter.tryAcquire("resetPassword", "10.0.0." + it, "user" + it) }
+        limiter.attempts.size() <= 4
+    }
 }

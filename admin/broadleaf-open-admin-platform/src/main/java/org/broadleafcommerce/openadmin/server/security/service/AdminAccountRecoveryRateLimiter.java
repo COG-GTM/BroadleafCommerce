@@ -34,13 +34,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * endpoints. Requests are counted per client address and per submitted identifier (username or email).
  * Callers must treat a rejected request exactly like an accepted one from the user's point of view so the
  * limiter itself does not become an account enumeration oracle.
+ * <p>
+ * At most {@link #maxTrackedKeys} keys are tracked. When that cap is reached and no expired keys can be
+ * pruned, requests that would need a new key are rejected so that a flood of unique identifiers or
+ * addresses cannot exhaust the heap.
  */
 @Component("blAdminAccountRecoveryRateLimiter")
 public class AdminAccountRecoveryRateLimiter {
 
-    protected static final int MAX_TRACKED_KEYS = 10000;
-
     protected final Map<String, Deque<Long>> attempts = new ConcurrentHashMap<>();
+
+    /**
+     * Earliest time at which a prune can free a key; avoids rescanning a full map on every request.
+     */
+    protected volatile long nextPruneAt = 0L;
 
     @Value("${admin.account.recovery.rateLimit.maxPerClient:10}")
     protected int maxAttemptsPerClient = 10;
@@ -50,6 +57,9 @@ public class AdminAccountRecoveryRateLimiter {
 
     @Value("${admin.account.recovery.rateLimit.windowSeconds:900}")
     protected long windowSeconds = 900;
+
+    @Value("${admin.account.recovery.rateLimit.maxTrackedKeys:10000}")
+    protected int maxTrackedKeys = 10000;
 
     /**
      * Records an attempt and returns whether it is within the configured limits.
@@ -62,20 +72,28 @@ public class AdminAccountRecoveryRateLimiter {
     public boolean tryAcquire(String action, String clientAddress, String identifier) {
         long now = SystemTime.asMillis();
         long windowStart = now - windowSeconds * 1000L;
-        pruneIfNeeded(windowStart);
+        pruneIfNeeded(now, windowStart);
 
-        boolean clientAllowed = record(action + "|client|" + StringUtils.defaultString(clientAddress),
-                maxAttemptsPerClient, now, windowStart);
-        boolean identifierAllowed = record(action + "|id|" + normalize(identifier),
-                maxAttemptsPerIdentifier, now, windowStart);
-        return clientAllowed && identifierAllowed;
+        if (!record(action + "|client|" + StringUtils.defaultString(clientAddress),
+                maxAttemptsPerClient, now, windowStart)) {
+            // Don't charge the identifier for requests that are already being dropped, otherwise a throttled
+            // client could exhaust another user's recovery allowance without any email being sent.
+            return false;
+        }
+        return record(action + "|id|" + normalize(identifier), maxAttemptsPerIdentifier, now, windowStart);
     }
 
     protected boolean record(String key, int max, long now, long windowStart) {
         if (max <= 0) {
             return true;
         }
-        Deque<Long> timestamps = attempts.computeIfAbsent(key, k -> new ArrayDeque<>());
+        Deque<Long> timestamps = attempts.get(key);
+        if (timestamps == null) {
+            if (attempts.size() >= maxTrackedKeys) {
+                return false;
+            }
+            timestamps = attempts.computeIfAbsent(key, k -> new ArrayDeque<>());
+        }
         synchronized (timestamps) {
             evictOlderThan(timestamps, windowStart);
             if (timestamps.size() >= max) {
@@ -86,10 +104,11 @@ public class AdminAccountRecoveryRateLimiter {
         }
     }
 
-    protected void pruneIfNeeded(long windowStart) {
-        if (attempts.size() < MAX_TRACKED_KEYS) {
+    protected synchronized void pruneIfNeeded(long now, long windowStart) {
+        if (attempts.size() < maxTrackedKeys || now < nextPruneAt) {
             return;
         }
+        long oldestRemaining = Long.MAX_VALUE;
         Iterator<Map.Entry<String, Deque<Long>>> it = attempts.entrySet().iterator();
         while (it.hasNext()) {
             Deque<Long> timestamps = it.next().getValue();
@@ -97,9 +116,12 @@ public class AdminAccountRecoveryRateLimiter {
                 evictOlderThan(timestamps, windowStart);
                 if (timestamps.isEmpty()) {
                     it.remove();
+                } else {
+                    oldestRemaining = Math.min(oldestRemaining, timestamps.peekFirst());
                 }
             }
         }
+        nextPruneAt = oldestRemaining == Long.MAX_VALUE ? 0L : oldestRemaining + windowSeconds * 1000L;
     }
 
     protected void evictOlderThan(Deque<Long> timestamps, long windowStart) {
@@ -122,6 +144,10 @@ public class AdminAccountRecoveryRateLimiter {
 
     public void setWindowSeconds(long windowSeconds) {
         this.windowSeconds = windowSeconds;
+    }
+
+    public void setMaxTrackedKeys(int maxTrackedKeys) {
+        this.maxTrackedKeys = maxTrackedKeys;
     }
 
 }
