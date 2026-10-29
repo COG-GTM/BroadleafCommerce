@@ -39,16 +39,37 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-@Controller("blRegisterCustomerController")
-@RequestMapping("/registerCustomer")
 /**
- * @Deprecated - Use BroadleafRegisterController instead
  * RegisterCustomerController is used to register a customer.
- *
+ * <p>
  * This controller simply calls the RegistrationCustomerValidator which can be extended for custom validation and
  * then calls saveCustomer.
+ * <p>
+ * It is no longer registered by the default site component scan; a site that still needs it must declare the bean
+ * explicitly.
+ *
+ * @deprecated Use BroadleafRegisterController instead
  */
+@Deprecated
+@Controller("blRegisterCustomerController")
+@RequestMapping("/registerCustomer")
 public class RegisterCustomerController {
+
+    /**
+     * The only request parameters bound onto the registration form. Everything else, in particular
+     * {@code customer.id}, is ignored so that a registration can never be merged over an existing customer.
+     */
+    protected static final String[] ALLOWED_REGISTRATION_FIELDS = {
+            "customer.firstName",
+            "customer.lastName",
+            "customer.emailAddress",
+            "customer.username",
+            "customer.challengeQuestion",
+            "customer.unencodedChallengeAnswer",
+            "customer.receiveEmail",
+            "password",
+            "passwordConfirm"
+    };
 
     // URLs For success and failure
     protected String displayRegistrationFormView = "/account/registration/registerCustomer";
@@ -79,6 +100,11 @@ public class RegisterCustomerController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        Customer customer = registerCustomerForm.getCustomer();
+        if (customer == null || customer.getId() != null) {
+            errors.reject("registerCustomer.invalidCustomer");
+            return new ModelAndView(getRegistrationErrorView());
+        }
         registerCustomerValidator.validate(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             customerService.registerCustomer(
@@ -146,6 +172,7 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        binder.setAllowedFields(ALLOWED_REGISTRATION_FIELDS);
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
