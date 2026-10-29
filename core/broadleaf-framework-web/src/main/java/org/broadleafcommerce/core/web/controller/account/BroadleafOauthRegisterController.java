@@ -108,6 +108,7 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             customer.setUsername(customer.getEmailAddress());
         }
         registerCustomerValidator.validate(registerCustomerForm, errors, isUseEmailForLogin());
+        validateRegistrationCustomer(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             Customer newCustomer = customerService.registerCustomer(
                     registerCustomerForm.getCustomer(),

@@ -28,12 +28,17 @@ import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.validator.RegisterCustomerValidator;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
 import org.broadleafcommerce.profile.web.core.service.register.RegistrationService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
+
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -97,6 +102,7 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
         }
 
         registerCustomerValidator.validate(registerCustomerForm, errors, useEmailForLogin);
+        validateRegistrationCustomer(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             Customer newCustomer = customerService.registerCustomer(
                     registerCustomerForm.getCustomer(),
@@ -133,6 +139,33 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     public RegisterCustomerForm initCustomerRegistrationForm() {
         return registrationService.initCustomerRegistrationForm();
+    }
+
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        RegisterCustomerForm.restrictBinding(binder);
+    }
+
+    /**
+     * Ensures the customer being registered is either brand new (no id yet) or the anonymous customer belonging
+     * to the current session, so a registration can never be applied to some other existing customer record.
+     */
+    protected void validateRegistrationCustomer(RegisterCustomerForm registerCustomerForm, BindingResult errors) {
+        Customer customer = registerCustomerForm.getCustomer();
+        if (customer == null) {
+            errors.reject("registration.customer.invalid", "Unable to register this customer.");
+            return;
+        }
+        if (customer.getId() == null) {
+            return;
+        }
+        Customer sessionCustomer = CustomerState.getCustomer();
+        boolean isSessionAnonymousCustomer = sessionCustomer != null
+                && sessionCustomer.isAnonymous()
+                && Objects.equals(sessionCustomer.getId(), customer.getId());
+        if (!isSessionAnonymousCustomer || customer.isRegistered()) {
+            errors.reject("registration.customer.invalid", "Unable to register this customer.");
+        }
     }
 
     public boolean isUseEmailForLogin() {
