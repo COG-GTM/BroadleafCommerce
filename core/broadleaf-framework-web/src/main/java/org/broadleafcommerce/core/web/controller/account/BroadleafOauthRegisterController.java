@@ -23,6 +23,7 @@ import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
 import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.core.domain.Customer;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -32,8 +33,12 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.Objects;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -54,6 +59,23 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
 
     public BroadleafOauthRegisterController(OAuth2AuthorizedClientService authorizedClientService) {
         this.authorizedClientService = authorizedClientService;
+    }
+
+    /**
+     * Fields of the {@link RegisterCustomerForm} that must never be populated from request parameters.
+     */
+    protected static final String[] DISALLOWED_REGISTER_FIELDS = {
+            "customer.id", "customer.password", "customer.unencodedPassword", "customer.registered",
+            "customer.deactivated", "customer.anonymous", "customer.cookied", "customer.loggedIn",
+            "customer.externalId", "customer.passwordChangeRequired", "customer.challengeAnswer",
+            "customer.auditable*", "customer.customerAttributes*", "customer.customerAddresses*",
+            "customer.customerPhones*", "customer.customerPayments*", "customer.preview",
+            "customer.taxExemptionCode", "oAuth2UserRequest*", "OAuth2UserRequest*"
+    };
+
+    @InitBinder
+    protected void initRegisterBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(DISALLOWED_REGISTER_FIELDS);
     }
 
     @RequestMapping
@@ -103,6 +125,7 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             Model model,
             RedirectAttributes redirectAttributes
     ) throws PricingException {
+        clearUntrustedCustomerId(registerCustomerForm.getCustomer());
         if (isUseEmailForLogin()) {
             Customer customer = registerCustomerForm.getCustomer();
             customer.setUsername(customer.getEmailAddress());
@@ -140,6 +163,24 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             return StringUtils.isBlank(redirectUrl) ? getRegisterSuccessView() : "redirect:" + redirectUrl;
         } else {
             return getRegisterView();
+        }
+    }
+
+    /**
+     * Only the current anonymous customer's id may be carried into registration. Any other id is discarded so that
+     * registration always creates a new customer instead of merging over an existing one.
+     */
+    protected void clearUntrustedCustomerId(Customer customer) {
+        if (customer == null || customer.getId() == null) {
+            return;
+        }
+        Customer sessionCustomer = CustomerState.getCustomer();
+        boolean isSessionAnonymousCustomer = sessionCustomer != null
+                && sessionCustomer.isAnonymous()
+                && !sessionCustomer.isRegistered()
+                && Objects.equals(sessionCustomer.getId(), customer.getId());
+        if (!isSessionAnonymousCustomer) {
+            customer.setId(null);
         }
     }
 
