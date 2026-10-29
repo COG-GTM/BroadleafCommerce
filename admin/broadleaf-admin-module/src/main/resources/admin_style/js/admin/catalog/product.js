@@ -58,7 +58,11 @@ $(document).ready(function() {
         
         BLC.ajax({
             url : $(this).data('actionurl'),
-            type : "GET"
+            type : "POST",
+            error : function(data) {
+                $skuGenerationButton.prop("disabled", false);
+                BLC.defaultErrorHandler(data);
+            }
         }, function(data) {
             var alertType = data.error ? 'error-alert' : data.skusGenerated > 0 ? 'save-alert' : 'error-alert';
 
