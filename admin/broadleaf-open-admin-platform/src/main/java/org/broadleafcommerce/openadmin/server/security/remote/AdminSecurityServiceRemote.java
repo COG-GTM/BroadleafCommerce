@@ -40,16 +40,16 @@ import org.broadleafcommerce.openadmin.server.security.service.RowLevelSecurityS
 import org.broadleafcommerce.openadmin.server.security.service.type.PermissionType;
 import org.broadleafcommerce.openadmin.server.service.ValidationException;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.GlobalValidationResult;
-import org.springframework.cglib.core.CollectionUtils;
-import org.springframework.cglib.core.Transformer;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import jakarta.annotation.Resource;
@@ -133,17 +133,16 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
 
     @Override
     public void securityCheck(PersistencePackage persistencePackage, EntityOperationType operationType) throws ServiceException {
-        Set<String> ceilingNames = new HashSet<>();
-        ceilingNames.add(persistencePackage.getSecurityCeilingEntityFullyQualifiedClassname());
+        String targetCeilingName = persistencePackage.getSecurityCeilingEntityFullyQualifiedClassname();
+        Set<String> crumbCeilingNames = new LinkedHashSet<>();
         if (!ArrayUtils.isEmpty(persistencePackage.getSectionCrumbs())) {
-            ceilingNames.addAll(CollectionUtils.transform(Arrays.asList(persistencePackage.getSectionCrumbs()),
-                    new Transformer() {
-                        @Override
-                        public Object transform(Object o) {
-                            return ((SectionCrumb) o).getSectionIdentifier();
-                        }
-                    }));
+            for (SectionCrumb crumb : persistencePackage.getSectionCrumbs()) {
+                if (crumb != null && StringUtils.isNotBlank(crumb.getSectionIdentifier())) {
+                    crumbCeilingNames.add(crumb.getSectionIdentifier());
+                }
+            }
         }
+        crumbCeilingNames.remove(targetCeilingName);
 
         Entity entity = persistencePackage.getEntity();
 
@@ -186,7 +185,27 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
             }
         }
 
-        securityCheck(ceilingNames.toArray(new String[ceilingNames.size()]), operationType);
+        securityCheck(getAuthorizingCeilingNames(targetCeilingName, crumbCeilingNames, operationType), operationType);
+    }
+
+    /**
+     * Section crumbs are request supplied, so they may only authorize an operation in place of the ceiling actually
+     * being persisted when that ceiling has no permission configured for the operation (e.g. a collection member that
+     * inherits its parent section's permissions). A ceiling that is secured in its own right always requires its own
+     * permission.
+     */
+    protected String[] getAuthorizingCeilingNames(String targetCeilingName, Set<String> crumbCeilingNames,
+                                                  EntityOperationType operationType) throws ServiceException {
+        if (StringUtils.isBlank(targetCeilingName)) {
+            throw new SecurityServiceException("Security Check Failed: ceilingNames not specified");
+        }
+        List<String> ceilingNames = new ArrayList<>();
+        ceilingNames.add(targetCeilingName);
+        if (!crumbCeilingNames.isEmpty() && !securityService.doesOperationExistForCeilingEntity(
+                getPermissionType(operationType), targetCeilingName)) {
+            ceilingNames.addAll(crumbCeilingNames);
+        }
+        return ceilingNames.toArray(new String[0]);
     }
 
     @Override
@@ -199,27 +218,7 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
             throw new SecurityServiceException("Security Check Failed: ceilingNames not specified");
         }
         AdminUser persistentAdminUser = getPersistentAdminUser();
-        PermissionType permissionType;
-        switch (operationType) {
-            case ADD:
-                permissionType = PermissionType.CREATE;
-                break;
-            case FETCH:
-                permissionType = PermissionType.READ;
-                break;
-            case REMOVE:
-                permissionType = PermissionType.DELETE;
-                break;
-            case UPDATE:
-                permissionType = PermissionType.UPDATE;
-                break;
-            case INSPECT:
-                permissionType = PermissionType.READ;
-                break;
-            default:
-                permissionType = PermissionType.OTHER;
-                break;
-        }
+        PermissionType permissionType = getPermissionType(operationType);
 
         final ExtensionResultStatusType resultStatusType = securityCheckExtensionManager.getProxy()
                 .handleAdminSecurityCheck(persistentAdminUser, permissionType, Arrays.asList(ceilingNames));
@@ -254,6 +253,22 @@ public class AdminSecurityServiceRemote implements AdminSecurityService, Securit
                 }
             }
             throw primaryException;
+        }
+    }
+
+    protected PermissionType getPermissionType(EntityOperationType operationType) {
+        switch (operationType) {
+            case ADD:
+                return PermissionType.CREATE;
+            case FETCH:
+            case INSPECT:
+                return PermissionType.READ;
+            case REMOVE:
+                return PermissionType.DELETE;
+            case UPDATE:
+                return PermissionType.UPDATE;
+            default:
+                return PermissionType.OTHER;
         }
     }
 
