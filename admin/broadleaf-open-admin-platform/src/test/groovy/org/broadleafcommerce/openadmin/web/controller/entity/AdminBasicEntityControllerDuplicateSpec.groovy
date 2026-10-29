@@ -22,6 +22,7 @@ import org.broadleafcommerce.common.persistence.EntityDuplicator
 import org.broadleafcommerce.common.service.GenericEntityService
 import org.broadleafcommerce.openadmin.dto.ClassMetadata
 import org.broadleafcommerce.openadmin.dto.DynamicResultSet
+import org.broadleafcommerce.openadmin.dto.Entity
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser
 import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType
@@ -41,6 +42,7 @@ class AdminBasicEntityControllerDuplicateSpec extends Specification {
 
     static final String SECTION_KEY = "/offer"
     static final String CEILING = "org.broadleafcommerce.core.offer.domain.Offer"
+    static final String SECURITY_CEILING = "org.broadleafcommerce.core.offer.domain.SecuredOffer"
 
     AdminBasicEntityController controller
     SecurityVerifier securityVerifier = Mock()
@@ -70,9 +72,14 @@ class AdminBasicEntityControllerDuplicateSpec extends Specification {
         controller.getSectionPersistencePackageRequest(CEILING, _, _) >> null
         controller.getContextPath(_) >> "/admin"
         adminEntityService.getClassMetadata(_) >> new PersistenceResponse().withDynamicResultSet(new DynamicResultSet(cmd))
+        adminEntityService.getRecord(_, "42", cmd, false) >> readable()
         securityVerifier.getPersistentAdminUser() >> adminUser
         dynamicEntityDao.getImplClass(CEILING) >> Object
         response.getWriter() >> new PrintWriter(body)
+    }
+
+    static PersistenceResponse readable() {
+        new PersistenceResponse().withDynamicResultSet(new DynamicResultSet([new Entity()] as Entity[], 1))
     }
 
     def duplicate() {
@@ -124,5 +131,37 @@ class AdminBasicEntityControllerDuplicateSpec extends Specification {
         1 * duplicator.copy(Object, 42L) >> copy
         0 * response.setStatus(_)
         view == "ajaxredirect:/admin" + SECTION_KEY + "/43"
+    }
+
+    def "duplication checks permissions against the section's security ceiling"() {
+        given:
+        cmd.setSecurityCeilingType(SECURITY_CEILING)
+        securityVerifier.securityCheck(SECURITY_CEILING, EntityOperationType.ADD) >> { throw new SecurityServiceException("denied") }
+        rowLevelSecurityService.canAdd(adminUser, CEILING, cmd) >> true
+
+        when:
+        def view = duplicate()
+
+        then:
+        view == null
+        1 * response.setStatus(HttpServletResponse.SC_FORBIDDEN)
+        0 * duplicator.copy(_, _)
+        body.toString().contains("Duplication_Unauthorized")
+    }
+
+    def "duplication is rejected when the user cannot read the source record"() {
+        given:
+        rowLevelSecurityService.canAdd(adminUser, CEILING, cmd) >> true
+        duplicator.validate(Object, 42L) >> true
+
+        when:
+        def view = duplicate()
+
+        then:
+        1 * adminEntityService.getRecord(_, "42", cmd, false) >> { throw new SecurityServiceException("no read") }
+        view == null
+        1 * response.setStatus(HttpServletResponse.SC_FORBIDDEN)
+        0 * duplicator.copy(_, _)
+        body.toString().contains("Duplication_Unauthorized")
     }
 }
