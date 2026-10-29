@@ -79,7 +79,7 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         removeUnusedPhones(form);
 
-        Address address = addressService.saveAddress(form.getAddress());
+        Address address = addressService.saveAddress(addressService.copyAddress(form.getAddress()));
         CustomerAddress customerAddress = customerAddressService.create();
         customerAddress.setAddress(address);
         customerAddress.setAddressName(form.getAddressName());
@@ -131,7 +131,7 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         validateCustomerOwnedData(customerAddress);
 
-        customerAddress.setAddress(form.getAddress());
+        customerAddress.setAddress(addressService.copyAddress(customerAddress.getAddress(), form.getAddress()));
         customerAddress.setAddressName(form.getAddressName());
         customerAddressService.saveCustomerAddress(customerAddress);
 
