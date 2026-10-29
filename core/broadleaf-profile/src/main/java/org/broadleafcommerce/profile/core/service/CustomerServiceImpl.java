@@ -53,9 +53,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -375,7 +379,7 @@ public class CustomerServiceImpl implements CustomerService {
 
             CustomerForgotPasswordSecurityToken fpst = new CustomerForgotPasswordSecurityTokenImpl();
             fpst.setCustomerId(customer.getId());
-            fpst.setToken(encodePassword(token));
+            fpst.setToken(encodeResetToken(token));
             fpst.setCreateDate(SystemTime.asDate());
             customerForgotPasswordSecurityTokenDao.saveToken(fpst);
 
@@ -415,12 +419,12 @@ public class CustomerServiceImpl implements CustomerService {
         CustomerForgotPasswordSecurityToken fpst = null;
         if (!response.getHasErrors()) {
             if (customer == null) {
-                fpst = customerForgotPasswordSecurityTokenDao.readToken(encodePassword(token));
+                fpst = customerForgotPasswordSecurityTokenDao.readToken(encodeResetToken(rawToken));
             } else {
                 List<CustomerForgotPasswordSecurityToken> fpstoks = customerForgotPasswordSecurityTokenDao
                         .readUnusedTokensByCustomerId(customer.getId());
                 for (CustomerForgotPasswordSecurityToken fpstok : fpstoks) {
-                    if (isPasswordValid(rawToken, fpstok.getToken())) {
+                    if (isResetTokenValid(rawToken, fpstok.getToken())) {
                         fpst = fpstok;
                         break;
                     }
@@ -435,6 +439,27 @@ public class CustomerServiceImpl implements CustomerService {
             }
         }
         return fpst;
+    }
+
+    /**
+     * Reset tokens are random, high-entropy secrets, so they are stored as an unsalted SHA-256 digest rather than through
+     * the (salted) password encoder. This keeps them out of the database in plaintext while still allowing a direct
+     * primary-key lookup when the owning customer is not known.
+     */
+    protected String encodeResetToken(String rawToken) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    protected boolean isResetTokenValid(String rawToken, String encodedToken) {
+        return encodedToken != null && MessageDigest.isEqual(
+                encodeResetToken(rawToken).getBytes(StandardCharsets.UTF_8),
+                encodedToken.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     @Override
