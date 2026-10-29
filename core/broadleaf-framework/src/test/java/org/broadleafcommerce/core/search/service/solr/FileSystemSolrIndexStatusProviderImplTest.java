@@ -83,6 +83,28 @@ public class FileSystemSolrIndexStatusProviderImplTest {
     }
 
     @Test
+    public void testPrivateStatusDirectoryIsDeletedOnDestroy() throws IOException {
+        provider.handleUpdateIndexStatus(status(new Date()));
+        Path statusDir = provider.privateStatusDirectory;
+        assertTrue(Files.isDirectory(statusDir));
+
+        provider.deletePrivateStatusDirectory();
+
+        assertFalse(Files.exists(statusDir, LinkOption.NOFOLLOW_LINKS));
+        assertNull(provider.privateStatusDirectory);
+    }
+
+    @Test
+    public void testConfiguredStatusDirectoryIsNotDeletedOnDestroy() throws IOException {
+        provider.statusDirectoryPath = workDir.toString();
+        provider.handleUpdateIndexStatus(status(new Date()));
+
+        provider.deletePrivateStatusDirectory();
+
+        assertTrue(Files.isRegularFile(workDir.resolve("solr_status.xml"), LinkOption.NOFOLLOW_LINKS));
+    }
+
+    @Test
     public void testSymlinkInSharedTempIsNotFollowedByDefault() throws IOException {
         Path planted = Paths.get(System.getProperty("java.io.tmpdir"), "solr_status.xml");
         Assume.assumeFalse(Files.exists(planted, LinkOption.NOFOLLOW_LINKS));

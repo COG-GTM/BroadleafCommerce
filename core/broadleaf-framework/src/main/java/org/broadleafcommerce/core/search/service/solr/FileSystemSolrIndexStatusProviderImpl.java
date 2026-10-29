@@ -48,6 +48,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.stream.Stream;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -67,6 +68,7 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
 
 /**
@@ -462,6 +464,28 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
                     + "status is stored in %s and will not survive a restart.", privateStatusDirectory));
         }
         return privateStatusDirectory;
+    }
+
+    /**
+     * Removes the private status directory created by {@link #getPrivateStatusDirectory()} so per-JVM directories do not
+     * accumulate across restarts. Configured directories are never touched.
+     */
+    @PreDestroy
+    public synchronized void deletePrivateStatusDirectory() {
+        if (privateStatusDirectory == null) {
+            return;
+        }
+        try {
+            try (Stream<Path> files = Files.list(privateStatusDirectory)) {
+                for (Path file : (Iterable<Path>) files::iterator) {
+                    Files.deleteIfExists(file);
+                }
+            }
+            Files.deleteIfExists(privateStatusDirectory);
+            privateStatusDirectory = null;
+        } catch (IOException e) {
+            LOG.warn(String.format("Unable to delete Solr index status directory %s", privateStatusDirectory), e);
+        }
     }
 
     protected boolean isRegularStatusFile(File statusFile) {
