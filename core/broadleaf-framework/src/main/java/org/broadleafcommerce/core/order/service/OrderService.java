@@ -347,7 +347,8 @@ public interface OrderService {
      * cases such as bulk adds where the repricing could be done for the last item only.
      * <p>
      * This method differs from the {@link #addItemWithPriceOverrides(Long, OrderItemRequestDTO, boolean)} in that it
-     * will clear any values set on the {@link OrderItemRequestDTO} for the overrideSalePrice or overrideRetailPrice.
+     * will clear any values set on the {@link OrderItemRequestDTO} for the overrideSalePrice or overrideRetailPrice,
+     * including on every nested request in {@link OrderItemRequestDTO#getChildOrderItems()}.
      * <p>
      * This design is intended to ensure that override pricing is not called by mistake.   Implementors should
      * use this method when no manual price overrides are allowed.
