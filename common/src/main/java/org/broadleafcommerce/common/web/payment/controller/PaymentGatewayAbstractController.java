@@ -154,8 +154,10 @@ public abstract class PaymentGatewayAbstractController extends BroadleafAbstract
      * <p>
      * try {
      * translate http request to DTO
+     * if (not valid)
+     * fail without touching the order
      * apply payment to order (if unsuccessful, payment will be archived)
-     * if (not successful or not valid)
+     * if (not successful)
      * redirect to error view
      * if (complete checkout on callback == true)
      * initiateCheckout(order id);
@@ -185,6 +187,11 @@ public abstract class PaymentGatewayAbstractController extends BroadleafAbstract
                 LOG.trace("HTTPRequest translated to Raw Response: " + responseDTO.getRawResponse());
             }
 
+            if (!responseDTO.isValid()) {
+                throw new PaymentException("The validity of the response cannot be confirmed." +
+                        "Check the Tamper Proof Seal for more details.");
+            }
+
             orderPaymentId = applyPaymentToOrder(responseDTO);
 
             if (!responseDTO.isSuccessful()) {
@@ -195,11 +202,6 @@ public abstract class PaymentGatewayAbstractController extends BroadleafAbstract
 
                 handleUnsuccessfulTransaction(model, redirectAttributes, responseDTO);
                 return getErrorViewRedirect();
-            }
-
-            if (!responseDTO.isValid()) {
-                throw new PaymentException("The validity of the response cannot be confirmed." +
-                        "Check the Tamper Proof Seal for more details.");
             }
 
             String orderId = responseDTO.getOrderId();
