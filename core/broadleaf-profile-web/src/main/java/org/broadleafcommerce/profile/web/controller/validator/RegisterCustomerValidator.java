@@ -18,14 +18,18 @@
 package org.broadleafcommerce.profile.web.controller.validator;
 
 import org.apache.commons.validator.GenericValidator;
+import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
+import org.broadleafcommerce.profile.web.core.security.CustomerStateRequestProcessor;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.Errors;
 import org.springframework.validation.ValidationUtils;
 import org.springframework.validation.Validator;
+import org.springframework.web.context.request.WebRequest;
 
 import jakarta.annotation.Resource;
 
@@ -54,6 +58,11 @@ public class RegisterCustomerValidator implements Validator {
 
     public void validate(Object obj, Errors errors, boolean useEmailForUsername) {
         RegisterCustomerForm form = (RegisterCustomerForm) obj;
+
+        if (!isRegistrationTargetAllowed(form.getCustomer())) {
+            errors.reject("customer.id.invalid", "Registration is not allowed for this customer.");
+            return;
+        }
 
         Customer customerFromDb = customerService.readCustomerByUsername(form.getCustomer().getUsername());
 
@@ -88,6 +97,41 @@ public class RegisterCustomerValidator implements Validator {
                 errors.rejectValue("customer.emailAddress", "emailAddress.invalid", null, null);
             }
         }
+    }
+
+    /**
+     * A registration may only create a new customer or upgrade the current session's own anonymous customer.
+     * Any other persisted customer id (e.g. one bound from the request) is rejected so the registration cannot
+     * be merged over an existing account.
+     */
+    protected boolean isRegistrationTargetAllowed(Customer customer) {
+        if (customer == null) {
+            return false;
+        }
+        Long customerId = customer.getId();
+        if (customerId == null) {
+            return true;
+        }
+        Customer existing = customerService.readCustomerById(customerId);
+        if (existing == null) {
+            return true;
+        }
+        if (existing.isRegistered()) {
+            return false;
+        }
+        return customerId.equals(getSessionAnonymousCustomerId());
+    }
+
+    protected Long getSessionAnonymousCustomerId() {
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext();
+        WebRequest request = context == null ? null : context.getWebRequest();
+        if (request == null || !BLCRequestUtils.isOKtoUseSession(request)) {
+            return null;
+        }
+        Object id = request.getAttribute(
+                CustomerStateRequestProcessor.getAnonymousCustomerIdSessionAttributeName(), WebRequest.SCOPE_SESSION
+        );
+        return id instanceof Long ? (Long) id : null;
     }
 
     public String getValidatePasswordExpression() {

@@ -34,6 +34,8 @@ import org.broadleafcommerce.profile.web.core.service.register.RegistrationServi
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,6 +73,22 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     @Resource(name = "blOrderService")
     protected OrderService orderService;
+
+    /**
+     * The registration form carries a persistent {@link Customer}, so only the fields a shopper is expected to
+     * provide may be bound from the request. Binding {@code customer.id} would otherwise allow registering over
+     * (and logging in as) any existing customer.
+     */
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        if (binder.getTarget() instanceof RegisterCustomerForm) {
+            binder.setAllowedFields(getRegisterCustomerFormAllowedFields());
+        }
+    }
+
+    protected String[] getRegisterCustomerFormAllowedFields() {
+        return RegisterCustomerForm.DEFAULT_ALLOWED_BINDING_FIELDS;
+    }
 
     public String register(
             RegisterCustomerForm registerCustomerForm,

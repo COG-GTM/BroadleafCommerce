@@ -67,6 +67,17 @@ public class RegisterCustomerController {
     @Resource(name = "blLoginService")
     protected LoginService loginService;
 
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        if (binder.getTarget() instanceof RegisterCustomerForm) {
+            binder.setAllowedFields(getRegisterCustomerFormAllowedFields());
+        }
+    }
+
+    protected String[] getRegisterCustomerFormAllowedFields() {
+        return RegisterCustomerForm.DEFAULT_ALLOWED_BINDING_FIELDS;
+    }
+
     @RequestMapping(value = "registerCustomer", method = {RequestMethod.GET})
     public String registerCustomer() {
         return getDisplayRegistrationFormView();
