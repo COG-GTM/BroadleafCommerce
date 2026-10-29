@@ -19,6 +19,8 @@ package org.broadleafcommerce.profile.web.core.controller;
 
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPhone;
+import org.broadleafcommerce.profile.core.domain.Phone;
+import org.broadleafcommerce.profile.core.domain.PhoneImpl;
 import org.broadleafcommerce.profile.core.service.CustomerPhoneService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.web.controller.CustomerPhoneController;
@@ -160,6 +162,84 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         String view = customerPhoneController.viewPhone(phones_1.get(0).getId(), request, pnf, errors);
         assert (view.indexOf(SUCCESS) >= 0);
         assert (request.getAttribute("customerPhoneId").equals(phones_1.get(0).getId()));
+    }
+
+    @Test(groups = "rejectOtherCustomersPhoneFromController", dependsOnGroups = "createCustomerPhoneFromController")
+    @Transactional
+    public void rejectOtherCustomersPhoneFromController() {
+        CustomerPhone victimPhone = customerPhoneService.readAllCustomerPhonesByCustomerId(userId).get(0);
+        Long victimPhoneId = victimPhone.getId();
+        Long victimInnerPhoneId = victimPhone.getPhone().getId();
+        String victimPhoneName = victimPhone.getPhoneName();
+        String victimPhoneNumber = victimPhone.getPhone().getPhoneNumber();
+        boolean victimDefault = victimPhone.getPhone().isDefault();
+        int victimPhoneCount = customerPhoneService.readAllCustomerPhonesByCustomerId(userId).size();
+
+        Customer attacker = customerService.readCustomerByUsername("customer2");
+        assert attacker != null && !attacker.getId().equals(userId);
+
+        try {
+            customerPhoneController.deletePhone(victimPhoneId, newRequestFor(attacker));
+            assert false : "deletePhone must reject another customer's phone";
+        } catch (SecurityException expected) {
+        }
+
+        try {
+            customerPhoneController.makePhoneDefault(victimPhoneId, newRequestFor(attacker));
+            assert false : "makePhoneDefault must reject another customer's phone";
+        } catch (SecurityException expected) {
+        }
+
+        try {
+            PhoneNameForm hijackForm = newPhoneNameForm("hijacked", "999-888-7777");
+            customerPhoneController.savePhone(hijackForm, new BeanPropertyBindingResult(hijackForm, "phoneNameForm"),
+                    newRequestFor(attacker), victimPhoneId, victimInnerPhoneId);
+            assert false : "savePhone must reject another customer's customerPhoneId";
+        } catch (SecurityException expected) {
+        }
+
+        CustomerPhone attackerPhone = customerPhoneService.readAllCustomerPhonesByCustomerId(attacker.getId())
+                .stream().findFirst().orElse(null);
+        if (attackerPhone != null) {
+            try {
+                PhoneNameForm hijackForm = newPhoneNameForm("hijacked", "999-888-7777");
+                customerPhoneController.savePhone(hijackForm, new BeanPropertyBindingResult(hijackForm, "phoneNameForm"),
+                        newRequestFor(attacker), attackerPhone.getId(), victimInnerPhoneId);
+                assert false : "savePhone must reject another customer's phoneId";
+            } catch (SecurityException expected) {
+            }
+        }
+
+        PhoneNameForm viewForm = new PhoneNameForm();
+        MockHttpServletRequest viewRequest = newRequestFor(attacker);
+        customerPhoneController.viewPhone(victimPhoneId, viewRequest, viewForm,
+                new BeanPropertyBindingResult(viewForm, "phoneNameForm"));
+        assert viewRequest.getAttribute("customerPhoneId") == null;
+        assert viewForm.getPhone() == null;
+
+        CustomerPhone reloaded = customerPhoneService.readCustomerPhoneById(victimPhoneId);
+        assert reloaded != null;
+        assert reloaded.getCustomer().getId().equals(userId);
+        assert reloaded.getPhoneName().equals(victimPhoneName);
+        assert reloaded.getPhone().getId().equals(victimInnerPhoneId);
+        assert reloaded.getPhone().getPhoneNumber().equals(victimPhoneNumber);
+        assert reloaded.getPhone().isDefault() == victimDefault;
+        assert customerPhoneService.readAllCustomerPhonesByCustomerId(userId).size() == victimPhoneCount;
+    }
+
+    private PhoneNameForm newPhoneNameForm(String phoneName, String phoneNumber) {
+        Phone phone = new PhoneImpl();
+        phone.setPhoneNumber(phoneNumber);
+        PhoneNameForm form = new PhoneNameForm();
+        form.setPhone(phone);
+        form.setPhoneName(phoneName);
+        return form;
+    }
+
+    private MockHttpServletRequest newRequestFor(Customer customer) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(), customer);
+        return request;
     }
 
     private MockHttpServletRequest getNewServletInstance() {
