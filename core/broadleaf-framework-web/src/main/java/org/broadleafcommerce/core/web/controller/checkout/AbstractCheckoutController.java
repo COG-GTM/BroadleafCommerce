@@ -35,6 +35,7 @@ import org.broadleafcommerce.core.web.checkout.validator.OrderInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.validator.ShippingInfoFormValidator;
 import org.broadleafcommerce.core.web.order.service.CartStateService;
 import org.broadleafcommerce.core.web.service.InitBinderService;
+import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CountrySubdivisionService;
@@ -42,6 +43,7 @@ import org.broadleafcommerce.profile.core.service.CustomerAddressService;
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.PhoneService;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.ui.Model;
@@ -67,6 +69,8 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
     protected static String checkoutStagesPartial = "checkout/partials/checkoutStages";
     protected static String checkoutPageRedirect = "redirect:/checkout";
     protected static String baseConfirmationView = "ajaxredirect:/confirmation";
+    protected static String CUSTOMER_PAYMENT_OWNERSHIP_ERROR_MESSAGE =
+            "The requested customer payment does not belong to the active customer";
 
     /* Optional Service */
     @Autowired(required = false)
@@ -176,6 +180,21 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
     protected void populateModelWithReferenceData(HttpServletRequest request, Model model) {
         //Add module specific model variables
         checkoutControllerExtensionManager.getProxy().addAdditionalModelVariables(model);
+    }
+
+    /**
+     * Reads a client-supplied saved payment, requiring that it belongs to the active customer.
+     *
+     * @throws SecurityException if the payment does not exist or is owned by another customer
+     */
+    protected CustomerPayment readActiveCustomerOwnedPayment(Long customerPaymentId) {
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByIdAndCustomer(
+                customerPaymentId, CustomerState.getCustomer()
+        );
+        if (customerPayment == null) {
+            throw new SecurityException(CUSTOMER_PAYMENT_OWNERSHIP_ERROR_MESSAGE);
+        }
+        return customerPayment;
     }
 
     /**
