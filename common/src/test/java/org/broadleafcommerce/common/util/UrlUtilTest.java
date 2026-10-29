@@ -26,6 +26,8 @@ public class UrlUtilTest extends TestCase {
         assertTrue(UrlUtil.isLocalRedirectPath("/account"));
         assertTrue(UrlUtil.isLocalRedirectPath("/shop/checkout?step=1&x=a%2Fb"));
         assertTrue(UrlUtil.isLocalRedirectPath("/account#orders"));
+        assertTrue(UrlUtil.isLocalRedirectPath("/checkout?email=alice@example.com"));
+        assertTrue(UrlUtil.isLocalRedirectPath("/search?q=a:b#section:1"));
     }
 
     public void testProtocolRelativeTargetsAreRejected() {
@@ -42,6 +44,8 @@ public class UrlUtilTest extends TestCase {
         assertFalse(UrlUtil.isLocalRedirectPath("javascript:alert(1)"));
         assertFalse(UrlUtil.isLocalRedirectPath("/redirect:https://evil.example"));
         assertFalse(UrlUtil.isLocalRedirectPath("/@evil.example"));
+        assertFalse(UrlUtil.isLocalRedirectPath("//user@evil.example/?a=b"));
+        assertFalse(UrlUtil.isLocalRedirectPath("https://evil.example/?next=/account"));
         assertFalse(UrlUtil.isLocalRedirectPath("evil.example"));
         assertFalse(UrlUtil.isLocalRedirectPath("account"));
     }

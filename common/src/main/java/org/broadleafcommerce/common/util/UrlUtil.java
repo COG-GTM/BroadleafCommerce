@@ -126,8 +126,8 @@ public class UrlUtil {
     /**
      * Returns <tt>true</tt> if a client-supplied redirect target (e.g. a <tt>successUrl</tt> parameter) is a
      * local, host-relative path. The url must start with a single <tt>/</tt> whose next character is not
-     * <tt>/</tt> or <tt>\\</tt>, and must not contain a scheme, host, user info, backslash, whitespace or
-     * control character.
+     * <tt>/</tt> or <tt>\\</tt>, must not contain a scheme, host, user info, backslash, whitespace or
+     * control character, and may only use <tt>:</tt> or <tt>@</tt> in its query or fragment.
      *
      * @param url the url to check
      * @return true if the url is safe to use as a local redirect target
@@ -139,9 +139,13 @@ public class UrlUtil {
         if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
             return false;
         }
+        boolean inPath = true;
         for (int i = 0; i < url.length(); i++) {
             char c = url.charAt(i);
-            if (c <= ' ' || c == 0x7f || c == '\\' || c == ':' || c == '@') {
+            if (c == '?' || c == '#') {
+                inPath = false;
+            }
+            if (c <= ' ' || c == 0x7f || c == '\\' || (inPath && (c == ':' || c == '@'))) {
                 return false;
             }
         }
