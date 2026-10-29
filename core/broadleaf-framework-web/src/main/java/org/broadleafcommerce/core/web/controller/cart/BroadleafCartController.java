@@ -41,7 +41,9 @@ import org.broadleafcommerce.core.pricing.service.exception.PricingException;
 import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.ui.Model;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -133,6 +135,9 @@ public class BroadleafCartController extends AbstractCartController {
             String originalOrderItem = request.getParameter("originalOrderItem");
             if (StringUtils.isNotEmpty(originalOrderItem)) {
                 Long originalOrderItemId = Long.parseLong(originalOrderItem);
+                if (findOrderItemInCart(cart, originalOrderItemId) == null) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+                }
                 updateAddRequestQuantities(itemRequest, originalOrderItemId);
 
                 cart = orderService.removeItem(cart.getId(), originalOrderItemId, false);
@@ -159,6 +164,24 @@ public class BroadleafCartController extends AbstractCartController {
         for (OrderItemRequestDTO childDTO : itemRequest.getChildOrderItems()) {
             childDTO.setQuantity(childDTO.getQuantity() * orderItem.getQuantity());
         }
+    }
+
+    /**
+     * Resolves an order item by a request supplied id, but only when it belongs to the given cart.
+     *
+     * @param cart the current customer's cart, typically {@link CartState#getCart()}
+     * @param orderItemId the request supplied order item id
+     * @return the order item, or null when it does not exist or is not part of the cart
+     */
+    protected OrderItem findOrderItemInCart(Order cart, Long orderItemId) {
+        if (orderItemId == null || cart == null || cart instanceof NullOrderImpl || cart.getId() == null) {
+            return null;
+        }
+        OrderItem orderItem = orderItemService.readOrderItemById(orderItemId);
+        if (orderItem == null || orderItem.getOrder() == null || !cart.getId().equals(orderItem.getOrder().getId())) {
+            return null;
+        }
+        return orderItem;
     }
 
     protected boolean isUpdateRequest(HttpServletRequest request) {
@@ -262,6 +285,8 @@ public class BroadleafCartController extends AbstractCartController {
      * <p>
      * If the method was invoked via an AJAX call, it will render the "ajax/configure" template.
      * Otherwise, it will perform a 302 redirect to "/cart/configure"
+     * <p>
+     * Responds with a 404 when the order item is not part of the current customer's cart.
      *
      * @param request
      * @param response
@@ -278,7 +303,11 @@ public class BroadleafCartController extends AbstractCartController {
             Long orderItemId
     ) throws IOException, AddToCartException, PricingException, Exception {
 
-        DiscreteOrderItem orderItem = (DiscreteOrderItem) orderItemService.readOrderItemById(orderItemId);
+        OrderItem cartItem = findOrderItemInCart(CartState.getCart(), orderItemId);
+        if (!(cartItem instanceof DiscreteOrderItem)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        DiscreteOrderItem orderItem = (DiscreteOrderItem) cartItem;
 
         Long productId = orderItem.getProduct().getId();
         Product product = catalogService.findProductById(productId);
