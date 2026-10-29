@@ -477,9 +477,6 @@
                                 *.org.broadleafcommerce.cms.web.controller:
                                 *.org.broadleafcommerce.cms.admin.web.controller
                             </excludePackageNames>
-                            <sourceFileExcludes>
-                                <sourceFileExclude>org/broadleafcommerce/cms/web/PreviewTemplateController.java</sourceFileExclude>
-                            </sourceFileExcludes>
                             <additionalDependencies>
                                 <additionalDependency>
                                     <groupId>jakarta.interceptor</groupId>
