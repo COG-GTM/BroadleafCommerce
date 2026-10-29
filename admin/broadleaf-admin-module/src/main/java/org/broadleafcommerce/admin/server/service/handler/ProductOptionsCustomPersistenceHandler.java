@@ -100,7 +100,7 @@ public class ProductOptionsCustomPersistenceHandler extends CustomPersistenceHan
 
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
             ProductOption adminInstance = (ProductOption) dynamicEntityDao.retrieve(
-                    Class.forName(entity.getType()[0]), primaryKey
+                    getValidatedEntityClass(entity, ProductOption.class, dynamicEntityDao), primaryKey
             );
 
             adminInstance = (ProductOption) helper.createPopulatedInstance(adminInstance, entity, adminProperties, false);

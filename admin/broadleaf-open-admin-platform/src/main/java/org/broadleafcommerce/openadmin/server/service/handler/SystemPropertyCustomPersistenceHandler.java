@@ -70,7 +70,7 @@ public class SystemPropertyCustomPersistenceHandler extends CustomPersistenceHan
             );
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
             SystemProperty adminInstance = (SystemProperty) dynamicEntityDao.retrieve(
-                    Class.forName(entity.getType()[0]), primaryKey
+                    getValidatedEntityClass(entity, SystemProperty.class, dynamicEntityDao), primaryKey
             );
             adminInstance = (SystemProperty) helper.createPopulatedInstance(
                     adminInstance, entity, adminProperties, false
@@ -98,7 +98,7 @@ public class SystemPropertyCustomPersistenceHandler extends CustomPersistenceHan
         try {
             // Get an instance of SystemProperty with the updated values from the form
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            SystemProperty adminInstance = (SystemProperty) Class.forName(entity.getType()[0]).newInstance();
+            SystemProperty adminInstance = newValidatedEntityInstance(entity, SystemProperty.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     SystemProperty.class.getName(), persistencePerspective
             );

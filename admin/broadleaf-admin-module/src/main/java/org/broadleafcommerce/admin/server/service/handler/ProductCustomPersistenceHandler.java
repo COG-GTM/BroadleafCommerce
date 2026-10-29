@@ -266,7 +266,7 @@ public class ProductCustomPersistenceHandler extends CustomPersistenceHandlerAda
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Product adminInstance = (Product) Class.forName(entity.getType()[0]).newInstance();
+            Product adminInstance = newValidatedEntityInstance(entity, Product.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     Product.class.getName(), persistencePerspective
             );
@@ -332,7 +332,7 @@ public class ProductCustomPersistenceHandler extends CustomPersistenceHandlerAda
             }
 
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Product adminInstance = (Product) dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Product adminInstance = (Product) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, Product.class, dynamicEntityDao), primaryKey);
             if (adminInstance instanceof ProductBundle) {
                 removeBundleFieldRestrictions((ProductBundle) adminInstance, adminProperties, entity);
             }
@@ -385,14 +385,13 @@ public class ProductCustomPersistenceHandler extends CustomPersistenceHandlerAda
             DynamicEntityDao dynamicEntityDao,
             RecordHelper helper,
             Entity entity
-    ) throws ClassNotFoundException {
+    ) throws ClassNotFoundException, ServiceException {
         PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
         Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                 Product.class.getName(), persistencePerspective
         );
         Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-        String type = entity.getType()[0];
-        Product adminInstance = (Product) dynamicEntityDao.retrieve(Class.forName(type), primaryKey);
+        Product adminInstance = (Product) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, Product.class, dynamicEntityDao), primaryKey);
 
         return adminInstance;
     }

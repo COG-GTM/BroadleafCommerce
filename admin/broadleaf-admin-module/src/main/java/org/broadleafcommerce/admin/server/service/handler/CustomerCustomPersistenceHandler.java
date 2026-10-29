@@ -80,7 +80,7 @@ public class CustomerCustomPersistenceHandler extends CustomPersistenceHandlerAd
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Customer adminInstance = (Customer) Class.forName(entity.getType()[0]).newInstance();
+            Customer adminInstance = newValidatedEntityInstance(entity, Customer.class, dynamicEntityDao);
             adminInstance.setId(customerService.findNextCustomerId());
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(Customer.class.getName(), persistencePerspective);
             adminInstance = (Customer) helper.createPopulatedInstance(adminInstance, entity, adminProperties, false);
@@ -115,7 +115,7 @@ public class CustomerCustomPersistenceHandler extends CustomPersistenceHandlerAd
                     Customer.class.getName(), persistencePerspective
             );
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Customer adminInstance = (Customer) dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Customer adminInstance = (Customer) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, Customer.class, dynamicEntityDao), primaryKey);
 
             Entity errorEntity = validateUniqueUsername(entity, adminInstance, false);
             if (errorEntity != null) {

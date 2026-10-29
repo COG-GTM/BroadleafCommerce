@@ -99,7 +99,7 @@ public class AdminUserCustomPersistenceHandler extends CustomPersistenceHandlerA
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            AdminUser adminInstance = (AdminUser) Class.forName(entity.getType()[0]).newInstance();
+            AdminUser adminInstance = newValidatedEntityInstance(entity, AdminUser.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     AdminUser.class.getName(), persistencePerspective
             );
@@ -141,7 +141,7 @@ public class AdminUserCustomPersistenceHandler extends CustomPersistenceHandlerA
             );
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
             AdminUser adminInstance = (AdminUser) dynamicEntityDao.retrieve(
-                    Class.forName(entity.getType()[0]), primaryKey
+                    getValidatedEntityClass(entity, AdminUser.class, dynamicEntityDao), primaryKey
             );
 
             Entity errorEntity = validateLegalUsernameAndEmail(entity, adminInstance, false);

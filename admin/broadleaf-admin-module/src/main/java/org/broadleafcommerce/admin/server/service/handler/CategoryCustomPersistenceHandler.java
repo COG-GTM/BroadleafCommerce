@@ -128,7 +128,7 @@ public class CategoryCustomPersistenceHandler extends CustomPersistenceHandlerAd
         this.validateCategory(entity);
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Category adminInstance = (Category) Class.forName(entity.getType()[0]).newInstance();
+            Category adminInstance = newValidatedEntityInstance(entity, Category.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     Category.class.getName(), persistencePerspective
             );
@@ -161,7 +161,7 @@ public class CategoryCustomPersistenceHandler extends CustomPersistenceHandlerAd
                     Category.class.getName(), persistencePerspective
             );
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Category adminInstance = (Category) dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Category adminInstance = (Category) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, Category.class, dynamicEntityDao), primaryKey);
             CategoryXref oldDefault = this.getCurrentDefaultXref(adminInstance);
             adminInstance = (Category) helper.createPopulatedInstance(adminInstance, entity, adminProperties, false);
             adminInstance = dynamicEntityDao.merge(adminInstance);

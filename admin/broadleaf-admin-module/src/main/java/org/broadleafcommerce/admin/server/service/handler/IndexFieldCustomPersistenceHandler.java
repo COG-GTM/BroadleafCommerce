@@ -96,7 +96,10 @@ public class IndexFieldCustomPersistenceHandler extends CustomPersistenceHandler
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(IndexField.class.getName(), persistencePerspective);
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Serializable instance = dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Class<?> ceilingClass = IndexFieldTypeImpl.class.getName().equalsIgnoreCase(
+                    persistencePackage.getCeilingEntityFullyQualifiedClassname()
+            ) ? IndexFieldType.class : IndexField.class;
+            Serializable instance = dynamicEntityDao.retrieve(getValidatedEntityClass(entity, ceilingClass, dynamicEntityDao), primaryKey);
             if (instance instanceof Status) {
                 ((Status) instance).setArchived('Y');
                 dynamicEntityDao.merge(instance);
@@ -117,7 +120,7 @@ public class IndexFieldCustomPersistenceHandler extends CustomPersistenceHandler
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(IndexField.class.getName(), persistencePerspective);
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            IndexField adminInstance = (IndexField) dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            IndexField adminInstance = (IndexField) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, IndexField.class, dynamicEntityDao), primaryKey);
 
             return getEntity(persistencePackage, dynamicEntityDao, helper, entity, adminProperties, adminInstance);
         } catch (Exception e) {
@@ -155,7 +158,7 @@ public class IndexFieldCustomPersistenceHandler extends CustomPersistenceHandler
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            IndexField adminInstance = (IndexField) Class.forName(entity.getType()[0]).newInstance();
+            IndexField adminInstance = newValidatedEntityInstance(entity, IndexField.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(IndexField.class.getName(), persistencePerspective);
             return getEntity(persistencePackage, dynamicEntityDao, helper, entity, adminProperties, adminInstance);
         } catch (Exception e) {

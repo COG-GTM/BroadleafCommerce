@@ -75,7 +75,7 @@ public class TranslationCustomPersistenceHandler extends CustomPersistenceHandle
         try {
             // Get an instance of SystemProperty with the updated values from the form
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Translation adminInstance = (Translation) Class.forName(entity.getType()[0]).newInstance();
+            Translation adminInstance = newValidatedEntityInstance(entity, Translation.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     Translation.class.getName(), persistencePerspective
             );
@@ -114,7 +114,7 @@ public class TranslationCustomPersistenceHandler extends CustomPersistenceHandle
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Translation adminInstance = (Translation) Class.forName(entity.getType()[0]).newInstance();
+            Translation adminInstance = newValidatedEntityInstance(entity, Translation.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     Translation.class.getName(), persistencePerspective
             );
