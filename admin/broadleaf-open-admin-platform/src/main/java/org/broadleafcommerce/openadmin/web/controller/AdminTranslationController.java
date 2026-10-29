@@ -18,6 +18,8 @@
 package org.broadleafcommerce.openadmin.web.controller;
 
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
+import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.i18n.domain.TranslatedEntity;
 import org.broadleafcommerce.common.i18n.domain.Translation;
 import org.broadleafcommerce.common.i18n.domain.TranslationImpl;
@@ -251,7 +253,7 @@ public class AdminTranslationController extends AdminAbstractController {
         PersistencePackageRequest ppr = getSectionPersistencePackageRequest(sectionClassName, sectionCrumbs, pathVars);
         ClassMetadata cmd = service.getClassMetadata(ppr).getDynamicResultSet().getClassMetaData();
 
-        adminRemoteSecurityService.securityCheck(form.getCeilingEntity(), EntityOperationType.FETCH);
+        checkTranslationAccess(form, EntityOperationType.FETCH);
 
         Entity entity = service.getRecord(ppr, form.getTranslationId().toString(), cmd, false)
                 .getDynamicResultSet()
@@ -294,7 +296,7 @@ public class AdminTranslationController extends AdminAbstractController {
             BindingResult result
     ) throws Exception {
         final TranslationForm form = getTranslationForm(entityForm);
-        adminRemoteSecurityService.securityCheck(form.getCeilingEntity(), EntityOperationType.UPDATE);
+        checkTranslationAccess(form, EntityOperationType.UPDATE);
         SectionCrumb sectionCrumb = new SectionCrumb();
         sectionCrumb.setSectionIdentifier(TranslationImpl.class.getName());
         sectionCrumb.setSectionId(String.valueOf(form.getTranslationId()));
@@ -338,7 +340,7 @@ public class AdminTranslationController extends AdminAbstractController {
             @ModelAttribute(value = "form") final TranslationForm form,
             BindingResult result
     ) throws Exception {
-        adminRemoteSecurityService.securityCheck(form.getCeilingEntity(), EntityOperationType.UPDATE);
+        checkTranslationAccess(form, EntityOperationType.UPDATE);
         SectionCrumb sectionCrumb = new SectionCrumb();
         sectionCrumb.setSectionIdentifier(TranslationImpl.class.getName());
         sectionCrumb.setSectionId(String.valueOf(form.getTranslationId()));
@@ -407,14 +409,7 @@ public class AdminTranslationController extends AdminAbstractController {
         Field entityType = new Field();
         entityType.setName("entityType");
 
-        String ceilingEntity = translationForm.getCeilingEntity();
-
-        TranslatedEntity translatedEntity = translationService.getAssignableEntityType(ceilingEntity);
-        if (translatedEntity == null && ceilingEntity.endsWith("Impl")) {
-            int pos = ceilingEntity.lastIndexOf("Impl");
-            ceilingEntity = ceilingEntity.substring(0, pos);
-            translatedEntity = TranslatedEntity.getInstance(ceilingEntity);
-        }
+        TranslatedEntity translatedEntity = resolveTranslatedEntity(translationForm.getCeilingEntity());
         entityType.setValue(translatedEntity.getFriendlyType());
 
         Field fieldName = new Field();
@@ -423,6 +418,49 @@ public class AdminTranslationController extends AdminAbstractController {
 
         entityForm.getFields().put("entityType", entityType);
         entityForm.getFields().put("fieldName", fieldName);
+    }
+
+    protected TranslatedEntity resolveTranslatedEntity(String ceilingEntity) {
+        TranslatedEntity translatedEntity = translationService.getAssignableEntityType(ceilingEntity);
+        if (translatedEntity == null && ceilingEntity.endsWith("Impl")) {
+            int pos = ceilingEntity.lastIndexOf("Impl");
+            translatedEntity = TranslatedEntity.getInstance(ceilingEntity.substring(0, pos));
+        }
+        return translatedEntity;
+    }
+
+    /**
+     * Authorizes an operation on an existing translation. The translation is loaded by id and the submitted
+     * ceiling entity must resolve to the translation's stored entity type, so that the permission check
+     * cannot be satisfied with an unrelated entity the caller happens to have rights on.
+     *
+     * @param form          the submitted translation form
+     * @param operationType the operation being performed
+     * @return the persisted translation identified by the form
+     * @throws ServiceException if the translation does not exist, does not belong to the submitted
+     *                          ceiling entity, or the caller lacks permission on that entity
+     */
+    protected Translation checkTranslationAccess(TranslationForm form, EntityOperationType operationType)
+            throws ServiceException {
+        if (form.getTranslationId() == null || StringUtils.isBlank(form.getCeilingEntity())) {
+            throw new SecurityServiceException("Security Check Failed: translation id and ceiling entity are required");
+        }
+        Translation translation = translationService.findTranslationById(form.getTranslationId());
+        if (translation == null || translation.getEntityType() == null) {
+            throw new SecurityServiceException("Security Check Failed: translation " + form.getTranslationId() + " not found");
+        }
+        TranslatedEntity requestedType;
+        try {
+            requestedType = resolveTranslatedEntity(form.getCeilingEntity());
+        } catch (IllegalArgumentException e) {
+            requestedType = null;
+        }
+        if (!translation.getEntityType().equals(requestedType)) {
+            throw new SecurityServiceException("Security Check Failed: translation " + form.getTranslationId()
+                    + " does not belong to the requested ceiling entity");
+        }
+        adminRemoteSecurityService.securityCheck(form.getCeilingEntity(), operationType);
+        return translation;
     }
 
 }
