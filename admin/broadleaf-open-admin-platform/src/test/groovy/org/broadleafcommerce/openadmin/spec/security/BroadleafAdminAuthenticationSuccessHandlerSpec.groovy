@@ -129,6 +129,7 @@ class BroadleafAdminAuthenticationSuccessHandlerSpec extends Specification {
         saved                                                                 | expected
         ORIGIN + "/admin/product/123"                                         | ORIGIN + "/admin/product/123"
         ORIGIN + "/admin/product?name=a+b&sort=asc"                           | ORIGIN + "/admin/product?name=a+b&sort=asc"
+        ORIGIN + "/admin/search?q=50%25"                                      | ORIGIN + "/admin/search?q=50%25"
         ORIGIN + "/admin/?successUrl=/product/123"                            | "/admin/product/123"
         ORIGIN + "/admin/?successUrl=/order&sessionTimeout=true"              | "/admin/order"
         ORIGIN + "/admin/?successUrl=" + ORIGIN + "/admin/product/123"        | ORIGIN + "/admin/product/123"
@@ -159,6 +160,9 @@ class BroadleafAdminAuthenticationSuccessHandlerSpec extends Specification {
         "/admin/product/1"                       | true
         "/admin/product?q=a%20b"                 | true
         "/admin/product?ref=https://example.org" | true
+        "/admin/search?q=50%25"                  | true
+        "/admin/search?q=%zz"                    | true
+        "/admin/50%25off"                        | true
         ORIGIN                                   | true
         ORIGIN + "/admin"                        | true
         ORIGIN + ":443/admin"                    | true
@@ -170,6 +174,8 @@ class BroadleafAdminAuthenticationSuccessHandlerSpec extends Specification {
         "/admin\\..\\example.org"                | false
         "/ /example.org"                         | false
         "/%2F/example.org"                       | false
+        "/%5Cexample.org/"                       | false
+        "/%255Cexample.org/"                     | false
         "/%25%32%46example.org"                  | false
         "/admin/https://example.org"             | false
         "https://example.org"                    | false

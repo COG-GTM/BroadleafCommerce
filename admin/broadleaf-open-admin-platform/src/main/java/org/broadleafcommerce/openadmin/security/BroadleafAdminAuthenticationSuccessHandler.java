@@ -122,8 +122,8 @@ public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthent
     /**
      * Determines whether the given redirect target stays on the current host. The url must either be a host relative
      * path (starting with a single '/') or an absolute url whose scheme, host and port match the current request.
-     * The leading part of the url decoded form is checked as well so that encoded schemes, authorities or
-     * backslashes are rejected.
+     * The url decoded form of the path is checked as well so that encoded schemes, authorities or backslashes
+     * are rejected.
      *
      * @param url the final redirect target
      * @param request the current request
@@ -147,20 +147,20 @@ public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthent
         if (path.substring(0, queryPosition).contains("://")) {
             return false;
         }
-        String current = url;
+        // Only the part before the query or fragment can change the redirect origin, so query values are not decoded
+        String current = path.substring(0, queryPosition);
         for (int i = 0; i < MAX_URL_DECODE_PASSES; i++) {
             String decoded;
             try {
                 decoded = URLDecoder.decode(current, StandardCharsets.UTF_8);
             } catch (IllegalArgumentException e) {
-                return false;
+                // a malformed escape in the original url is rejected, a literal '%' produced by decoding is not
+                return i > 0;
             }
             if (decoded.equals(current)) {
                 return true;
             }
-            String decodedPath = stripSameOrigin(decoded, request);
-            if (!hasHostRelativePrefix(decodedPath)
-                    || decodedPath.substring(0, indexOfQueryOrFragment(decodedPath)).contains("://")) {
+            if (!hasHostRelativePrefix(decoded) || decoded.contains("://")) {
                 return false;
             }
             current = decoded;
