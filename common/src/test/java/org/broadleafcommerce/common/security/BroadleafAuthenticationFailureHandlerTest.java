@@ -57,6 +57,9 @@ public class BroadleafAuthenticationFailureHandlerTest {
                 "/%5Cevil.com",
                 "/%252F%252Fevil.com",
                 "/%09/evil.com",
+                "/%2F%2Fevil.com?x=%",
+                "/%2F%2Fevil.com?x=%zz",
+                "/%25252525252F%25252525252Fevil.com",
                 "",
                 null
         };
@@ -68,7 +71,8 @@ public class BroadleafAuthenticationFailureHandlerTest {
     @Test
     public void acceptsLocalPaths() {
         String[] local = {"/", "/login?error=true", "/account/orders", "/checkout.htm", "/search?q=a%2Fb#top",
-                "/search?q=red|blue", "/search?filter[color]=red", "/search?q=100%"};
+                "/search?q=red|blue", "/search?filter[color]=red", "/search?q=100%",
+                "/login?reason=a+b"};
         for (String url : local) {
             assertEquals(url, handler.validateUrlParam(url));
         }
@@ -95,6 +99,17 @@ public class BroadleafAuthenticationFailureHandlerTest {
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
         assertEquals("/login?error=locked&successUrl=%2Faccount%3Ftab%3Dorders%26x%3D1", response.getRedirectedUrl());
+    }
+
+    @Test
+    public void keepsLocalFailureUrlWithEncodedPlus() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login_post.htm");
+        request.setParameter("failureUrl", "/login?reason=a%2Bb");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
+
+        assertEquals("/login?reason=a+b", response.getRedirectedUrl());
     }
 
     @Test

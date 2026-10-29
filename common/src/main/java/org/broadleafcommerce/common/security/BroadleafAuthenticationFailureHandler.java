@@ -22,8 +22,8 @@ import org.broadleafcommerce.common.util.StringUtil;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -122,9 +122,9 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
     /**
      * A local path starts with a single {@code /} followed by something other than {@code /} or {@code \\}, so it
      * can carry neither a scheme nor an authority. Backslashes, whitespace and control characters are rejected because
-     * browsers normalize or strip them. The check is repeated on up to {@value #MAX_DECODE_PASSES} further
-     * URL-decodings so an encoded value such as {@code /%2F%2Fhost} cannot become protocol-relative if a later
-     * consumer decodes it again.
+     * browsers normalize or strip them. The check is repeated after each of up to {@value #MAX_DECODE_PASSES}
+     * percent-decodings so an encoded value such as {@code /%2F%2Fhost} cannot become protocol-relative if a later
+     * consumer decodes it again; values still changing after that are rejected.
      */
     protected boolean isLocalPath(final String url) {
         if (url == null) {
@@ -135,18 +135,48 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
             if (!isLocalPathSyntax(candidate)) {
                 return false;
             }
-            final String decoded;
-            try {
-                decoded = URLDecoder.decode(candidate, StandardCharsets.UTF_8);
-            } catch (IllegalArgumentException e) {
-                break;
-            }
+            final String decoded = percentDecode(candidate);
             if (decoded.equals(candidate)) {
-                break;
+                return true;
             }
             candidate = decoded;
         }
-        return true;
+        return false;
+    }
+
+    /**
+     * Decodes valid {@code %XX} escapes as UTF-8, leaving malformed escapes and {@code +} untouched (unlike
+     * {@link java.net.URLDecoder}, which throws on the former and turns the latter into a space).
+     */
+    private static String percentDecode(final String value) {
+        if (value.indexOf('%') < 0) {
+            return value;
+        }
+        final StringBuilder result = new StringBuilder(value.length());
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int i = 0;
+        while (i < value.length()) {
+            final char c = value.charAt(i);
+            if (c == '%' && i + 2 < value.length() && isHex(value.charAt(i + 1)) && isHex(value.charAt(i + 2))) {
+                bytes.write(Character.digit(value.charAt(i + 1), 16) << 4 | Character.digit(value.charAt(i + 2), 16));
+                i += 3;
+            } else {
+                if (bytes.size() > 0) {
+                    result.append(bytes.toString(StandardCharsets.UTF_8));
+                    bytes.reset();
+                }
+                result.append(c);
+                i++;
+            }
+        }
+        if (bytes.size() > 0) {
+            result.append(bytes.toString(StandardCharsets.UTF_8));
+        }
+        return result.toString();
+    }
+
+    private static boolean isHex(final char c) {
+        return Character.digit(c, 16) >= 0 && c < 128;
     }
 
     private static boolean isLocalPathSyntax(final String url) {
