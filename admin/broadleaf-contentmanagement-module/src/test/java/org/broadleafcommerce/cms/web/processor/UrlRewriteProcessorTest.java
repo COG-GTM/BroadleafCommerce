@@ -157,9 +157,11 @@ public class UrlRewriteProcessorTest {
         assertEquals("", processor.sanitizeQueryString(""));
         assertEquals("", processor.sanitizeQueryString("?"));
         assertEquals("?largeAdminThumbnail", processor.sanitizeQueryString("?largeAdminThumbnail"));
-        assertEquals("?a%20%7D%20%2B%20%24%7B1%2B1%7D%20%2B%20%40%7B%20b",
+        assertEquals("?a%20%7D%20+%20%24%7B1+1%7D%20+%20%40%7B%20b",
                 processor.sanitizeQueryString("?a } + ${1+1} + @{ b"));
         assertEquals("?q=%C3%A9", processor.sanitizeQueryString("?q=\u00e9"));
         assertEquals("?a=1", processor.sanitizeQueryString("?a=1#frag"));
+        assertEquals("?q=a+b&path=x%2Fy", processor.sanitizeQueryString("?q=a+b&path=x%2Fy"));
+        assertEquals("?p=100%25&bad=%25zz&end=%25", processor.sanitizeQueryString("?p=100%25&bad=%zz&end=%"));
     }
 }

@@ -46,7 +46,7 @@ import jakarta.servlet.http.HttpServletRequest;
 @ConditionalOnTemplating
 public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProcessor {
 
-    private static final String SAFE_QUERY_PUNCTUATION = "-._~=&";
+    private static final String SAFE_QUERY_PUNCTUATION = "-._~=&+";
     private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
 
     @Resource(name = "blStaticAssetPathService")
@@ -206,7 +206,8 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
 
     /**
      * Percent-encodes every character of the given query string (including its leading '?') that is not a URL
-     * unreserved character or a query delimiter, so it can be safely appended to an already-evaluated URL as data.
+     * unreserved character, a query delimiter, '+' or part of an existing percent-encoded triplet, so it can be
+     * safely appended to an already-evaluated URL as data without changing how existing values decode.
      */
     protected String sanitizeQueryString(String queryString) {
         if (StringUtils.isEmpty(queryString)) {
@@ -222,15 +223,25 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
         }
 
         StringBuilder sanitized = new StringBuilder(query.length() + 1).append('?');
-        for (byte b : query.getBytes(StandardCharsets.UTF_8)) {
+        byte[] bytes = query.getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < bytes.length; i++) {
+            byte b = bytes[i];
             char c = (char) (b & 0xFF);
-            if (isSafeQueryCharacter(c)) {
+            if (isSafeQueryCharacter(c) || (c == '%' && isPercentEncodedTriplet(bytes, i))) {
                 sanitized.append(c);
             } else {
                 sanitized.append('%').append(HEX_DIGITS[(b >> 4) & 0x0F]).append(HEX_DIGITS[b & 0x0F]);
             }
         }
         return sanitized.toString();
+    }
+
+    protected boolean isPercentEncodedTriplet(byte[] bytes, int index) {
+        return index + 2 < bytes.length && isHexDigit(bytes[index + 1]) && isHexDigit(bytes[index + 2]);
+    }
+
+    private boolean isHexDigit(byte b) {
+        return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F');
     }
 
     protected boolean isSafeQueryCharacter(char c) {
