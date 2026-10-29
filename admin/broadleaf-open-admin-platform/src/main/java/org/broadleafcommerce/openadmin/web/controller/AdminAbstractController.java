@@ -60,9 +60,12 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -421,6 +424,10 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         for (Entry<String, Field> entry : dynamicFields.entrySet()) {
             String[] fieldName = entry.getKey().split("\\" + DynamicEntityFormInfo.FIELD_SEPARATOR);
             DynamicEntityFormInfo info = entityForm.getDynamicFormInfo(fieldName[0]);
+            if (info == null) {
+                LOG.warn("Ignoring submitted dynamic form field for unregistered dynamic form: " + fieldName[0]);
+                continue;
+            }
 
             EntityForm dynamicForm = entityForm.getDynamicForm(fieldName[0]);
             if (dynamicForm == null) {
@@ -434,6 +441,22 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         }
     }
 
+
+    /**
+     * Dynamic form metadata (ceiling class, security ceiling, custom criteria) must only ever be set server-side by
+     * the controller, so never allow it to be data-bound from request parameters.
+     */
+    @InitBinder
+    public void initDynamicFormBinder(WebDataBinder binder) {
+        String[] disallowed = {"dynamicFormInfos*", "dynamicForms*"};
+        String[] existing = binder.getDisallowedFields();
+        if (existing != null && existing.length > 0) {
+            List<String> merged = new ArrayList<>(Arrays.asList(existing));
+            merged.addAll(Arrays.asList(disallowed));
+            disallowed = merged.toArray(new String[0]);
+        }
+        binder.setDisallowedFields(disallowed);
+    }
 
     // ***********************************************
     // HELPER METHODS FOR SECTION-SPECIFIC OVERRIDES *
