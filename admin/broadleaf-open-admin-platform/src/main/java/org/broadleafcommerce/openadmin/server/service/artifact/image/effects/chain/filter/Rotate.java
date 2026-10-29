@@ -18,6 +18,7 @@
 package org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter;
 
 import org.broadleafcommerce.openadmin.server.service.artifact.image.Operation;
+import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.ImageDimensionException;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.UnmarshalledParameter;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.conversion.ParameterTypeEnum;
 
@@ -77,6 +78,9 @@ public class Rotate extends BaseFilter {
         if (src == dst) {
             throw new IllegalArgumentException("src image cannot be the " +
                     "same as the dst image");
+        }
+        if (Double.isNaN(amount) || Double.isInfinite(amount)) {
+            throw new ImageDimensionException("Rotation amount must be a finite number of degrees");
         }
 
         boolean needToConvert = false;

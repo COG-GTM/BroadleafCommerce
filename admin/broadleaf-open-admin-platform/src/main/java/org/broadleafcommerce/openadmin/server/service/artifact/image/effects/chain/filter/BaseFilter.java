@@ -18,6 +18,7 @@
 package org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter;
 
 import org.broadleafcommerce.openadmin.server.service.artifact.OperationBuilder;
+import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.ImageDimensionException;
 
 import java.awt.*;
 import java.awt.geom.Point2D;
@@ -30,9 +31,13 @@ import java.util.Map;
 
 public abstract class BaseFilter implements BufferedImageOp, OperationBuilder {
 
+    public static final int DEFAULT_MAX_DIMENSION = 4096;
+
     protected RenderingHints hints;
 
     protected String imageFormat;
+
+    protected int maxDimension = DEFAULT_MAX_DIMENSION;
 
     /* (non-Javadoc)
      * @see java.awt.image.BufferedImageOp#createCompatibleDestImage(java.awt.image.BufferedImage, java.awt.image.ColorModel)
@@ -108,12 +113,42 @@ public abstract class BaseFilter implements BufferedImageOp, OperationBuilder {
         return false;
     }
 
+    /**
+     * Rejects a requested output size that is not positive or exceeds {@link #getMaxDimension()} on either side,
+     * before any image buffer of that size is allocated.
+     */
+    protected void validateDimensions(int width, int height) {
+        if (width <= 0 || height <= 0 || width > maxDimension || height > maxDimension) {
+            throw new ImageDimensionException("Requested image dimensions " + width + "x" + height
+                    + " must be between 1 and " + maxDimension + " pixels per side");
+        }
+    }
+
+    /**
+     * Rejects a computed output size that is not positive or whose pixel count exceeds that of a
+     * {@link #getMaxDimension()} x {@link #getMaxDimension()} image.
+     */
+    protected void validatePixelCount(int width, int height) {
+        if (width <= 0 || height <= 0 || (long) width * height > (long) maxDimension * maxDimension) {
+            throw new ImageDimensionException("Resulting image dimensions " + width + "x" + height
+                    + " exceed the maximum of " + maxDimension + "x" + maxDimension + " pixels");
+        }
+    }
+
     public String getImageFormat() {
         return imageFormat;
     }
 
     public void setImageFormat(String imageFormat) {
         this.imageFormat = imageFormat;
+    }
+
+    public int getMaxDimension() {
+        return maxDimension;
+    }
+
+    public void setMaxDimension(int maxDimension) {
+        this.maxDimension = maxDimension;
     }
 
 }

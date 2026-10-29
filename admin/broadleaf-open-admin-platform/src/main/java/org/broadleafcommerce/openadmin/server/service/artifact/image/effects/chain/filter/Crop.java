@@ -114,6 +114,8 @@ public class Crop extends BaseFilter {
             }
         }
 
+        validateDimensions(region.width, region.height);
+
         java.awt.image.CropImageFilter cropfilter = new java.awt.image.CropImageFilter(
                 region.x, region.y, region.width, region.height
         );
