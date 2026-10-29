@@ -27,6 +27,7 @@ import org.springframework.core.io.ByteArrayResource;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -38,6 +39,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -198,6 +200,28 @@ public class DefaultEhCacheUriProviderTest {
 
         assertFalse(Files.exists(path, LinkOption.NOFOLLOW_LINKS));
         assertFalse(Files.exists(path.getParent(), LinkOption.NOFOLLOW_LINKS));
+    }
+
+    @Test
+    public void failedWriteRemovesCreatedDirectory() throws IOException {
+        Path location = temporaryFolder.getRoot().toPath().resolve("failing");
+        provider.setMergedConfigLocation(location.toString());
+        ByteArrayResource unreadable = new ByteArrayResource(new byte[0]) {
+            @Override
+            public InputStream getInputStream() throws IOException {
+                throw new IOException("boom");
+            }
+        };
+
+        try {
+            provider.createTemporaryMergeXml(unreadable);
+            fail("The read failure must propagate");
+        } catch (IOException expected) {
+            assertEquals("boom", expected.getMessage());
+        }
+
+        assertFalse(Files.exists(location, LinkOption.NOFOLLOW_LINKS));
+        assertNull(provider.getJCacheUri());
     }
 
     private ByteArrayResource resource() {

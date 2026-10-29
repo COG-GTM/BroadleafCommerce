@@ -47,6 +47,11 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryFlag;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -140,7 +145,26 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
     }
 
     protected File createTemporaryMergeXml(Resource mergedJcacheResource) throws IOException {
-        Path directory = resolveMergedConfigDirectory();
+        try {
+            Path file = writePrivateFile(resolveMergedConfigDirectory(), mergedJcacheResource);
+            if (cacheManagerUri != null && !cacheManagerUri.equals(file.toUri())) {
+                deleteQuietly(Paths.get(cacheManagerUri));
+            }
+            cacheManagerUri = file.toUri();
+            return file.toFile();
+        } catch (IOException | RuntimeException e) {
+            if (cacheManagerUri == null) {
+                if (mergedConfigDirectoryCreated && mergedConfigDirectory != null) {
+                    deleteQuietly(mergedConfigDirectory);
+                }
+                mergedConfigDirectory = null;
+                mergedConfigDirectoryCreated = false;
+            }
+            throw e;
+        }
+    }
+
+    protected Path writePrivateFile(Path directory, Resource content) throws IOException {
         for (int attempt = 0; attempt < 10; attempt++) {
             Path file = directory.resolve(MERGED_FILE_PREFIX + randomToken() + MERGED_FILE_SUFFIX);
             SeekableByteChannel channel;
@@ -151,17 +175,13 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
                 continue;
             }
             try (OutputStream outputStream = Channels.newOutputStream(channel);
-                 InputStream inputStream = mergedJcacheResource.getInputStream()) {
+                 InputStream inputStream = content.getInputStream()) {
                 IOUtils.copy(inputStream, outputStream);
             } catch (IOException | RuntimeException e) {
                 deleteQuietly(file);
                 throw e;
             }
-            if (cacheManagerUri != null && !cacheManagerUri.equals(file.toUri())) {
-                deleteQuietly(Paths.get(cacheManagerUri));
-            }
-            cacheManagerUri = file.toUri();
-            return file.toFile();
+            return file;
         }
         throw new IOException("Unable to create a unique merged JCache configuration file in " + directory);
     }
@@ -170,36 +190,35 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
         if (mergedConfigDirectory != null) {
             return mergedConfigDirectory;
         }
-        Path directory;
-        if (StringUtils.isNotBlank(mergedConfigLocation)) {
-            directory = Paths.get(mergedConfigLocation.trim()).toAbsolutePath().normalize();
-            if (Files.notExists(directory, LinkOption.NOFOLLOW_LINKS)) {
-                Path parent = directory.getParent();
+        if (StringUtils.isBlank(mergedConfigLocation)) {
+            mergedConfigDirectory = isPosix()
+                    ? Files.createTempDirectory(TEMP_DIRECTORY_PREFIX, permissions("rwx------"))
+                    : Files.createTempDirectory(TEMP_DIRECTORY_PREFIX);
+            mergedConfigDirectoryCreated = true;
+        } else {
+            mergedConfigDirectory = Paths.get(mergedConfigLocation.trim()).toAbsolutePath().normalize();
+            if (Files.notExists(mergedConfigDirectory, LinkOption.NOFOLLOW_LINKS)) {
+                Path parent = mergedConfigDirectory.getParent();
                 if (parent != null) {
                     Files.createDirectories(parent);
                 }
                 try {
                     if (isPosix()) {
-                        Files.createDirectory(directory, permissions("rwx------"));
+                        Files.createDirectory(mergedConfigDirectory, permissions("rwx------"));
                     } else {
-                        Files.createDirectory(directory);
+                        Files.createDirectory(mergedConfigDirectory);
                     }
                     mergedConfigDirectoryCreated = true;
                 } catch (FileAlreadyExistsException e) {
                     // created concurrently; validated below
                 }
             }
-            validateMergedConfigDirectory(directory);
-        } else {
-            if (isPosix()) {
-                directory = Files.createTempDirectory(TEMP_DIRECTORY_PREFIX, permissions("rwx------"));
-            } else {
-                directory = Files.createTempDirectory(TEMP_DIRECTORY_PREFIX);
-            }
-            mergedConfigDirectoryCreated = true;
         }
-        mergedConfigDirectory = directory;
-        return directory;
+        if (mergedConfigDirectoryCreated && !isPosix()) {
+            restrictToOwner(mergedConfigDirectory);
+        }
+        validateMergedConfigDirectory(mergedConfigDirectory);
+        return mergedConfigDirectory;
     }
 
     protected void validateMergedConfigDirectory(Path directory) throws IOException {
@@ -230,7 +249,34 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider
         if (isPosix()) {
             return Files.newByteChannel(file, options, permissions("rw-------"));
         }
-        return Files.newByteChannel(file, options);
+        SeekableByteChannel channel = Files.newByteChannel(file, options);
+        try {
+            restrictToOwner(file);
+        } catch (IOException | RuntimeException e) {
+            channel.close();
+            deleteQuietly(file);
+            throw e;
+        }
+        return channel;
+    }
+
+    /**
+     * On non-POSIX file systems that support ACLs (e.g. Windows), replaces the ACL of the given path with a single
+     * entry granting full access to its owner.
+     */
+    protected Path restrictToOwner(Path path) throws IOException {
+        AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view == null) {
+            return path;
+        }
+        AclEntry ownerOnly = AclEntry.newBuilder()
+                .setType(AclEntryType.ALLOW)
+                .setPrincipal(view.getOwner())
+                .setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
+                .build();
+        view.setAcl(List.of(ownerOnly));
+        return path;
     }
 
     protected String randomToken() {
