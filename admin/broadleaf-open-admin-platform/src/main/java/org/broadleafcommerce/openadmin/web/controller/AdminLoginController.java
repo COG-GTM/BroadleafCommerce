@@ -17,14 +17,18 @@
  */
 package org.broadleafcommerce.openadmin.web.controller;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.util.BLCMessageUtils;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.JsonResponse;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminMenu;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminModule;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminSection;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
+import org.broadleafcommerce.openadmin.server.security.service.AdminAccountRecoveryRateLimiter;
 import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityService;
 import org.broadleafcommerce.openadmin.server.security.service.navigation.AdminNavigationService;
 import org.broadleafcommerce.openadmin.server.security.service.user.AdminUserDetails;
@@ -57,6 +61,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @Controller("blAdminLoginController")
 public class AdminLoginController extends BroadleafAbstractController {
 
+    private static final Log LOG = LogFactory.getLog(AdminLoginController.class);
     private static final String ANONYMOUS_USER_NAME = "anonymousUser";
     // Entry URLs
     protected static String loginView = "login/login";
@@ -71,6 +76,8 @@ public class AdminLoginController extends BroadleafAbstractController {
     protected AdminSecurityService adminSecurityService;
     @Resource(name = "blAdminNavigationService")
     protected AdminNavigationService adminNavigationService;
+    @Resource(name = "blAdminAccountRecoveryRateLimiter")
+    protected AdminAccountRecoveryRateLimiter accountRecoveryRateLimiter;
 
     public static String getLoginView() {
         return loginView;
@@ -163,14 +170,16 @@ public class AdminLoginController extends BroadleafAbstractController {
             HttpServletResponse response,
             @RequestParam("username") String username
     ) {
-        GenericResponse errorResponse = adminSecurityService.sendResetPasswordNotification(username);
-        if (errorResponse.getHasErrors()) {
-            setErrors(errorResponse, request);
-            return getForgotPasswordView();
+        if (accountRecoveryRateLimiter.tryAcquire("resetPassword", request.getRemoteAddr(), username)) {
+            GenericResponse errorResponse = adminSecurityService.sendResetPasswordNotification(username);
+            logSuppressedErrors("Reset password request", username, errorResponse);
         } else {
-            request.getSession(true).setAttribute("forgot_password_username", username);
-            return redirectToResetPasswordWithMessage("passwordTokenSent");
+            logThrottled("Reset password request", username, request);
         }
+        // Respond identically whether or not the account exists, is active or has an email, so the
+        // response cannot be used to enumerate admin accounts.
+        request.getSession(true).setAttribute("forgot_password_username", username);
+        return redirectToResetPasswordWithMessage("passwordTokenSent");
     }
 
     @RequestMapping(value = "/resetPassword", method = RequestMethod.POST)
@@ -199,13 +208,13 @@ public class AdminLoginController extends BroadleafAbstractController {
             HttpServletRequest request,
             @RequestParam("emailAddress") String email
     ) {
-        GenericResponse errorResponse = adminSecurityService.sendForgotUsernameNotification(email);
-        if (errorResponse.getHasErrors()) {
-            setErrors(errorResponse, request);
-            return getForgotUsernameView();
+        if (accountRecoveryRateLimiter.tryAcquire("forgotUsername", request.getRemoteAddr(), email)) {
+            GenericResponse errorResponse = adminSecurityService.sendForgotUsernameNotification(email);
+            logSuppressedErrors("Forgot username request", email, errorResponse);
         } else {
-            return redirectToLoginWithMessage("usernameSent");
+            logThrottled("Forgot username request", email, request);
         }
+        return redirectToLoginWithMessage("usernameSent");
     }
 
     @RequestMapping(value = "/resetPassword", method = RequestMethod.GET)
@@ -278,6 +287,20 @@ public class AdminLoginController extends BroadleafAbstractController {
                 .append("?messageCode=")
                 .append(message);
         return url.toString();
+    }
+
+    protected void logSuppressedErrors(String action, String identifier, GenericResponse response) {
+        if (response.getHasErrors() && LOG.isInfoEnabled()) {
+            LOG.info(action + " for '" + StringUtil.sanitize(identifier) + "' was not fulfilled: "
+                    + response.getErrorCodesList());
+        }
+    }
+
+    protected void logThrottled(String action, String identifier, HttpServletRequest request) {
+        if (LOG.isWarnEnabled()) {
+            LOG.warn(action + " for '" + StringUtil.sanitize(identifier) + "' from "
+                    + StringUtil.sanitize(request.getRemoteAddr()) + " was rate limited and ignored");
+        }
     }
 
     protected void setErrors(GenericResponse response, HttpServletRequest request) {
