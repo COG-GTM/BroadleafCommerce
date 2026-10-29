@@ -31,6 +31,7 @@ import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.time.SystemTime;
 import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.util.TransactionUtils;
+import org.broadleafcommerce.common.web.BaseUrlResolver;
 import org.broadleafcommerce.profile.core.dao.CustomerAddressDao;
 import org.broadleafcommerce.profile.core.dao.CustomerDao;
 import org.broadleafcommerce.profile.core.dao.CustomerForgotPasswordSecurityTokenDao;
@@ -49,10 +50,12 @@ import org.broadleafcommerce.profile.core.service.handler.PasswordUpdatedHandler
 import org.broadleafcommerce.profile.core.service.listener.PostRegistrationObserver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -67,6 +70,7 @@ public class CustomerServiceImpl implements CustomerService {
 
     private static final Log LOG = LogFactory.getLog(CustomerServiceImpl.class);
     private static final int PASSWORD_LENGTH = 16;
+    protected static final String RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY = "resetPassword.allowedBaseUrls";
     protected final List<PostRegistrationObserver> postRegisterListeners = new ArrayList<>();
     @Autowired
     @Qualifier("blApplicationEventPublisher")
@@ -83,6 +87,10 @@ public class CustomerServiceImpl implements CustomerService {
     protected PasswordEncoder passwordEncoderBean;
     @Resource(name = "blRoleDao")
     protected RoleDao roleDao;
+    @Resource(name = "blBaseUrlResolver")
+    protected BaseUrlResolver baseUrlResolver;
+    @Autowired
+    protected Environment environment;
     protected int tokenExpiredMinutes = 30;
     protected int passwordTokenLength = 20;
     protected List<PasswordUpdatedHandler> passwordResetHandlers = new ArrayList<>();
@@ -379,6 +387,11 @@ public class CustomerServiceImpl implements CustomerService {
             fpst.setCreateDate(SystemTime.asDate());
             customerForgotPasswordSecurityTokenDao.saveToken(fpst);
 
+            if (!StringUtils.isEmpty(resetPasswordUrl) && !isAllowedResetPasswordUrl(resetPasswordUrl)) {
+                LOG.warn("Ignoring a reset password URL whose host is not site.baseurl or in "
+                        + RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY);
+                resetPasswordUrl = null;
+            }
             if (!StringUtils.isEmpty(resetPasswordUrl)) {
                 if (resetPasswordUrl.contains("?")) {
                     resetPasswordUrl = resetPasswordUrl + "&token=" + token;
@@ -390,6 +403,58 @@ public class CustomerServiceImpl implements CustomerService {
             eventPublisher.publishEvent(new ForgotPasswordEvent(this, customer.getId(), token, resetPasswordUrl));
         }
         return response;
+    }
+
+    /**
+     * The reset token is appended to this URL and emailed, so it must point at this site: either a relative path,
+     * or an http(s) URL whose host is that of {@code site.baseurl} or of an entry in
+     * {@code resetPassword.allowedBaseUrls}.
+     */
+    protected boolean isAllowedResetPasswordUrl(String resetPasswordUrl) {
+        URI uri;
+        try {
+            uri = URI.create(resetPasswordUrl.trim());
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        if (uri.getScheme() == null && uri.getRawAuthority() == null) {
+            return true;
+        }
+        String host = uri.getHost();
+        if (host == null || uri.getRawUserInfo() != null
+                || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) {
+            return false;
+        }
+        return getAllowedResetPasswordHosts().stream().anyMatch(host::equalsIgnoreCase);
+    }
+
+    protected List<String> getAllowedResetPasswordHosts() {
+        List<String> baseUrls = new ArrayList<>();
+        try {
+            baseUrls.add(baseUrlResolver.getSiteBaseUrl());
+        } catch (RuntimeException e) {
+            LOG.warn("site.baseurl is not configured; reset password URLs must be listed in "
+                    + RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY);
+        }
+        String allowedBaseUrls = environment == null ? null
+                : environment.getProperty(RESET_PASSWORD_ALLOWED_BASE_URLS_PROPERTY);
+        if (StringUtils.isNotBlank(allowedBaseUrls)) {
+            for (String allowedBaseUrl : StringUtils.split(allowedBaseUrls, ',')) {
+                baseUrls.add(allowedBaseUrl.trim());
+            }
+        }
+        List<String> hosts = new ArrayList<>();
+        for (String baseUrl : baseUrls) {
+            try {
+                String host = URI.create(baseUrl).getHost();
+                if (host != null) {
+                    hosts.add(host);
+                }
+            } catch (IllegalArgumentException e) {
+                LOG.warn("Ignoring malformed reset password base URL");
+            }
+        }
+        return hosts;
     }
 
     @Override
