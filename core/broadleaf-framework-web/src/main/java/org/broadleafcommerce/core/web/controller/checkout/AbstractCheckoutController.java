@@ -35,6 +35,8 @@ import org.broadleafcommerce.core.web.checkout.validator.OrderInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.validator.ShippingInfoFormValidator;
 import org.broadleafcommerce.core.web.order.service.CartStateService;
 import org.broadleafcommerce.core.web.service.InitBinderService;
+import org.broadleafcommerce.profile.core.domain.Customer;
+import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CountrySubdivisionService;
@@ -42,6 +44,7 @@ import org.broadleafcommerce.profile.core.service.CustomerAddressService;
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.PhoneService;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.ui.Model;
@@ -67,6 +70,7 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
     protected static String checkoutStagesPartial = "checkout/partials/checkoutStages";
     protected static String checkoutPageRedirect = "redirect:/checkout";
     protected static String baseConfirmationView = "ajaxredirect:/confirmation";
+    protected static String INVALID_CUSTOMER_PAYMENT_ERROR = "customerPayment.invalid";
 
     /* Optional Service */
     @Autowired(required = false)
@@ -176,6 +180,29 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
     protected void populateModelWithReferenceData(HttpServletRequest request, Model model) {
         //Add module specific model variables
         checkoutControllerExtensionManager.getProxy().addAdditionalModelVariables(model);
+    }
+
+    /**
+     * Reads a saved payment by a client-supplied id, returning it only if it belongs to the active customer.
+     *
+     * @return the saved payment, or null if it does not exist or is owned by a different customer
+     */
+    protected CustomerPayment readActiveCustomerPayment(Long customerPaymentId) {
+        Customer customer = getActiveCustomer();
+        if (customerPaymentId == null || customer == null || customer.getId() == null) {
+            return null;
+        }
+
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(customerPaymentId);
+        if (customerPayment == null || customerPayment.getCustomer() == null
+                || !customer.getId().equals(customerPayment.getCustomer().getId())) {
+            return null;
+        }
+        return customerPayment;
+    }
+
+    protected Customer getActiveCustomer() {
+        return CustomerState.getCustomer();
     }
 
     /**
