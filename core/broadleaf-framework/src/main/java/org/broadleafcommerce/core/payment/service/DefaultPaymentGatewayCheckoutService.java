@@ -26,6 +26,8 @@ import org.broadleafcommerce.common.payment.dto.GatewayCustomerDTO;
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayCheckoutService;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
+import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolver;
 import org.broadleafcommerce.common.web.payment.controller.PaymentGatewayAbstractController;
 import org.broadleafcommerce.core.checkout.service.CheckoutService;
 import org.broadleafcommerce.core.checkout.service.exception.CheckoutException;
@@ -38,12 +40,15 @@ import org.broadleafcommerce.core.payment.domain.OrderPayment;
 import org.broadleafcommerce.core.payment.domain.PaymentTransaction;
 import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.Customer;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 
@@ -70,6 +75,10 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
     @Resource(name = "blPaymentResponseDTOToEntityService")
     protected PaymentResponseDTOToEntityService dtoToEntityService;
 
+    @Autowired(required = false)
+    @Qualifier("blRequestCustomerResolver")
+    protected BroadleafRequestCustomerResolver requestCustomerResolver;
+
     @Value("${default.payment.gateway.checkout.useGatewayBillingAddress}")
     protected boolean useBillingAddressFromGateway = true;
 
@@ -87,6 +96,11 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
 
         Long orderId = Long.parseLong(responseDTO.getOrderId());
         Order order = orderService.findOrderById(orderId);
+        if (order == null || order instanceof NullOrderImpl) {
+            throw new IllegalArgumentException("Could not find order with id " + orderId);
+        }
+
+        verifyOrderBelongsToRequestCustomer(order);
 
         if (!OrderStatus.IN_PROCESS.equals(order.getStatus()) && !OrderStatus.CSR_OWNED.equals(order.getStatus())
                 && !OrderStatus.QUOTE.equals(order.getStatus())) {
@@ -244,6 +258,8 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
             throw new IllegalArgumentException("Could not order with id " + orderId);
         }
 
+        verifyOrderBelongsToRequestCustomer(order);
+
         CheckoutResponse response;
 
         try {
@@ -266,7 +282,39 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
             throw new IllegalArgumentException("An order with ID " + responseDTO.getOrderId() + " cannot be found for the" +
                     " given payment response.");
         }
+        verifyOrderBelongsToRequestCustomer(order);
         return order.getOrderNumber();
+    }
+
+    /**
+     * When a gateway response is processed on behalf of a shopper (a customer is bound to the current web request), the
+     * order named in the response must belong to that customer. Otherwise anyone able to reach the gateway return
+     * endpoint could apply payments, shipping addresses or checkout to another customer's order. Server-to-server
+     * callbacks with no customer on the request are not checked here and must be authenticated by the gateway module.
+     *
+     * @param order the order referenced by the gateway response
+     * @throws IllegalArgumentException if the order does not belong to the customer on the current request
+     */
+    protected void verifyOrderBelongsToRequestCustomer(Order order) throws IllegalArgumentException {
+        Customer requestCustomer = getRequestCustomer();
+        if (requestCustomer == null) {
+            return;
+        }
+        Customer orderCustomer = order.getCustomer();
+        if (orderCustomer == null || requestCustomer.getId() == null
+                || !Objects.equals(orderCustomer.getId(), requestCustomer.getId())) {
+            throw new IllegalArgumentException("The order referenced by the payment response does not belong to the "
+                    + "current customer");
+        }
+    }
+
+    protected Customer getRequestCustomer() {
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext(false);
+        if (requestCustomerResolver == null || context == null || context.getWebRequest() == null) {
+            return null;
+        }
+        Object customer = requestCustomerResolver.getCustomer(context.getWebRequest());
+        return customer instanceof Customer ? (Customer) customer : null;
     }
 
     public boolean isUseBillingAddressFromGateway() {

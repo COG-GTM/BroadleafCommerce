@@ -23,6 +23,8 @@ import org.broadleafcommerce.common.payment.PaymentAdditionalFieldType;
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO;
 import org.broadleafcommerce.common.payment.service.CustomerPaymentGatewayService;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration;
+import org.broadleafcommerce.common.web.BroadleafRequestContext;
+import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolver;
 import org.broadleafcommerce.common.web.payment.controller.CustomerPaymentGatewayAbstractController;
 import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.Customer;
@@ -30,9 +32,12 @@ import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 
@@ -57,6 +62,10 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
     @Resource(name = "blPaymentResponseDTOToEntityService")
     protected PaymentResponseDTOToEntityService dtoToEntityService;
 
+    @Autowired(required = false)
+    @Qualifier("blRequestCustomerResolver")
+    protected BroadleafRequestCustomerResolver requestCustomerResolver;
+
     @Override
     public Long createCustomerPaymentFromResponseDTO(
             PaymentResponseDTO responseDTO,
@@ -65,6 +74,7 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
         validateResponseAndConfig(responseDTO, config);
 
         Long customerId = Long.parseLong(responseDTO.getCustomer().getCustomerId());
+        verifyCustomerIsRequestCustomer(customerId);
         Customer customer = customerService.readCustomerById(customerId);
 
         if (customer != null) {
@@ -102,6 +112,7 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
         CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByToken(paymentToken);
 
         if (customerPayment != null) {
+            verifyCustomerPaymentBelongsToRequestCustomer(customerPayment);
             populateCustomerPayment(customerPayment, responseDTO, config);
 
             customerPayment = customerPaymentService.saveCustomerPayment(customerPayment);
@@ -119,6 +130,10 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
         validateResponseAndConfig(responseDTO, config);
 
         String paymentToken = responseDTO.getPaymentToken();
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByToken(paymentToken);
+        if (customerPayment != null) {
+            verifyCustomerPaymentBelongsToRequestCustomer(customerPayment);
+        }
         customerPaymentService.deleteCustomerPaymentByToken(paymentToken);
     }
 
@@ -131,6 +146,39 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
         if (config == null || responseDTO.getCustomer() == null || responseDTO.getCustomer().getCustomerId() == null) {
             throw new IllegalArgumentException("PaymentGatewayConfiguration and the customer/customer ID on the ResponseDTO cannot be null. Check your Web Response Service.");
         }
+    }
+
+    protected void verifyCustomerPaymentBelongsToRequestCustomer(CustomerPayment customerPayment) {
+        Customer owner = customerPayment.getCustomer();
+        verifyCustomerIsRequestCustomer(owner == null ? null : owner.getId());
+    }
+
+    /**
+     * When a gateway response is processed on behalf of a shopper (a customer is bound to the current web request), the
+     * customer named in the response must be that customer. Server-to-server callbacks with no customer on the request
+     * are not checked here and must be authenticated by the gateway module.
+     *
+     * @param customerId the customer id referenced by the gateway response
+     * @throws IllegalArgumentException if the id does not match the customer on the current request
+     */
+    protected void verifyCustomerIsRequestCustomer(Long customerId) throws IllegalArgumentException {
+        Customer requestCustomer = getRequestCustomer();
+        if (requestCustomer == null) {
+            return;
+        }
+        if (requestCustomer.getId() == null || !Objects.equals(requestCustomer.getId(), customerId)) {
+            throw new IllegalArgumentException("The customer referenced by the payment response is not the current "
+                    + "customer");
+        }
+    }
+
+    protected Customer getRequestCustomer() {
+        BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext(false);
+        if (requestCustomerResolver == null || context == null || context.getWebRequest() == null) {
+            return null;
+        }
+        Object customer = requestCustomerResolver.getCustomer(context.getWebRequest());
+        return customer instanceof Customer ? (Customer) customer : null;
     }
 
     protected void populateCustomerPayment(

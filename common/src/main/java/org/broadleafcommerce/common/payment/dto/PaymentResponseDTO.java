@@ -32,8 +32,10 @@ import java.util.Map;
  * This can either wrap an API result call or a translated HTTP Web response.
  * This can not only be the results of a transaction, but also a request for a Secure Token etc...</p>
  *
- * <p>Note: the success and validity flags are set to true by default, unless otherwise overridden by specific
- * gateway implementations</p>
+ * <p>Note: the success flag is set to true by default, unless otherwise overridden by specific gateway implementations.
+ * The validity flag is false by default: a gateway implementation must explicitly call {@link #valid(boolean)} with
+ * true once it has verified that the response actually came from the gateway (e.g. by checking a signature or tamper
+ * proof seal).</p>
  *
  * @author Elbert Bautista (elbertbautista)
  */
@@ -110,9 +112,10 @@ public class PaymentResponseDTO {
     /**
      * Whether or not this response was tampered with. This used to verify that the response that was received on the
      * endpoint (which is intended to only be invoked from the payment gateway) actually came from the gateway and was not
-     * otherwise maliciously invoked by a 3rd-party.
+     * otherwise maliciously invoked by a 3rd-party. Defaults to false so that only responses that the gateway
+     * implementation has affirmatively verified are applied to orders or customer profiles.
      */
-    protected boolean valid = true;
+    protected boolean valid = false;
 
     /**
      * <p>Sets whether or not this module should complete checkout on callback.
