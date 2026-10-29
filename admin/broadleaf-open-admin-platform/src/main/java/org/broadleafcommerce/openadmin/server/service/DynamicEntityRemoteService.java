@@ -18,6 +18,7 @@
 package org.broadleafcommerce.openadmin.server.service;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.collections4.map.LRUMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -175,6 +176,39 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         });
     }
 
+    /**
+     * Applies the AntiSamy policy to the root entity and, recursively, to every sub-package entity (e.g. the dynamic
+     * form fields of CMS pages and structured content), unless cleaning is disabled for the request or the ceiling
+     * entity is in the ignore list.
+     */
+    protected void cleanPersistencePackage(PersistencePackage persistencePackage) throws ServiceException {
+        if (!isShouldClean() || isIgnoredForCleaning(persistencePackage)) {
+            return;
+        }
+        cleanEntity(persistencePackage.getEntity());
+        cleanSubPackages(persistencePackage);
+    }
+
+    protected void cleanSubPackages(PersistencePackage persistencePackage) throws ServiceException {
+        if (MapUtils.isEmpty(persistencePackage.getSubPackages())) {
+            return;
+        }
+        for (PersistencePackage subPackage : persistencePackage.getSubPackages().values()) {
+            if (subPackage == null || isIgnoredForCleaning(subPackage)) {
+                continue;
+            }
+            if (subPackage.getEntity() != null) {
+                cleanEntity(subPackage.getEntity());
+            }
+            cleanSubPackages(subPackage);
+        }
+    }
+
+    protected boolean isIgnoredForCleaning(PersistencePackage persistencePackage) {
+        return CollectionUtils.isNotEmpty(entitiesIgnoreList)
+                && entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname());
+    }
+
     protected void cleanEntity(Entity entity) throws ServiceException {
         Property currentProperty = null;
         for (Property property : entity.getProperties()) {
@@ -278,11 +312,7 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         return persistenceThreadManager.operation(TargetModeType.SANDBOX, persistencePackage, new Persistable<PersistenceResponse, ServiceException>() {
             @Override
             public PersistenceResponse execute() throws ServiceException {
-                boolean shouldClean = isShouldClean();
-                if (shouldClean && (CollectionUtils.isEmpty(entitiesIgnoreList) ||
-                        !entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname()))) {
-                    cleanEntity(persistencePackage.getEntity());
-                }
+                cleanPersistencePackage(persistencePackage);
                 try {
                     PersistenceManager persistenceManager = PersistenceManagerFactory.getPersistenceManager();
                     return persistenceManager.add(persistencePackage);
@@ -305,11 +335,7 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
         return persistenceThreadManager.operation(TargetModeType.SANDBOX, persistencePackage, new Persistable<PersistenceResponse, ServiceException>() {
             @Override
             public PersistenceResponse execute() throws ServiceException {
-                boolean shouldClean = isShouldClean();
-                if (shouldClean && (CollectionUtils.isEmpty(entitiesIgnoreList) ||
-                        !entitiesIgnoreList.contains(persistencePackage.getCeilingEntityFullyQualifiedClassname()))) {
-                    cleanEntity(persistencePackage.getEntity());
-                }
+                cleanPersistencePackage(persistencePackage);
                 try {
                     PersistenceManager persistenceManager = PersistenceManagerFactory.getPersistenceManager();
                     return persistenceManager.update(persistencePackage);
