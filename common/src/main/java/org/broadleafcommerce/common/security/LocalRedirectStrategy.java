@@ -50,11 +50,8 @@ public class LocalRedirectStrategy implements RedirectStrategy {
      */
     @Override
     public void sendRedirect(HttpServletRequest request, HttpServletResponse response, String url) throws IOException {
-        if (!url.startsWith("/")) {
-            if (StringUtils.equals(request.getParameter("successUrl"), url)
-                    || StringUtils.equals(request.getParameter("failureUrl"), url)) {
-                validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
-            }
+        if (url.startsWith("/") || isRedirectUrlParameter(request, url)) {
+            validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
         }
         String redirectUrl = calculateRedirectUrl(request.getContextPath(), url);
         redirectUrl = response.encodeRedirectURL(redirectUrl);
@@ -63,6 +60,35 @@ public class LocalRedirectStrategy implements RedirectStrategy {
         }
 
         response.sendRedirect(redirectUrl);
+    }
+
+    protected boolean isRedirectUrlParameter(HttpServletRequest request, String url) {
+        return StringUtils.equals(request.getParameter("successUrl"), url)
+                || StringUtils.equals(request.getParameter("failureUrl"), url);
+    }
+
+    /**
+     * Whether the url contains syntax that browsers may interpret as pointing at a different host, i.e. a
+     * protocol-relative prefix ({@code //host}), a backslash (treated as {@code /} by browsers) or a whitespace /
+     * control character (stripped by browsers, so {@code /<tab>/host} becomes {@code //host}).
+     *
+     * @param url the url to check
+     * @return true if the url should not be used as a redirect target
+     */
+    public static boolean hasUnsafeRedirectSyntax(String url) {
+        if (url == null) {
+            return false;
+        }
+        if (url.startsWith("//")) {
+            return true;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '\\' || c <= ' ' || Character.isISOControl(c) || Character.isWhitespace(c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -95,8 +121,8 @@ public class LocalRedirectStrategy implements RedirectStrategy {
     }
 
     /**
-     * Insure the url is valid (must begin with http or https) and local to the
-     * application
+     * Insure the url is valid (must be a path relative to the server root, or begin with http or https) and local to
+     * the application
      *
      * @param contextPath       the application context path
      * @param url               the url to validate
@@ -110,19 +136,41 @@ public class LocalRedirectStrategy implements RedirectStrategy {
             String requestServerName,
             int requestServerPort
     ) throws MalformedURLException {
-        URL urlObject = new URL(url);
-        if (urlObject.getProtocol().equals("http") || urlObject.getProtocol().equals("https")) {
-            if (StringUtils.equals(requestServerName, urlObject.getHost())) {
-                if (!enforcePortMatch || requestServerPort == urlObject.getPort()) {
-                    if (StringUtils.isEmpty(contextPath) || urlObject.getPath().startsWith("/" + contextPath)) {
-                        return;
-                    }
-                }
+        if (url != null && !hasUnsafeRedirectSyntax(url)) {
+            if (url.startsWith("/")) {
+                return;
+            }
+            URL urlObject;
+            try {
+                urlObject = new URL(url);
+            } catch (MalformedURLException e) {
+                urlObject = null;
+            }
+            if (urlObject != null && isLocalUrl(urlObject, contextPath, requestServerName, requestServerPort)) {
+                return;
             }
         }
         String errorMessage = "Invalid redirect url specified.  Must be of the form /<relative view> or http[s]://<server name>[:<server port>][/<context path>]/...";
         LOG.warn(errorMessage + ":  " + url);
         throw new MalformedURLException(errorMessage + ":  " + url);
+    }
+
+    protected boolean isLocalUrl(URL urlObject, String contextPath, String requestServerName, int requestServerPort) {
+        String protocol = urlObject.getProtocol();
+        if (!"http".equals(protocol) && !"https".equals(protocol)) {
+            return false;
+        }
+        if (urlObject.getUserInfo() != null || !StringUtils.equalsIgnoreCase(requestServerName, urlObject.getHost())) {
+            return false;
+        }
+        if (enforcePortMatch && requestServerPort != urlObject.getPort()) {
+            return false;
+        }
+        if (StringUtils.isEmpty(contextPath)) {
+            return true;
+        }
+        String path = urlObject.getPath();
+        return path.equals(contextPath) || path.startsWith(contextPath + "/");
     }
 
     /**
