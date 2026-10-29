@@ -447,6 +447,32 @@ public class ZookeeperDistributedQueueDeserializationTest {
         EasyMock.verify(zk);
     }
 
+    @Test
+    public void peekDeletesLegacyNullEntryAndReturnsNextValidOne() throws Exception {
+        EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
+                .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
+        expectGetData("entry-1", serialize(null));
+        zk.delete(ENTRY_FOLDER + "/entry-1", -1);
+        expectGetData("entry-2", serialize(new CatalogReindexCommand(7L)));
+        EasyMock.replay(zk);
+
+        assertEquals(new CatalogReindexCommand(7L), queue.peek());
+        EasyMock.verify(zk);
+    }
+
+    @Test
+    public void takeDeletesLegacyNullEntryOnce() throws Exception {
+        EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
+                .andReturn(new ArrayList<>(Collections.singletonList("entry-1")))
+                .andReturn(new ArrayList<>()).anyTimes();
+        expectGetData("entry-1", serialize(null));
+        zk.delete(ENTRY_FOLDER + "/entry-1", 0);
+        EasyMock.replay(zk);
+
+        assertNull(queue.poll(100L, TimeUnit.MILLISECONDS));
+        EasyMock.verify(zk);
+    }
+
     private void expectGetData(String entryName, byte[] data) throws Exception {
         EasyMock.expect(zk.getData(EasyMock.eq(ENTRY_FOLDER + '/' + entryName), EasyMock.<Watcher>isNull(), EasyMock.<Stat>isNull()))
                 .andReturn(data);
