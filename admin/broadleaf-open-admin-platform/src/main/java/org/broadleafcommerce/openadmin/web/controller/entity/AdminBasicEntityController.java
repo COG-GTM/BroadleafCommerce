@@ -50,6 +50,7 @@ import org.broadleafcommerce.openadmin.dto.MapMetadata;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.dto.SectionCrumb;
 import org.broadleafcommerce.openadmin.dto.TabMetadata;
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.security.dao.AdminUserDao;
@@ -458,8 +459,14 @@ public class AdminBasicEntityController extends AdminAbstractController {
     ) throws Exception {
         final String sectionKey = getSectionKey(pathVars);
         final String sectionClassName = getClassNameForSection(sectionKey);
-        final Class<?> entityClass = dynamicEntityDao.getImplClass(sectionClassName);
         final long identifier = Long.parseLong(id);
+
+        if (!isDuplicateActionAllowed(request, pathVars, sectionKey, sectionClassName, id)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return getErrorDuplicatingResponse(response, "Duplication_Unauthorized");
+        }
+
+        final Class<?> entityClass = dynamicEntityDao.getImplClass(sectionClassName);
 
         if (duplicator.validate(entityClass, identifier)) {
             final Object duplicate;
@@ -477,6 +484,46 @@ public class AdminBasicEntityController extends AdminAbstractController {
             return "ajaxredirect:" + getContextPath(request) + sectionKey + "/" + dupId;
         } else {
             return getErrorDuplicatingResponse(response, "Validation_Failure");
+        }
+    }
+
+    /**
+     * Duplication creates a new record from an existing one, so the server must enforce the same rules that decide
+     * whether the Duplicate button is rendered: ADD and FETCH permission on the section's security class, the
+     * row-level add check, and the ability to read the source record through the admin persistence layer.
+     */
+    protected boolean isDuplicateActionAllowed(
+            final HttpServletRequest request,
+            final Map<String, String> pathVars,
+            final String sectionKey,
+            final String sectionClassName,
+            final String id
+    ) {
+        try {
+            final List<SectionCrumb> crumbs = getSectionCrumbs(request, sectionKey, id);
+            final PersistencePackageRequest ppr = getSectionPersistencePackageRequest(
+                    sectionClassName, crumbs, pathVars
+            );
+            final ClassMetadata cmd = service.getClassMetadata(ppr).getDynamicResultSet().getClassMetaData();
+            final String securityClassName = StringUtils.isEmpty(cmd.getSecurityCeilingType())
+                    ? sectionClassName
+                    : cmd.getSecurityCeilingType();
+
+            adminRemoteSecurityService.securityCheck(securityClassName, EntityOperationType.ADD);
+            adminRemoteSecurityService.securityCheck(securityClassName, EntityOperationType.FETCH);
+
+            final boolean canAdd = rowLevelSecurityService.canAdd(
+                    adminRemoteSecurityService.getPersistentAdminUser(), securityClassName, cmd
+            );
+            if (!canAdd) {
+                return false;
+            }
+
+            final Entity[] records = service.getRecord(ppr, id, cmd, false).getDynamicResultSet().getRecords();
+            return records != null && records.length > 0;
+        } catch (ServiceException | EntityNotFoundException e) {
+            LOG.warn(String.format("Denied duplication of %s:%s", sectionClassName, id));
+            return false;
         }
     }
 
