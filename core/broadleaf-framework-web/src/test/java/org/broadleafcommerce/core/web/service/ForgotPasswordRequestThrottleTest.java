@@ -79,41 +79,35 @@ public class ForgotPasswordRequestThrottleTest {
     }
 
     @Test
-    public void fullKeyMapDoesNotResetActiveCounters() {
-        throttle.setMaxTrackedKeys(4);
+    public void floodOfDistinctKeysDoesNotResetActiveCounters() {
         throttle.tryAcquire(request("10.0.0.1"), "alice");
         throttle.tryAcquire(request("10.0.0.1"), "alice");
         assertFalse(throttle.tryAcquire(request("10.0.0.1"), "alice"));
 
-        for (int i = 0; i < 10; i++) {
-            throttle.tryAcquire(request("10.0.1." + i), "user" + i);
-        }
+        flood(20_000);
 
         assertFalse(throttle.tryAcquire(request("10.0.0.1"), "alice"));
-        assertFalse(throttle.tryAcquire(request("10.0.9.9"), "alice"));
+        assertFalse(throttle.tryAcquire(request("10.9.9.9"), "alice"));
     }
 
     @Test
-    public void untrackedKeysShareALimitWhenKeyMapIsFull() {
-        throttle.setMaxTrackedKeys(4);
-        throttle.tryAcquire(request("10.0.0.1"), "user1");
-        throttle.tryAcquire(request("10.0.0.2"), "user2");
+    public void floodOfDistinctKeysDoesNotBlockUnrelatedUsers() {
+        throttle.setHashKey(new byte[32]);
+        flood(2_000);
 
-        int allowed = 0;
-        for (int i = 0; i < 20; i++) {
-            if (throttle.tryAcquire(request("10.0.2." + i), "fresh" + i)) {
-                allowed++;
+        int blocked = 0;
+        for (int i = 0; i < 100; i++) {
+            if (!throttle.tryAcquire(request("192.168.0." + i), "carol" + i)) {
+                blocked++;
             }
         }
-        assertTrue("allowed " + allowed, allowed <= 2);
+        assertTrue("blocked " + blocked, blocked <= 1);
     }
 
-    @Test
-    public void blockedClientDoesNotFillKeyMapWithUsernames() {
-        for (int i = 0; i < 50; i++) {
-            throttle.tryAcquire(request("10.0.0.1"), "user" + i);
+    private void flood(int distinctKeys) {
+        for (int i = 0; i < distinctKeys; i++) {
+            throttle.tryAcquire(request("172.16." + (i / 250) + "." + (i % 250)), "flood" + i);
         }
-        assertTrue(throttle.windows.size() <= 4);
     }
 
     private static HttpServletRequest request(String remoteAddr) {

@@ -22,9 +22,14 @@ import org.broadleafcommerce.common.time.SystemTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -32,13 +37,17 @@ import jakarta.servlet.http.HttpServletRequest;
  * In-memory, per-node throttle for unauthenticated forgot-password requests, keyed by client address and by
  * username. This is a first line of defense; {@code CustomerServiceImpl} also caps the number of reset tokens a
  * customer can be issued, which holds across nodes.
+ * <p>
+ * Counters live in a fixed number of buckets selected by a keyed hash (HMAC with a per-instance random key), so
+ * memory is bounded without ever dropping or sharing counters wholesale. Flooding with many distinct keys only
+ * raises counts in the buckets those keys land in, and an attacker cannot aim collisions at a particular username.
  */
 @Service("blForgotPasswordRequestThrottle")
 public class ForgotPasswordRequestThrottle {
 
-    protected static final int DEFAULT_MAX_TRACKED_KEYS = 100_000;
+    protected static final int DEFAULT_BUCKET_COUNT = 131_072;
 
-    protected final Map<String, Window> windows = new ConcurrentHashMap<>();
+    protected static final String HASH_ALGORITHM = "HmacSHA256";
 
     @Value("${forgot.password.throttle.window.seconds:900}")
     protected long windowSeconds = 900;
@@ -49,11 +58,18 @@ public class ForgotPasswordRequestThrottle {
     @Value("${forgot.password.throttle.max.requests.per.username:5}")
     protected int maxRequestsPerUsername = 5;
 
-    protected static final String OVERFLOW_CLIENT_KEY = "overflow:client";
+    protected long[] windowStarts;
 
-    protected static final String OVERFLOW_USERNAME_KEY = "overflow:username";
+    protected int[] counts;
 
-    protected int maxTrackedKeys = DEFAULT_MAX_TRACKED_KEYS;
+    protected SecretKeySpec hashKey;
+
+    public ForgotPasswordRequestThrottle() {
+        setBucketCount(DEFAULT_BUCKET_COUNT);
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        setHashKey(key);
+    }
 
     /**
      * Records a forgot-password attempt and returns false when the client address or the username has exceeded its
@@ -61,40 +77,40 @@ public class ForgotPasswordRequestThrottle {
      */
     public boolean tryAcquire(HttpServletRequest request, String username) {
         long now = SystemTime.asMillis();
-        if (windows.size() >= maxTrackedKeys) {
-            evictExpired(now);
-        }
         if (maxRequestsPerClient > 0 && request != null && request.getRemoteAddr() != null
-                && increment("client:" + request.getRemoteAddr(), OVERFLOW_CLIENT_KEY, now) > maxRequestsPerClient) {
+                && increment("client:" + request.getRemoteAddr(), now) > maxRequestsPerClient) {
             return false;
         }
         if (maxRequestsPerUsername > 0 && StringUtils.isNotBlank(username)) {
             String key = "username:" + username.trim().toLowerCase(Locale.ROOT);
-            return increment(key, OVERFLOW_USERNAME_KEY, now) <= maxRequestsPerUsername;
+            return increment(key, now) <= maxRequestsPerUsername;
         }
         return true;
     }
 
     /**
-     * Returns the request count for {@code key} in the current window. Existing counters are never dropped before
-     * their window ends. When the map is full, keys that are not yet tracked share the {@code overflowKey} counter,
-     * so they are collectively held to the same limit instead of being let through unchecked.
+     * Returns the request count in the current window for the bucket that {@code key} hashes to.
      */
-    protected int increment(String key, String overflowKey, long now) {
-        long windowMillis = windowSeconds * 1000L;
-        String counterKey = windows.size() >= maxTrackedKeys && !windows.containsKey(key) ? overflowKey : key;
-        Window window = windows.compute(counterKey, (k, existing) -> {
-            if (existing == null || now - existing.start >= windowMillis) {
-                return new Window(now, 1);
-            }
-            return new Window(existing.start, existing.count + 1);
-        });
-        return window.count;
+    protected synchronized int increment(String key, long now) {
+        int bucket = bucketFor(key);
+        if (counts[bucket] == 0 || now - windowStarts[bucket] >= windowSeconds * 1000L) {
+            windowStarts[bucket] = now;
+            counts[bucket] = 1;
+        } else if (counts[bucket] < Integer.MAX_VALUE) {
+            counts[bucket]++;
+        }
+        return counts[bucket];
     }
 
-    protected void evictExpired(long now) {
-        long windowMillis = windowSeconds * 1000L;
-        windows.entrySet().removeIf(e -> now - e.getValue().start >= windowMillis);
+    protected int bucketFor(String key) {
+        try {
+            Mac mac = Mac.getInstance(HASH_ALGORITHM);
+            mac.init(hashKey);
+            byte[] digest = mac.doFinal(key.getBytes(StandardCharsets.UTF_8));
+            return (int) Long.remainderUnsigned(ByteBuffer.wrap(digest).getLong(), counts.length);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public void setWindowSeconds(long windowSeconds) {
@@ -109,11 +125,13 @@ public class ForgotPasswordRequestThrottle {
         this.maxRequestsPerUsername = maxRequestsPerUsername;
     }
 
-    public void setMaxTrackedKeys(int maxTrackedKeys) {
-        this.maxTrackedKeys = maxTrackedKeys;
+    public synchronized void setBucketCount(int bucketCount) {
+        this.windowStarts = new long[bucketCount];
+        this.counts = new int[bucketCount];
     }
 
-    protected record Window(long start, int count) {
+    protected void setHashKey(byte[] key) {
+        this.hashKey = new SecretKeySpec(key, HASH_ALGORITHM);
     }
 
 }
