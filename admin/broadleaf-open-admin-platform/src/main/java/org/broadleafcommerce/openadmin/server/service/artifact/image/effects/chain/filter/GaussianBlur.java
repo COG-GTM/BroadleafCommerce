@@ -34,6 +34,7 @@ import java.util.Map;
 public class GaussianBlur extends BaseFilter {
 
     public static final int NUM_KERNELS = 16;
+    public static final int MAX_NUM_PASSES = 10;
     public static final float[][] GAUSSIAN_BLUR_KERNELS = generateGaussianBlurKernels(NUM_KERNELS);
     private int kernelSize;
     private int numOfPasses;
@@ -141,6 +142,11 @@ public class GaussianBlur extends BaseFilter {
             return src;
         }
 
+        if (numOfPasses > getMaxNumOfPasses()) {
+            throw new IllegalArgumentException("Gaussian blur pass count " + numOfPasses
+                    + " exceeds the maximum of " + getMaxNumOfPasses());
+        }
+
         if (src == null) {
             throw new NullPointerException("src image is null");
         }
@@ -210,6 +216,10 @@ public class GaussianBlur extends BaseFilter {
         }
 
         return origDst;
+    }
+
+    protected int getMaxNumOfPasses() {
+        return MAX_NUM_PASSES;
     }
 
 }

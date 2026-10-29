@@ -28,6 +28,9 @@ import java.util.Map;
 
 public class Resize extends BaseFilter {
 
+    public static final int MAX_TARGET_DIMENSION = 10000;
+    public static final long MAX_TARGET_PIXELS = 25_000_000L;
+
     private RenderingHints hints;
     private int targetWidth;
     private int targetHeight;
@@ -198,6 +201,8 @@ public class Resize extends BaseFilter {
             destH = targetHeight;
         }
 
+        validateTargetSize(destW, destH);
+
         if (higherQuality) {
             // Use multi-step technique: start with original size, then
             // scale down in multiple passes with drawImage()
@@ -257,6 +262,30 @@ public class Resize extends BaseFilter {
         } while (w != destW || h != destH);
 
         return ret;
+    }
+
+    protected void validateTargetSize(int width, int height) {
+        if (width < 1 || height < 1) {
+            throw new IllegalArgumentException("Resize target " + width + "x" + height + " must be at least 1x1");
+        }
+        int maxDimension = getMaxTargetDimension();
+        if (width > maxDimension || height > maxDimension) {
+            throw new IllegalArgumentException("Resize target " + width + "x" + height
+                    + " exceeds the maximum dimension of " + maxDimension);
+        }
+        long maxPixels = getMaxTargetPixels();
+        if ((long) width * height > maxPixels) {
+            throw new IllegalArgumentException("Resize target " + width + "x" + height
+                    + " exceeds the maximum of " + maxPixels + " pixels");
+        }
+    }
+
+    protected int getMaxTargetDimension() {
+        return MAX_TARGET_DIMENSION;
+    }
+
+    protected long getMaxTargetPixels() {
+        return MAX_TARGET_PIXELS;
     }
 
 }
