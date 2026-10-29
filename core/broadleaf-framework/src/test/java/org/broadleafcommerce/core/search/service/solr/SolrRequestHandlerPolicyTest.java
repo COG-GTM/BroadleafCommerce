@@ -65,7 +65,13 @@ public class SolrRequestHandlerPolicyTest extends TestCase {
     }
 
     public void testSearchServiceIgnoresHandlerThatIsNotAllowlisted() {
-        SolrSearchServiceImpl service = new SolrSearchServiceImpl();
+        final String[] allowed = { "" };
+        SolrSearchServiceImpl service = new SolrSearchServiceImpl() {
+            @Override
+            protected String getAllowedRequestHandlers() {
+                return allowed[0];
+            }
+        };
         SearchCriteria criteria = new SearchCriteria();
 
         criteria.setRequestHandler("/update?optimize=true&x=");
@@ -74,7 +80,7 @@ public class SolrRequestHandlerPolicyTest extends TestCase {
         criteria.setRequestHandler("/browse");
         assertNull(service.getRequestHandler(criteria));
 
-        service.allowedRequestHandlers = "/browse";
+        allowed[0] = "/browse";
         assertEquals("/browse", service.getRequestHandler(criteria));
 
         criteria.setRequestHandler(null);
