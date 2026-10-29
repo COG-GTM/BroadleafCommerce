@@ -163,7 +163,31 @@ var BLC = (function($) {
             }
         }
         if (options.type.toUpperCase() == 'POST') {
-            if (typeof options.data == 'string') {
+            var headerCsrfToken = getCsrfToken();
+            if (headerCsrfToken) {
+                options.headers = $.extend({}, options.headers);
+                if (!options.headers['X-CSRF-TOKEN']) {
+                    options.headers['X-CSRF-TOKEN'] = headerCsrfToken;
+                }
+            }
+            if (typeof FormData != 'undefined' && options.data instanceof FormData) {
+                // FormData.has is missing in some older browsers; a duplicate token field is harmless
+                var formDataHas = function(name) {
+                    return typeof options.data.has == 'function' && options.data.has(name);
+                };
+                if (!formDataHas('csrfToken')) {
+                    var csrfToken = getCsrfToken();
+                    if (csrfToken != null) {
+                        options.data.append('csrfToken', csrfToken);
+                    }
+                }
+                if (!formDataHas('stateVersionToken')) {
+                    var stateVersionToken = getStateVersionToken();
+                    if (stateVersionToken != null) {
+                        options.data.append('stateVersionToken', stateVersionToken);
+                    }
+                }
+            } else if (typeof options.data == 'string') {
                 if (options.data.indexOf('csrfToken') < 0) {
                     var csrfToken = getCsrfToken();
                     if (csrfToken != null) {
