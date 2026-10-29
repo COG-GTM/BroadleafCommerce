@@ -19,27 +19,43 @@ package org.broadleafcommerce.openadmin.security;
 
 import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.security.LocalRedirectStrategy;
 import org.broadleafcommerce.common.util.StringUtil;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+/**
+ * Redirects a failed admin login back to the login page. The {@code failureUrl} request parameter is only honored when
+ * it is a local path, and the {@code successUrl} carried along (from the request parameter or the referer) is only kept
+ * when it is a local path or an absolute URL on the requesting host, so a crafted login POST cannot redirect away from
+ * the admin.
+ */
 public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthenticationFailureHandler {
+
+    private static final String SUCCESS_URL_PARAM = "successUrl";
+    private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("(?i)https?://([^/?#]*)([/?#].*)?");
 
     private String defaultFailureUrl;
 
     public BroadleafAdminAuthenticationFailureHandler() {
         super();
+        setRedirectStrategy(new LocalRedirectStrategy());
     }
 
     public BroadleafAdminAuthenticationFailureHandler(String defaultFailureUrl) {
         super(defaultFailureUrl);
         this.defaultFailureUrl = defaultFailureUrl;
+        setRedirectStrategy(new LocalRedirectStrategy());
     }
 
     @Override
@@ -51,6 +67,9 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         String failureUrlParam = StringUtil.cleanseUrlString(request.getParameter("failureUrl"));
         String successUrlParam = StringUtil.cleanseUrlString(request.getParameter("successUrl"));
         String failureUrl = (failureUrlParam != null) ? failureUrlParam.trim() : null;
+        if (!isSafeFailureUrl(failureUrl)) {
+            failureUrl = null;
+        }
         Boolean sessionTimeout = (Boolean) request.getAttribute("sessionTimeout");
 
         if (StringUtils.isEmpty(failureUrl) && BooleanUtils.isNotTrue(sessionTimeout)) {
@@ -67,19 +86,13 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         }
 
         if (failureUrl != null) {
-            if (!StringUtils.isEmpty(successUrlParam)) {
+            String successUrl = extractSuccessUrl(successUrlParam);
+            if (isSafeSuccessUrl(successUrl, request)) {
                 //Preserve the original successUrl from the referer.  If there is one, it must be the last url segment
-                int successUrlPos = successUrlParam.indexOf("successUrl");
-                if (successUrlPos >= 0) {
-                    successUrlParam = successUrlParam.substring(successUrlPos);
-                } else {
-                    successUrlParam = "successUrl=" + successUrlParam;
-                }
-
                 if (!failureUrl.contains("?")) {
-                    failureUrl += "?" + successUrlParam;
+                    failureUrl += "?" + SUCCESS_URL_PARAM + "=" + successUrl;
                 } else {
-                    failureUrl += "&" + successUrlParam;
+                    failureUrl += "&" + SUCCESS_URL_PARAM + "=" + successUrl;
                 }
             }
 
@@ -88,6 +101,133 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         } else {
             super.onAuthenticationFailure(request, response, exception);
         }
+    }
+
+    /**
+     * Returns the successUrl value carried by {@code source}: either the value of an embedded {@code successUrl}
+     * parameter (e.g. from a referer of the login page) or {@code source} itself.
+     */
+    protected String extractSuccessUrl(String source) {
+        if (StringUtils.isEmpty(source)) {
+            return null;
+        }
+        int successUrlPos = source.indexOf(SUCCESS_URL_PARAM);
+        if (successUrlPos < 0) {
+            return source;
+        }
+        String successUrl = source.substring(successUrlPos + SUCCESS_URL_PARAM.length());
+        return successUrl.startsWith("=") ? successUrl.substring(1) : successUrl;
+    }
+
+    /**
+     * The failureUrl must be a local path, both as given and once any remaining URL encoding is removed.
+     */
+    protected boolean isSafeFailureUrl(String url) {
+        String decoded = fullyDecode(url);
+        return isLocalPath(url) && isLocalPath(decoded);
+    }
+
+    /**
+     * The successUrl must be a local path or an absolute URL on the requesting host after one decode (the referer is
+     * not decoded) and once any remaining URL encoding is removed.
+     */
+    protected boolean isSafeSuccessUrl(String url, HttpServletRequest request) {
+        String decoded = fullyDecode(url);
+        if (decoded == null) {
+            return false;
+        }
+        String singleDecoded = decodeLayer(url);
+        if (singleDecoded == null) {
+            singleDecoded = url;
+        }
+        return isLocalOrSameHost(singleDecoded, request)
+                && isLocalOrSameHost(decoded, request);
+    }
+
+    private boolean isLocalOrSameHost(String url, HttpServletRequest request) {
+        return isLocalPath(url) || isSameHostUrl(url, request);
+    }
+
+    /**
+     * Removes up to three layers of URL encoding. A layer that is not valid percent-encoding (e.g. a literal
+     * {@code %} left after decoding {@code %25}) ends decoding; more than three layers is rejected with {@code null}.
+     */
+    private String fullyDecode(String url) {
+        if (url == null) {
+            return null;
+        }
+        String decoded = url;
+        for (int i = 0; i <= 3; i++) {
+            String next = decodeLayer(decoded);
+            if (next == null || next.equals(decoded)) {
+                return decoded;
+            }
+            decoded = next;
+        }
+        return null;
+    }
+
+    /**
+     * Decodes one layer of percent-encoding, keeping {@code +} literal, or returns {@code null} when the value is not
+     * valid percent-encoding.
+     */
+    private String decodeLayer(String url) {
+        try {
+            return URLDecoder.decode(url.replace("+", "%2B"), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * A local path starts with a single {@code /}, so it cannot carry a scheme or authority, and contains no
+     * backslash, whitespace or control characters that browsers might normalize into one.
+     */
+    protected boolean isLocalPath(String url) {
+        if (StringUtils.isEmpty(url) || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        return hasNoUnsafeCharacters(url);
+    }
+
+    /**
+     * An absolute http(s) URL without user info whose host is the host the request was made to.
+     */
+    protected boolean isSameHostUrl(String url, HttpServletRequest request) {
+        if (StringUtils.isEmpty(url) || !hasNoUnsafeCharacters(url)) {
+            return false;
+        }
+        Matcher matcher = ABSOLUTE_HTTP_URL.matcher(url);
+        if (!matcher.matches()) {
+            return false;
+        }
+        String authority = matcher.group(1);
+        if (authority.contains("@")) {
+            return false;
+        }
+        int portSeparator = authority.lastIndexOf(':');
+        String host = authority;
+        if (portSeparator >= 0 && !authority.endsWith("]")) {
+            String port = authority.substring(portSeparator + 1);
+            if (!port.chars().allMatch(Character::isDigit)) {
+                return false;
+            }
+            host = authority.substring(0, portSeparator);
+        }
+        return !host.isEmpty() && host.equalsIgnoreCase(request.getServerName());
+    }
+
+    private boolean hasNoUnsafeCharacters(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == '\\' || Character.isWhitespace(c) || Character.isISOControl(c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
 }
