@@ -18,6 +18,7 @@
 package org.broadleafcommerce.common.rule;
 
 import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.RequestDTO;
@@ -34,8 +35,12 @@ import org.mvel2.ParserContext;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.text.DateFormat;
 import java.text.ParseException;
 import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -64,6 +69,11 @@ public class MvelHelper {
     private static final Map<String, Serializable> DEFAULT_EXPRESSION_CACHE = new EfficientLRUMap<String, Serializable>(5000);
     private static final Log LOG = LogFactory.getLog(MvelHelper.class);
     private static boolean TEST_MODE = false;
+    private static final Pattern LEGACY_TO_UPPER_CASE =
+            Pattern.compile("MVEL\\s*\\.\\s*eval\\s*\\(\\s*([\"'])toUpperCase\\(\\)\\1\\s*,");
+    private static final Pattern LEGACY_DATE_PARSE = Pattern.compile(
+            "java\\s*\\.\\s*text\\s*\\.\\s*DateFormat\\s*\\.\\s*getDateTimeInstance\\s*\\(\\s*3\\s*,\\s*3\\s*\\)"
+                    + "\\s*\\.\\s*parse\\s*\\(");
 
     static {
         System.setProperty("mvel2.disable.jit", "true");
@@ -157,8 +167,9 @@ public class MvelHelper {
      * @param rule
      * @param ruleParameters
      * @param expressionCache
-     * @param additionalContextImports additional imports to give to the {@link ParserContext} besides "MVEL" ({@link MVEL} and
-     *                                 "MvelHelper" ({@link MvelHelper}) since they are automatically added
+     * @param additionalContextImports additional imports to give to the {@link ParserContext} besides "MvelHelper"
+     *                                 ({@link MvelHelper}), "CollectionUtils" ({@link SelectizeCollectionUtils}) and
+     *                                 "StringUtils" ({@link StringUtils}) since they are automatically added
      * @return
      */
     public static boolean evaluateRule(
@@ -178,22 +189,28 @@ public class MvelHelper {
                 exp = expressionCache.get(rule);
             }
             if (exp == null) {
-                ParserContext context = new ParserContext();
-                context.addImport("MVEL", MVEL.class);
-                context.addImport("MvelHelper", MvelHelper.class);
-                context.addImport("CollectionUtils", SelectizeCollectionUtils.class);
-                if (MapUtils.isNotEmpty(additionalContextImports)) {
-                    for (Entry<String, Class<?>> entry : additionalContextImports.entrySet()) {
-                        context.addImport(entry.getKey(), entry.getValue());
-                    }
-                }
+                ParserContext context = buildParserContext(additionalContextImports);
 
-                String modifiedRule = modifyExpression(rule, ruleParameters, context);
+                String modifiedRule = modifyExpression(rewriteLegacyExpressions(rule), ruleParameters, context);
+
+                try {
+                    MvelRuleSandbox.validate(modifiedRule, getContextImportNames(additionalContextImports));
+                } catch (MvelRuleViolationException e) {
+                    LOG.warn("Refusing to evaluate the mvel expression (" + StringUtil.sanitize(rule) + "): "
+                            + e.getMessage() + ". Returning false for the match expression");
+                    exp = RejectedRule.INSTANCE;
+                }
 
                 synchronized (expressionCache) {
-                    exp = MVEL.compileExpression(modifiedRule, context);
+                    if (exp == null) {
+                        exp = MVEL.compileExpression(modifiedRule, context);
+                    }
                     expressionCache.put(rule, exp);
                 }
+            }
+
+            if (exp == RejectedRule.INSTANCE) {
+                return false;
             }
 
             Map<String, Object> mvelParameters = new HashMap<>();
@@ -217,6 +234,90 @@ public class MvelHelper {
                 return false;
             }
         }
+    }
+
+    /**
+     * Builds the {@link ParserContext} used to compile rules. The {@link MVEL} facade is intentionally not imported so
+     * that a rule cannot evaluate further expressions built at runtime.
+     */
+    public static ParserContext buildParserContext(Map<String, Class<?>> additionalContextImports) {
+        ParserContext context = new ParserContext();
+        context.addImport("MvelHelper", MvelHelper.class);
+        context.addImport("CollectionUtils", SelectizeCollectionUtils.class);
+        context.addImport("StringUtils", StringUtils.class);
+        if (MapUtils.isNotEmpty(additionalContextImports)) {
+            for (Entry<String, Class<?>> entry : additionalContextImports.entrySet()) {
+                context.addImport(entry.getKey(), entry.getValue());
+            }
+        }
+        return context;
+    }
+
+    /**
+     * Validates that the rule stays within the restricted rule language enforced by {@link MvelRuleSandbox}.
+     *
+     * @param rule                   the rule to validate
+     * @param additionalContextTypes names of additional context imports the rule will be evaluated with
+     * @throws MvelRuleViolationException when the rule is not allowed
+     */
+    public static void validateRule(String rule, Collection<String> additionalContextTypes) {
+        if (rule == null || rule.isEmpty()) {
+            return;
+        }
+        MvelRuleSandbox.validate(rewriteLegacyExpressions(rule), additionalContextTypes);
+    }
+
+    /**
+     * Rules generated by older versions of the rule builder call {@code MVEL.eval("toUpperCase()", value)} and
+     * {@code java.text.DateFormat.getDateTimeInstance(3,3).parse(value)}, neither of which is reachable from the
+     * sandbox. Those calls are rewritten to {@link #toUpperCase(String)} and {@link #parseLegacyDate(String)}. String
+     * literals are left untouched.
+     */
+    protected static String rewriteLegacyExpressions(String rule) {
+        if (rule.indexOf("MVEL") < 0 && rule.indexOf("DateFormat") < 0) {
+            return rule;
+        }
+        StringBuilder sb = new StringBuilder(rule.length());
+        Matcher toUpperCase = LEGACY_TO_UPPER_CASE.matcher(rule);
+        Matcher dateParse = LEGACY_DATE_PARSE.matcher(rule);
+        int length = rule.length();
+        int i = 0;
+        while (i < length) {
+            char c = rule.charAt(i);
+            if (c == '"' || c == '\'') {
+                int end = i + 1;
+                while (end < length && rule.charAt(end) != c) {
+                    end += rule.charAt(end) == '\\' ? 2 : 1;
+                }
+                end = Math.min(end + 1, length);
+                sb.append(rule, i, end);
+                i = end;
+            } else if (toUpperCase.region(i, length).lookingAt()) {
+                sb.append("MvelHelper.toUpperCase(");
+                i = toUpperCase.end();
+            } else if (dateParse.region(i, length).lookingAt()) {
+                sb.append("MvelHelper.parseLegacyDate(");
+                i = dateParse.end();
+            } else {
+                sb.append(c);
+                i++;
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Equivalent of {@code java.text.DateFormat.getDateTimeInstance(3,3).parse(value)} used by legacy rules.
+     */
+    public static Date parseLegacyDate(String value) throws ParseException {
+        return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).parse(value);
+    }
+
+    protected static Collection<String> getContextImportNames(Map<String, Class<?>> additionalContextImports) {
+        if (MapUtils.isEmpty(additionalContextImports)) {
+            return Collections.emptySet();
+        }
+        return additionalContextImports.keySet();
     }
 
     /**
@@ -318,6 +419,13 @@ public class MvelHelper {
         }
 
         return mvelParameters;
+    }
+
+    /**
+     * Cached in place of a compiled expression for rules rejected by {@link MvelRuleSandbox}.
+     */
+    private enum RejectedRule {
+        INSTANCE
     }
 
     protected static void populateParamsFromMap(Map<String, Object> blcRuleMap, Map<String, Object> mvelParameters) {
