@@ -98,15 +98,37 @@ public class RestApiCustomerStateFilterTest {
     }
 
     @Test
-    public void anonymousTokenCallerCannotSelectCustomerViaParameter() throws Exception {
+    public void anonymousTokenCallerCannotSelectCustomerViaHeader() throws Exception {
         SecurityContextHolder.getContext().setAuthentication(new AnonymousAuthenticationToken("key", "anonymousUser",
                 AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS")));
-        request.setParameter(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
+        request.addHeader(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
 
         filter.doFilter(request, response, chain);
 
         assertEquals(403, response.getStatus());
         assertNull(chain.getRequest());
+    }
+
+    @Test
+    public void customerIdRequestParameterIsIgnored() throws Exception {
+        request.setParameter(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
+
+        filter.doFilter(request, response, chain);
+
+        assertSame(request, chain.getRequest());
+        assertNull(CustomerState.getCustomer().getId());
+        assertTrue(CustomerState.getCustomer().isAnonymous());
+    }
+
+    @Test
+    public void customerIdRequestParameterCannotBypassImpersonationCheck() throws Exception {
+        authenticate("csr-agent", RestApiCustomerStateFilter.DEFAULT_IMPERSONATION_AUTHORITY);
+        request.setParameter(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
+
+        filter.doFilter(request, response, chain);
+
+        assertSame(request, chain.getRequest());
+        assertTrue(CustomerState.getCustomer().isAnonymous());
     }
 
     @Test
@@ -123,7 +145,7 @@ public class RestApiCustomerStateFilterTest {
     @Test
     public void authenticatedCustomerMayPassOwnCustomerId() throws Exception {
         authenticate("alice", "ROLE_USER");
-        request.setParameter(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
+        request.addHeader(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
 
         filter.doFilter(request, response, chain);
 

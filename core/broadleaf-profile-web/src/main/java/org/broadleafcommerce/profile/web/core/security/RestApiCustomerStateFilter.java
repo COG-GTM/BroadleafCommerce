@@ -54,12 +54,14 @@ import jakarta.servlet.http.HttpServletResponse;
 /**
  * Resolves the customer a RESTful API request acts on behalf of and sets it on {@link CustomerState}.
  * This must come after the BroadleafRequestFilter (blRequestFilter) and after the Spring Security filters that
- * authenticate the caller.
+ * authenticate the caller. Register it only behind authentication that scopes each caller to a single customer
+ * (e.g. a customer login or an OAuth token carrying the customer), not behind a shared API key alone.
  * <p>
  * The acting customer is bound to the authenticated caller:
  * <ul>
  *     <li>A {@code customerId} request attribute set by a trusted server-side component is honoured as-is.</li>
- *     <li>A {@code customerId} request parameter or header is only honoured when it identifies the authenticated
+ *     <li>A {@code customerId} request parameter is ignored.</li>
+ *     <li>A {@code customerId} request header is only honoured when it identifies the authenticated
  *     caller's own customer, or when the caller holds one of the {@link #getImpersonationAuthorities() impersonation
  *     authorities} (by default {@value #DEFAULT_IMPERSONATION_AUTHORITY}), e.g. a CSR or trusted service client.
  *     Any other client-supplied {@code customerId} is rejected with {@code 403 Forbidden}.</li>
@@ -104,9 +106,11 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
             if (trustedCustomerId != null) {
                 customer = readCustomer(String.valueOf(trustedCustomerId));
             } else {
-                String requestedCustomerId = request.getParameter(CUSTOMER_ID_ATTRIBUTE);
-                if (requestedCustomerId == null) {
-                    requestedCustomerId = request.getHeader(CUSTOMER_ID_ATTRIBUTE);
+                //Only the header is honoured, so a customerId cannot be injected through a link or form
+                String requestedCustomerId = request.getHeader(CUSTOMER_ID_ATTRIBUTE);
+                if (request.getParameter(CUSTOMER_ID_ATTRIBUTE) != null) {
+                    LOG.warn("Ignoring the '" + CUSTOMER_ID_ATTRIBUTE + "' request parameter; send the '"
+                            + CUSTOMER_ID_ATTRIBUTE + "' request header instead");
                 }
 
                 Customer authenticatedCustomer = resolveAuthenticatedCustomer(authentication);
@@ -129,7 +133,7 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
                     }
                 } else if (LOG.isDebugEnabled() && customer == null) {
                     LOG.debug("No customer ID was found for the API request. In order to look up a customer for the request" +
-                            " send a request parameter or request header for the '" + CUSTOMER_ID_ATTRIBUTE + "' attribute");
+                            " send the '" + CUSTOMER_ID_ATTRIBUTE + "' request header");
                 }
             }
 
@@ -191,7 +195,7 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
     }
 
     /**
-     * @return whether the caller may act on behalf of any customer by passing a customerId parameter or header
+     * @return whether the caller may act on behalf of any customer by passing a customerId header
      */
     protected boolean canImpersonate(Authentication authentication) {
         if (!isAuthenticated(authentication) || CollectionUtils.isEmpty(impersonationAuthorities)) {
@@ -253,7 +257,7 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
     }
 
     /**
-     * Authorities that allow a caller to act on behalf of any customer via the customerId parameter or header.
+     * Authorities that allow a caller to act on behalf of any customer via the customerId header.
      * An empty set disables impersonation.
      */
     public void setImpersonationAuthorities(Set<String> impersonationAuthorities) {
