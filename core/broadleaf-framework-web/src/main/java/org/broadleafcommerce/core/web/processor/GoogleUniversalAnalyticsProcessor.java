@@ -32,6 +32,7 @@ import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.core.order.domain.OrderItemAttribute;
 import org.broadleafcommerce.core.order.domain.SkuAccessor;
 import org.broadleafcommerce.core.order.service.OrderService;
+import org.broadleafcommerce.core.web.util.JavaScriptStringUtils;
 import org.broadleafcommerce.presentation.condition.ConditionalOnTemplating;
 import org.broadleafcommerce.presentation.dialect.AbstractBroadleafTagReplacementProcessor;
 import org.broadleafcommerce.presentation.model.BroadleafTemplateContext;
@@ -140,11 +141,11 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
                 String trackerName = tracker.getKey();
                 String trackerPrefix = "";
                 String id = tracker.getValue();
-                sb.append("ga('create', '" + id + "', 'auto', {");
+                sb.append("ga('create', " + js(id) + ", 'auto', {");
 
                 if (!"webProperty".equals(trackerName)) {
-                    trackerPrefix = trackerName + ".";
-                    sb.append("'name': '" + trackerName + "'");
+                    trackerPrefix = escapeJs(trackerName) + ".";
+                    sb.append("'name': " + js(trackerName));
                     if (testLocal) {
                         sb.append(",");
                     }
@@ -158,12 +159,7 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
                     HttpServletRequest request = BroadleafRequestContext.getBroadleafRequestContext().getRequest();
                     if (request != null) {
                         Map<String, String> setValuesMap = (Map<String, String>) request.getAttribute("blGAValuesMap");
-                        if (setValuesMap != null) {
-                            for (Map.Entry<String, String> entry : setValuesMap.entrySet()) {
-                                sb.append("ga('" + trackerPrefix + "set',").append(entry.getKey()).append(",")
-                                        .append(entry.getValue()).append(");");
-                            }
-                        }
+                        sb.append(getSetValuesJs(setValuesMap, trackerPrefix));
                     }
                 }
 
@@ -244,16 +240,16 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
         sb.append("ga('" + trackerPrefix + "require', 'ecommerce', 'ecommerce.js');");
 
         sb.append("ga('" + trackerPrefix + "ecommerce:addTransaction', {");
-        sb.append("'id': '" + order.getOrderNumber() + "'");
+        sb.append("'id': " + js(order.getOrderNumber()));
         if (StringUtils.isNotBlank(getAffiliation())) {
-            sb.append(",'affiliation': '" + getAffiliation() + "'");
+            sb.append(",'affiliation': " + js(getAffiliation()));
         }
-        sb.append(",'revenue': '" + order.getTotal() + "'");
-        sb.append(",'shipping':'" + order.getTotalShipping() + "'");
-        sb.append(",'tax': '" + order.getTotalTax() + "'");
+        sb.append(",'revenue': " + js(order.getTotal()));
+        sb.append(",'shipping':" + js(order.getTotalShipping()));
+        sb.append(",'tax': " + js(order.getTotalTax()));
 
         if (order.getCurrency() != null) {
-            sb.append(",'currency': '" + order.getCurrency().getCurrencyCode() + "'");
+            sb.append(",'currency': " + js(order.getCurrency().getCurrencyCode()));
         }
         sb.append("});");
 
@@ -274,12 +270,12 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
                     if (SkuAccessor.class.isAssignableFrom(orderItem.getClass())) {
                         Sku sku = ((SkuAccessor) orderItem).getSku();
                         sb.append("ga('" + trackerPrefix + "ecommerce:addItem', {");
-                        sb.append("'id': '" + order.getOrderNumber() + "'");
-                        sb.append(",'name': '" + sku.getName() + "'");
-                        sb.append(",'sku': '" + sku.getId() + "'");
-                        sb.append(",'category': '" + getVariation(orderItem) + "'");
-                        sb.append(",'price': '" + orderItem.getAveragePrice() + "'");
-                        sb.append(",'quantity': '" + orderItem.getQuantity() + "'");
+                        sb.append("'id': " + js(order.getOrderNumber()));
+                        sb.append(",'name': " + js(sku.getName()));
+                        sb.append(",'sku': " + js(sku.getId()));
+                        sb.append(",'category': " + js(getVariation(orderItem)));
+                        sb.append(",'price': " + js(orderItem.getAveragePrice()));
+                        sb.append(",'quantity': " + js(orderItem.getQuantity()));
                         sb.append("});");
                     }
                 }
@@ -289,8 +285,27 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
     }
 
     /**
-     * Returns the product option values separated by a space if they are
-     * relevant for the item, or the product category if no options are available
+     * Builds a {@code ga('set', field, value)} call for every entry of the {@code blGAValuesMap} request attribute.
+     * Keys and values are always written as escaped JavaScript string literals; they are never evaluated as script.
+     */
+    protected String getSetValuesJs(Map<String, String> setValuesMap, String trackerPrefix) {
+        StringBuilder sb = new StringBuilder();
+        if (setValuesMap != null) {
+            for (Map.Entry<String, String> entry : setValuesMap.entrySet()) {
+                if (entry.getKey() == null) {
+                    continue;
+                }
+                sb.append("ga('" + trackerPrefix + "set', ").append(js(entry.getKey())).append(", ")
+                        .append(js(entry.getValue())).append(");");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Returns the raw (unescaped) product option values separated by a space if they are
+     * relevant for the item, or the product category if no options are available. Callers must escape the result
+     * before writing it into a script, see {@link #js(Object)}.
      *
      * @return
      */
@@ -307,6 +322,20 @@ public class GoogleUniversalAnalyticsProcessor extends AbstractBroadleafTagRepla
 
         //the result has a space at the end, ensure that is stripped out
         return result.substring(0, result.length() - 1);
+    }
+
+    /**
+     * @return the given value as a single-quoted JavaScript string literal that is safe to embed in an inline script
+     */
+    protected String js(Object value) {
+        return JavaScriptStringUtils.quote(value);
+    }
+
+    /**
+     * @return the given value escaped for use inside a JavaScript string literal in an inline script
+     */
+    protected String escapeJs(Object value) {
+        return JavaScriptStringUtils.escape(value);
     }
 
     public String getMasterWebPropertyId() {
