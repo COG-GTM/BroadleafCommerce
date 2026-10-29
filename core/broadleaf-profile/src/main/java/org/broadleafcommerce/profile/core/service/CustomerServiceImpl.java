@@ -137,6 +137,14 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     @Transactional(TransactionUtils.DEFAULT_TRANSACTION_MANAGER)
     public Customer registerCustomer(Customer customer, String password, String passwordConfirm) {
+        if (customer.getId() != null) {
+            Customer existingCustomer = readCustomerById(customer.getId());
+            if (existingCustomer != null && existingCustomer.isRegistered()) {
+                throw new IllegalArgumentException("Cannot register a customer with an id (" + customer.getId()
+                        + ") that belongs to an already registered customer");
+            }
+        }
+
         customer.setRegistered(true);
 
         // When unencodedPassword is set the save() will encode it
