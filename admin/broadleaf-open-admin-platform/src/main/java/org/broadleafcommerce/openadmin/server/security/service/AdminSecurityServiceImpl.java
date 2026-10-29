@@ -182,26 +182,16 @@ public class AdminSecurityServiceImpl implements AdminSecurityService {
     @Override
     @Transactional("blTransactionManager")
     public AdminUser saveAdminUser(AdminUser user) {
-        boolean encodePasswordNeeded = false;
         String unencodedPassword = user.getUnencodedPassword();
 
-        if (user.getUnencodedPassword() != null) {
-            encodePasswordNeeded = true;
-            user.setPassword(unencodedPassword);
-        }
-
-        // If no password is set, default to a secure password.
-        if (user.getPassword() == null) {
-            user.setPassword(generateSecurePassword());
+        if (unencodedPassword != null) {
+            user.setPassword(encodePassword(unencodedPassword));
+        } else if (user.getPassword() == null) {
+            // If no password is set, default to a secure password.
+            user.setPassword(encodePassword(generateSecurePassword()));
         }
 
         AdminUser returnUser = adminUserDao.saveAdminUser(user);
-
-        if (encodePasswordNeeded) {
-            returnUser.setPassword(encodePassword(unencodedPassword));
-        }
-
-        returnUser = adminUserDao.saveAdminUser(returnUser);
         clearAdminSecurityCache();
         return returnUser;
     }
