@@ -146,6 +146,7 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        RegisterCustomerForm.restrictBinding(binder);
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
