@@ -22,6 +22,7 @@ import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.payment.PaymentAdditionalFieldType;
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO;
 import org.broadleafcommerce.common.payment.service.CustomerPaymentGatewayService;
+import org.broadleafcommerce.common.payment.service.PaymentGatewayCallbackAuthentication;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolver;
@@ -155,13 +156,17 @@ public class DefaultCustomerPaymentGatewayService implements CustomerPaymentGate
 
     /**
      * When a gateway response is processed on behalf of a shopper (a customer is bound to the current web request), the
-     * customer named in the response must be that customer. Server-to-server callbacks with no customer on the request
-     * are not checked here and must be authenticated by the gateway module.
+     * customer named in the response must be that customer. Server-to-server callbacks must be authenticated by the
+     * gateway module, which then marks the request with {@link PaymentGatewayCallbackAuthentication#markAuthenticated};
+     * only those requests (and requests with no customer at all, such as non-web callers) skip this check.
      *
      * @param customerId the customer id referenced by the gateway response
      * @throws IllegalArgumentException if the id does not match the customer on the current request
      */
     protected void verifyCustomerIsRequestCustomer(Long customerId) throws IllegalArgumentException {
+        if (PaymentGatewayCallbackAuthentication.isCurrentRequestAuthenticated()) {
+            return;
+        }
         Customer requestCustomer = getRequestCustomer();
         if (requestCustomer == null) {
             return;

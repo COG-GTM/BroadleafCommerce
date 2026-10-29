@@ -24,6 +24,7 @@ import org.broadleafcommerce.common.payment.PaymentAdditionalFieldType;
 import org.broadleafcommerce.common.payment.PaymentGatewayType;
 import org.broadleafcommerce.common.payment.dto.GatewayCustomerDTO;
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO;
+import org.broadleafcommerce.common.payment.service.PaymentGatewayCallbackAuthentication;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayCheckoutService;
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
@@ -290,12 +291,17 @@ public class DefaultPaymentGatewayCheckoutService implements PaymentGatewayCheck
      * When a gateway response is processed on behalf of a shopper (a customer is bound to the current web request), the
      * order named in the response must belong to that customer. Otherwise anyone able to reach the gateway return
      * endpoint could apply payments, shipping addresses or checkout to another customer's order. Server-to-server
-     * callbacks with no customer on the request are not checked here and must be authenticated by the gateway module.
+     * callbacks must be authenticated by the gateway module, which then marks the request with
+     * {@link PaymentGatewayCallbackAuthentication#markAuthenticated}; only those requests (and requests with no customer
+     * at all, such as non-web callers) skip this check.
      *
      * @param order the order referenced by the gateway response
      * @throws IllegalArgumentException if the order does not belong to the customer on the current request
      */
     protected void verifyOrderBelongsToRequestCustomer(Order order) throws IllegalArgumentException {
+        if (PaymentGatewayCallbackAuthentication.isCurrentRequestAuthenticated()) {
+            return;
+        }
         Customer requestCustomer = getRequestCustomer();
         if (requestCustomer == null) {
             return;

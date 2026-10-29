@@ -20,6 +20,7 @@ package org.broadleafcommerce.core.spec.payment.service
 import org.broadleafcommerce.common.payment.PaymentGatewayType
 import org.broadleafcommerce.common.payment.PaymentType
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO
+import org.broadleafcommerce.common.payment.service.PaymentGatewayCallbackAuthentication
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration
 import org.broadleafcommerce.common.web.BroadleafRequestContext
 import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolver
@@ -32,6 +33,7 @@ import org.broadleafcommerce.profile.core.domain.CustomerPaymentImpl
 import org.broadleafcommerce.profile.core.service.AddressService
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService
 import org.broadleafcommerce.profile.core.service.CustomerService
+import org.springframework.web.context.request.RequestAttributes
 import org.springframework.web.context.request.WebRequest
 
 import spock.lang.Specification
@@ -100,6 +102,20 @@ class DefaultCustomerPaymentGatewayServiceSpec extends Specification {
         1 * customerPaymentService.saveCustomerPayment({ it.customer == victim }) >> { args -> args[0] }
     }
 
+    def "an authenticated server-to-server token callback is saved despite its anonymous request customer"() {
+        given:
+        requestFrom(customer(99L))
+        markAuthenticatedGatewayCallback()
+        customerService.readCustomerById(1L) >> victim
+        customerPaymentService.create() >> new CustomerPaymentImpl()
+
+        when:
+        service.createCustomerPaymentFromResponseDTO(response("1").valid(true), config)
+
+        then:
+        1 * customerPaymentService.saveCustomerPayment({ it.customer == victim }) >> { args -> args[0] }
+    }
+
     def "another customer's saved payment is neither updated nor deleted"() {
         given:
         requestFrom(attacker)
@@ -120,6 +136,11 @@ class DefaultCustomerPaymentGatewayServiceSpec extends Specification {
         then:
         thrown(IllegalArgumentException)
         0 * customerPaymentService.deleteCustomerPaymentByToken(_)
+    }
+
+    private void markAuthenticatedGatewayCallback() {
+        webRequest.getAttribute(PaymentGatewayCallbackAuthentication.AUTHENTICATED_GATEWAY_CALLBACK_ATTRIBUTE,
+                RequestAttributes.SCOPE_REQUEST) >> true
     }
 
     private void requestFrom(Customer customer) {

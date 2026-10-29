@@ -22,6 +22,7 @@ import org.broadleafcommerce.common.payment.PaymentGatewayType
 import org.broadleafcommerce.common.payment.PaymentTransactionType
 import org.broadleafcommerce.common.payment.PaymentType
 import org.broadleafcommerce.common.payment.dto.PaymentResponseDTO
+import org.broadleafcommerce.common.payment.service.PaymentGatewayCallbackAuthentication
 import org.broadleafcommerce.common.payment.service.PaymentGatewayConfiguration
 import org.broadleafcommerce.common.web.BroadleafRequestContext
 import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolver
@@ -38,6 +39,7 @@ import org.broadleafcommerce.core.payment.service.OrderPaymentService
 import org.broadleafcommerce.core.payment.service.PaymentResponseDTOToEntityService
 import org.broadleafcommerce.profile.core.domain.Customer
 import org.broadleafcommerce.profile.core.domain.CustomerImpl
+import org.springframework.web.context.request.RequestAttributes
 import org.springframework.web.context.request.WebRequest
 
 import spock.lang.Specification
@@ -139,6 +141,43 @@ class DefaultPaymentGatewayCheckoutServiceSpec extends Specification {
         1 * orderService.addPaymentToOrder(victimOrder, _, null)
     }
 
+    def "a callback bound to a fresh anonymous customer is rejected unless the gateway module authenticated it"() {
+        given:
+        requestFrom(customer(99L))
+        orderService.findOrderById(10L) >> victimOrder
+
+        when:
+        service.applyPaymentToOrder(response().valid(true).orderId("10"), config)
+
+        then:
+        thrown(IllegalArgumentException)
+        0 * dtoToEntityService._
+        0 * orderPaymentService._
+    }
+
+    def "an authenticated server-to-server callback is applied and checked out despite its anonymous request customer"() {
+        given:
+        requestFrom(customer(99L))
+        markAuthenticatedGatewayCallback()
+        orderService.findOrderById(10L) >> victimOrder
+        orderService.findOrderById(10L, true) >> victimOrder
+        orderPaymentService.create() >> new OrderPaymentImpl()
+        orderPaymentService.createTransaction() >> new PaymentTransactionImpl()
+        orderPaymentService.save(_) >> { args -> args[0] }
+        CheckoutResponse checkoutResponse = Mock()
+        checkoutResponse.getOrder() >> victimOrder
+        victimOrder.orderNumber = "ORDER-10"
+
+        when:
+        service.applyPaymentToOrder(response().valid(true).orderId("10"), config)
+        String orderNumber = service.initiateCheckout(10L)
+
+        then:
+        1 * orderService.addPaymentToOrder(victimOrder, _, null)
+        1 * checkoutService.performCheckout(victimOrder) >> checkoutResponse
+        orderNumber == "ORDER-10"
+    }
+
     def "checkout is not run for another customer's order"() {
         given:
         requestFrom(attacker)
@@ -179,6 +218,11 @@ class DefaultPaymentGatewayCheckoutServiceSpec extends Specification {
 
         then:
         thrown(IllegalArgumentException)
+    }
+
+    private void markAuthenticatedGatewayCallback() {
+        webRequest.getAttribute(PaymentGatewayCallbackAuthentication.AUTHENTICATED_GATEWAY_CALLBACK_ATTRIBUTE,
+                RequestAttributes.SCOPE_REQUEST) >> true
     }
 
     private void requestFrom(Customer customer) {
