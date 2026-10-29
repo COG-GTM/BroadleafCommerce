@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.core.search.service.solr;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.exception.ExceptionHelper;
@@ -33,9 +34,20 @@ import org.xml.sax.SAXException;
 
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -66,6 +78,7 @@ import jakarta.annotation.Resource;
 public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusProvider {
 
     private static final Log LOG = LogFactory.getLog(FileSystemSolrIndexStatusProviderImpl.class);
+    protected static final String STATUS_FILE_NAME = "solr_status.xml";
     @Qualifier("blCatalogSolrConfiguration")
     @Autowired(required = false)
     protected SolrConfiguration solrConfiguration;
@@ -83,6 +96,15 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
 
     @Value("${solr.index.status.dead.event.purge.seconds:3600}") //3600 - every hour
     protected Integer deadEventPurgeCycleSeconds;
+
+    /**
+     * Application-owned directory for the status file. Takes precedence over {@link SolrConfiguration#getSolrHomePath()}.
+     * When neither is set, a private, owner-only directory is created per JVM instead of using the shared temp directory.
+     */
+    @Value("${solr.index.status.directory:}")
+    protected String statusDirectoryPath;
+
+    protected Path privateStatusDirectory;
 
     public FileSystemSolrIndexStatusProviderImpl() {
         XPathFactory factory = XPathFactory.newInstance();
@@ -104,7 +126,7 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
         try {
             if (searchService instanceof SolrSearchServiceImpl) {
                 File statusFile = getStatusFile((SolrSearchServiceImpl) searchService);
-                boolean exists = statusFile.exists();
+                boolean exists = isRegularStatusFile(statusFile);
                 DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
                 dbf.setNamespaceAware(true);
                 dbf.setIgnoringElementContentWhitespace(true);
@@ -117,7 +139,7 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
                 Document document;
                 Element rootElement;
                 if (exists) {
-                    document = builder.parse(statusFile);
+                    document = parseStatusFile(statusFile);
                     rootElement = document.getDocumentElement();
                 } else {
                     document = builder.newDocument();
@@ -135,24 +157,7 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
                 xmlTransformer.setOutputProperty(OutputKeys.METHOD, "xml");
                 xmlTransformer.setOutputProperty(OutputKeys.INDENT, "yes");
 
-                DOMSource source = new DOMSource(document);
-                BufferedWriter writer = null;
-                try {
-                    writer = new BufferedWriter(new OutputStreamWriter(
-                            new FileOutputStream(statusFile, false),
-                            "UTF-8"
-                    ));
-                    StreamResult result = new StreamResult(writer);
-                    xmlTransformer.transform(source, result);
-                } finally {
-                    if (writer != null) {
-                        try {
-                            writer.close();
-                        } catch (IOException ioException) {
-                            //do nothing
-                        }
-                    }
-                }
+                writeStatusFile(statusFile, new DOMSource(document), xmlTransformer);
             }
         } catch (ParserConfigurationException e) {
             throw ExceptionHelper.refineException(e);
@@ -327,7 +332,7 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
         try {
             if (searchService instanceof SolrSearchServiceImpl) {
                 File statusFile = getStatusFile((SolrSearchServiceImpl) searchService);
-                boolean exists = statusFile.exists();
+                boolean exists = isRegularStatusFile(statusFile);
                 if (exists) {
                     DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
                     // Disable DTDs to prevent XXE attack
@@ -338,7 +343,7 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
                     if (builder == null) {
                         builder = dbf.newDocumentBuilder();
                     }
-                    Document document = builder.parse(statusFile);
+                    Document document = parseStatusFile(statusFile);
                     NodeList indexNodeList = (NodeList) xPath.evaluate(
                             "/status/index", document, XPathConstants.NODESET
                     );
@@ -427,16 +432,87 @@ public class FileSystemSolrIndexStatusProviderImpl implements SolrIndexStatusPro
 
     protected File getStatusFile(SolrSearchServiceImpl searchService) {
         String statusDirectory = getStatusDirectory(searchService);
-        File statusFile = new File(new File(statusDirectory), "solr_status.xml");
+        File statusFile = new File(new File(statusDirectory), STATUS_FILE_NAME);
         return statusFile;
     }
 
     protected String getStatusDirectory(SolrSearchServiceImpl searchService) {
-        String solrHome = solrConfiguration.getSolrHomePath();
-        if (solrHome == null) {
-            return System.getProperty("java.io.tmpdir");
+        if (StringUtils.isNotBlank(statusDirectoryPath)) {
+            return statusDirectoryPath;
         }
-        return solrHome;
+        String solrHome = solrConfiguration == null ? null : solrConfiguration.getSolrHomePath();
+        if (solrHome != null) {
+            return solrHome;
+        }
+        try {
+            return getPrivateStatusDirectory().toString();
+        } catch (IOException e) {
+            throw ExceptionHelper.refineException(e);
+        }
+    }
+
+    /**
+     * Lazily creates an owner-only directory for the status file. Never falls back to a fixed name in the shared
+     * temp directory, where another local user could pre-create the file or plant a symbolic link.
+     */
+    protected synchronized Path getPrivateStatusDirectory() throws IOException {
+        if (privateStatusDirectory == null) {
+            privateStatusDirectory = Files.createTempDirectory("blc-solr-status-", ownerOnlyAttributes("rwx------"));
+            LOG.warn(String.format("Neither solr.index.status.directory nor a Solr home path is configured. Solr index "
+                    + "status is stored in %s and will not survive a restart.", privateStatusDirectory));
+        }
+        return privateStatusDirectory;
+    }
+
+    protected boolean isRegularStatusFile(File statusFile) {
+        Path path = statusFile.toPath();
+        if (Files.isSymbolicLink(path)) {
+            LOG.warn(String.format("Ignoring Solr index status file %s because it is a symbolic link", path));
+            return false;
+        }
+        return Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS);
+    }
+
+    protected Document parseStatusFile(File statusFile) throws IOException, SAXException {
+        try (InputStream in = Files.newInputStream(statusFile.toPath(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            return builder.parse(in);
+        }
+    }
+
+    /**
+     * Writes to a new owner-only temp file in the status directory and atomically renames it over the status file, so
+     * a symbolic link at the status file path is replaced rather than followed.
+     */
+    protected void writeStatusFile(File statusFile, DOMSource source, Transformer xmlTransformer)
+            throws IOException, TransformerException {
+        Path target = statusFile.toPath().toAbsolutePath();
+        Path directory = target.getParent();
+        Path tempFile = Files.createTempFile(directory, STATUS_FILE_NAME + ".", ".tmp", ownerOnlyAttributes("rw-------"));
+        try {
+            try (Writer writer = new BufferedWriter(new OutputStreamWriter(
+                    Files.newOutputStream(tempFile, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING,
+                            LinkOption.NOFOLLOW_LINKS),
+                    StandardCharsets.UTF_8
+            ))) {
+                xmlTransformer.transform(source, new StreamResult(writer));
+            }
+            try {
+                Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tempFile);
+        }
+    }
+
+    protected FileAttribute<?>[] ownerOnlyAttributes(String permissions) {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            return new FileAttribute<?>[] {
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(permissions))
+            };
+        }
+        return new FileAttribute<?>[0];
     }
 
 }
