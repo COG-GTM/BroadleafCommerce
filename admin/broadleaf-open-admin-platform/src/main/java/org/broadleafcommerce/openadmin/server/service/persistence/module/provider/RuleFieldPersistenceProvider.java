@@ -822,7 +822,8 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
                             quantityBasedRule.setMatchRule(clearMvelString(translator, entityKey, fieldService, dto));
                             if (StringUtils.isEmpty(quantityBasedRule.getMatchRule())
                                     && !StringUtils.isEmpty(dw.getRawMvel())) {
-                                quantityBasedRule.setMatchRule(dw.getRawMvel());
+                                throw new MVELTranslationException(MVELTranslationException.UNSAFE_RULE,
+                                        "Raw MVEL rules are not accepted, use the rule builder instead");
                             }
                             PropertyUtils.setNestedProperty(quantityBasedRule, mappedBy, parent);
                         } catch (Exception e) {
@@ -911,6 +912,7 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
         );
         if (mvelString != null) {
             mvelString = mvelString.replace("\\\"", "\"");
+            ruleFieldExtractionUtility.validateMvel(mvelString);
         }
         return mvelString;
     }

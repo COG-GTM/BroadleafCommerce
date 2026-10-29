@@ -19,7 +19,6 @@ package org.broadleafcommerce.common.rule;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.mvel2.MVEL;
 import org.mvel2.ParserContext;
 
 import java.util.HashMap;
@@ -37,9 +36,7 @@ public abstract class AbstractRuleProcessor<T> implements RuleProcessor<T> {
      */
     protected ParserContext getParserContext() {
         if (parserContext == null) {
-            parserContext = new ParserContext();
-            parserContext.addImport("MVEL", MVEL.class);
-            parserContext.addImport("MvelHelper", MvelHelper.class);
+            parserContext = MvelHelper.buildParserContext(null);
         }
         return parserContext;
     }

@@ -321,4 +321,24 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
 
     }
 
+    /**
+     * A field comparison value is spliced into the rule as a field reference, so it must not carry arbitrary expressions.
+     */
+    public void testFieldComparisonRejectsExpressions() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("emailAddress");
+        expressionDTO.setOperator(BLCOperator.NOT_EQUAL_FIELD.name());
+        expressionDTO.setValue("username");
+        assertTrue(translator.createMVEL("customer", expressionDTO, customerFieldService).endsWith("customer.username"));
+
+        expressionDTO.setValue("username||java.lang.Runtime.getRuntime().exec(\"touch /tmp/pwned\")!=null");
+        try {
+            translator.createMVEL("customer", expressionDTO, customerFieldService);
+            fail("Expected the field comparison value to be rejected");
+        } catch (MVELTranslationException e) {
+            assertEquals(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND, e.getCode());
+        }
+    }
+
 }
