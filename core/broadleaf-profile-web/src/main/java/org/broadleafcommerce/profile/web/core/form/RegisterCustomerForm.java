@@ -47,7 +47,6 @@ public class RegisterCustomerForm implements Serializable {
             "customer.password",
             "customer.unencodedPassword",
             "customer.passwordChangeRequired",
-            "customer.challengeAnswer",
             "customer.externalId",
             "customer.taxExemptionCode",
             "customer.preview",
