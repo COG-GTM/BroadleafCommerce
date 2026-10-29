@@ -79,7 +79,13 @@ public class MvelRuleSandboxTest extends TestCase {
                 "Thread.sleep(1000)",
                 "System.getProperty('user.home')",
                 "customer.firstName == 'x",
-                "OfferType.ORDER_ITEM"
+                "OfferType.ORDER_ITEM",
+                "customer.getCustomerAttributes().remove('vip') != null",
+                "customer.customerAttributes.put('vip', 'true') == null",
+                "order.orderItems.clear() == null",
+                "order.orderItems.iterator().next() != null",
+                "customer.loginCount++ > 0",
+                "--customer.loginCount > 0"
         };
         for (String rule : rules) {
             try {
