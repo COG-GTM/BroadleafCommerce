@@ -36,8 +36,6 @@ import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 
-import java.util.List;
-
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -150,8 +148,7 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
 
         FulfillmentGroup shippableFulfillmentGroup = fulfillmentGroupService.getFirstShippableFulfillmentGroup(cart);
         if (shippableFulfillmentGroup != null) {
-            Address checkoutAddress = getReusableCheckoutAddress(shippableFulfillmentGroup, customer);
-            shippableFulfillmentGroup.setAddress(addressService.copyAddress(checkoutAddress, shippingForm.getAddress()));
+            shippableFulfillmentGroup.setAddress(addressService.copyAddress(shippingForm.getAddress()));
             if (shippingForm.getPersonalMessage() != null && shippingForm.getPersonalMessage().getMessage() != null) {
                 shippableFulfillmentGroup.setPersonalMessage(shippingForm.getPersonalMessage());
             }
@@ -324,28 +321,6 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
 
         //append current time to redirect to fix a problem with ajax caching in IE
         return getCheckoutPageRedirect() + "?_=" + System.currentTimeMillis();
-    }
-
-    /**
-     * Returns the fulfillment group's current address if it can be updated in place, so resubmitting the shipping form
-     * does not orphan the previous row. Addresses that also back one of the customer's saved addresses (e.g. after
-     * multiship) are not reused, so editing the checkout address never rewrites the saved one.
-     */
-    protected Address getReusableCheckoutAddress(FulfillmentGroup fulfillmentGroup, Customer customer) {
-        Address existing = fulfillmentGroup.getAddress();
-        if (existing == null || existing.getId() == null) {
-            return null;
-        }
-        if (customer != null && !customer.isAnonymous()) {
-            List<CustomerAddress> savedAddresses =
-                    customerAddressService.readActiveCustomerAddressesByCustomerId(customer.getId());
-            for (CustomerAddress customerAddress : savedAddresses) {
-                if (customerAddress.getAddress() != null && existing.getId().equals(customerAddress.getAddress().getId())) {
-                    return null;
-                }
-            }
-        }
-        return existing;
     }
 
     public void removeUnusedPhones(ShippingInfoForm form) {
