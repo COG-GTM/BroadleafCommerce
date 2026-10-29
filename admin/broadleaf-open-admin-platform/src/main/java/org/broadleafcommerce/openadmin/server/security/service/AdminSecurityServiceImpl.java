@@ -369,7 +369,11 @@ public class AdminSecurityServiceImpl implements AdminSecurityService {
 
         checkUser(user, response);
 
-        if (!response.getHasErrors()) {
+        if (response.getHasErrors()) {
+            // Spend the same hashing effort as the success path so response timing does not reveal
+            // whether the account exists.
+            encodePassword(PasswordUtils.generateSecurePassword(TEMP_PASSWORD_LENGTH).toLowerCase());
+        } else {
             String token = PasswordUtils.generateSecurePassword(TEMP_PASSWORD_LENGTH);
             token = token.toLowerCase();
 
@@ -408,10 +412,15 @@ public class AdminSecurityServiceImpl implements AdminSecurityService {
         if (username != null) {
             user = adminUserDao.readAdminUserByUserName(username);
         }
-        checkUser(user, response);
         checkPassword(password, confirmPassword, response);
-        if (StringUtils.isBlank(token)) {
-            response.addErrorCode("invalidToken");
+        if (!response.getHasErrors()) {
+            // Unknown, inactive and email-less users are reported as an invalid token so this
+            // anonymous endpoint cannot be used to enumerate admin accounts.
+            GenericResponse userResponse = new GenericResponse();
+            checkUser(user, userResponse);
+            if (userResponse.getHasErrors() || StringUtils.isBlank(token)) {
+                response.addErrorCode("invalidToken");
+            }
         }
 
         ForgotPasswordSecurityToken fpst = null;
