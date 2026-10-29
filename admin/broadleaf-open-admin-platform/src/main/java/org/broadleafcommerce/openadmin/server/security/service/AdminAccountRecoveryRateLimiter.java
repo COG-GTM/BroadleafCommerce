@@ -89,10 +89,10 @@ public class AdminAccountRecoveryRateLimiter {
         }
         Deque<Long> timestamps = attempts.get(key);
         if (timestamps == null) {
-            if (attempts.size() >= maxTrackedKeys) {
+            timestamps = trackNewKey(key);
+            if (timestamps == null) {
                 return false;
             }
-            timestamps = attempts.computeIfAbsent(key, k -> new ArrayDeque<>());
         }
         synchronized (timestamps) {
             evictOlderThan(timestamps, windowStart);
@@ -102,6 +102,24 @@ public class AdminAccountRecoveryRateLimiter {
             timestamps.addLast(now);
             return true;
         }
+    }
+
+    /**
+     * Keys are only added here and only removed in {@link #pruneIfNeeded}, both under this instance's lock, so
+     * the capacity check is exact even under concurrent requests.
+     *
+     * @return the timestamps for the key, or null if the cap has been reached
+     */
+    protected synchronized Deque<Long> trackNewKey(String key) {
+        Deque<Long> timestamps = attempts.get(key);
+        if (timestamps == null) {
+            if (attempts.size() >= maxTrackedKeys) {
+                return null;
+            }
+            timestamps = new ArrayDeque<>();
+            attempts.put(key, timestamps);
+        }
+        return timestamps;
     }
 
     protected synchronized void pruneIfNeeded(long now, long windowStart) {
