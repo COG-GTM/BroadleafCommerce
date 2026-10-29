@@ -28,6 +28,32 @@ public class RegisterCustomerForm implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Fields of the nested {@link Customer} entity that must never be populated from request parameters during
+     * registration. Binding these would allow a client to overwrite another customer's record (e.g. via
+     * {@code customer.id}) or to set server-controlled state.
+     */
+    public static final String[] DISALLOWED_BINDING_FIELDS = {
+            "customer.id",
+            "customer.password",
+            "customer.unencodedPassword",
+            "customer.passwordChangeRequired",
+            "customer.registered",
+            "customer.deactivated",
+            "customer.anonymous",
+            "customer.cookied",
+            "customer.loggedIn",
+            "customer.preview",
+            "customer.externalId",
+            "customer.challengeAnswer",
+            "customer.taxExemptionCode",
+            "customer.auditable*",
+            "customer.customerAttributes*",
+            "customer.customerAddresses*",
+            "customer.customerPhones*",
+            "customer.customerPayments*"
+    };
+
     protected Customer customer;
     protected String password;
     protected String passwordConfirm;
