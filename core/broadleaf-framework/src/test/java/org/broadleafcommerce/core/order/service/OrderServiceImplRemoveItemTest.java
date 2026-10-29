@@ -40,15 +40,18 @@ public class OrderServiceImplRemoveItemTest extends TestCase {
     private static final Long ALICE_CART_ID = 1L;
     private static final Long ALICE_WISHLIST_ID = 2L;
     private static final Long MALLORY_CART_ID = 3L;
+    private static final Long ALICE_OTHER_WISHLIST_ID = 4L;
 
     private static final Long ALICE_CART_ITEM_ID = 10L;
     private static final Long ALICE_WISHLIST_ITEM_ID = 20L;
     private static final Long MALLORY_CART_ITEM_ID = 30L;
+    private static final Long ALICE_OTHER_WISHLIST_ITEM_ID = 40L;
 
     private Map<Long, Order> ordersById;
     private List<Long> removedItemIds;
     private List<Order> removedFromOrders;
     private Order aliceWishlist;
+    private Order aliceOtherWishlist;
     private RecordingOrderServiceImpl orderService;
 
     @Override
@@ -59,11 +62,13 @@ public class OrderServiceImplRemoveItemTest extends TestCase {
         Order aliceCart = createOrder(ALICE_CART_ID, OrderStatus.IN_PROCESS, alice);
         aliceWishlist = createOrder(ALICE_WISHLIST_ID, OrderStatus.NAMED, alice);
         Order malloryCart = createOrder(MALLORY_CART_ID, OrderStatus.IN_PROCESS, mallory);
+        aliceOtherWishlist = createOrder(ALICE_OTHER_WISHLIST_ID, OrderStatus.NAMED, alice);
 
         ordersById = new HashMap<>();
         ordersById.put(ALICE_CART_ID, aliceCart);
         ordersById.put(ALICE_WISHLIST_ID, aliceWishlist);
         ordersById.put(MALLORY_CART_ID, malloryCart);
+        ordersById.put(ALICE_OTHER_WISHLIST_ID, aliceOtherWishlist);
 
         OrderItemService orderItemService = EasyMock.createNiceMock(OrderItemService.class);
         EasyMock.expect(orderItemService.readOrderItemById(ALICE_CART_ITEM_ID))
@@ -72,6 +77,8 @@ public class OrderServiceImplRemoveItemTest extends TestCase {
                 .andReturn(createOrderItem(ALICE_WISHLIST_ITEM_ID, aliceWishlist)).anyTimes();
         EasyMock.expect(orderItemService.readOrderItemById(MALLORY_CART_ITEM_ID))
                 .andReturn(createOrderItem(MALLORY_CART_ITEM_ID, malloryCart)).anyTimes();
+        EasyMock.expect(orderItemService.readOrderItemById(ALICE_OTHER_WISHLIST_ITEM_ID))
+                .andReturn(createOrderItem(ALICE_OTHER_WISHLIST_ITEM_ID, aliceOtherWishlist)).anyTimes();
         EasyMock.replay(orderItemService);
 
         removedItemIds = new ArrayList<>();
@@ -114,6 +121,16 @@ public class OrderServiceImplRemoveItemTest extends TestCase {
     public void testRemoveItemFromOwnWishlist() throws RemoveFromCartException {
         orderService.removeItem(ALICE_WISHLIST_ID, ALICE_WISHLIST_ITEM_ID, false);
         assertRemovedFrom(ALICE_WISHLIST_ITEM_ID, ALICE_WISHLIST_ID);
+    }
+
+    public void testRemoveItemFromOwnWishlistUsingIdFromAnotherOwnWishlistIsRejected() {
+        assertRemoveRejected(ALICE_WISHLIST_ID, ALICE_OTHER_WISHLIST_ITEM_ID);
+        assertEquals(1, aliceOtherWishlist.getOrderItems().size());
+    }
+
+    public void testFindOrderByIdOrByOrderItemIdKeepsRequestedWishlist() {
+        assertEquals(ALICE_WISHLIST_ID,
+                orderService.findOrderByIdOrByOrderItemId(ALICE_WISHLIST_ID, ALICE_OTHER_WISHLIST_ITEM_ID).getId());
     }
 
     public void testRemoveOwnWishlistItemViaOwnCartResolvesWishlist() throws RemoveFromCartException {

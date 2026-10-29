@@ -891,8 +891,9 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * Resolves the order a remove operation applies to. The item's own named order (wishlist) is only used when it is
-     * the requested order or belongs to the same customer as the requested order; otherwise the requested order is
-     * returned, so a client supplied item id cannot redirect the operation to another customer's named order.
+     * the requested order, or when the requested order is not itself a named order and belongs to the same customer;
+     * otherwise the requested order is returned, so a client supplied item id cannot redirect the operation to another
+     * customer's named order or to a different named order than the one requested.
      */
     protected Order findOrderByIdOrByOrderItemId(final Long orderId, final Long orderItemId) {
         final Order requestedOrder = findOrderById(orderId);
@@ -912,6 +913,9 @@ public class OrderServiceImpl implements OrderService {
         }
         if (requestedOrder.getId() != null && requestedOrder.getId().equals(itemOrder.getId())) {
             return true;
+        }
+        if (requestedOrder.getStatus() != null && OrderStatus.NAMED.getType().equals(requestedOrder.getStatus().getType())) {
+            return false;
         }
         Customer requestedCustomer = requestedOrder.getCustomer();
         Customer itemCustomer = itemOrder.getCustomer();
