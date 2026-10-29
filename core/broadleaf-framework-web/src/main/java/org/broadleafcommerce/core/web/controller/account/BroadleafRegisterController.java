@@ -34,6 +34,8 @@ import org.broadleafcommerce.profile.web.core.service.register.RegistrationServi
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,6 +73,11 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     @Resource(name = "blOrderService")
     protected OrderService orderService;
+
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(RegisterCustomerForm.DISALLOWED_BINDING_FIELDS);
+    }
 
     public String register(
             RegisterCustomerForm registerCustomerForm,
