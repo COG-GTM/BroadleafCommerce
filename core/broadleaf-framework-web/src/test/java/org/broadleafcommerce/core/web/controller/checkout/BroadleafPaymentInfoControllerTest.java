@@ -19,6 +19,9 @@ package org.broadleafcommerce.core.web.controller.checkout;
 
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.BroadleafRequestCustomerResolverImpl;
+import org.broadleafcommerce.core.order.domain.Order;
+import org.broadleafcommerce.core.payment.service.OrderPaymentService;
+import org.broadleafcommerce.core.web.checkout.validator.CheckoutPaymentInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.model.PaymentInfoForm;
 import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.AddressImpl;
@@ -34,6 +37,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.context.support.StaticApplicationContext;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.context.request.WebRequest;
 
 public class BroadleafPaymentInfoControllerTest {
@@ -116,6 +120,31 @@ public class BroadleafPaymentInfoControllerTest {
         PaymentInfoForm form = form(VICTIM_PAYMENT_ID);
 
         assertSecurityException(() -> controller.savePaymentInfo(null, null, null, form, null));
+    }
+
+    @Test
+    public void savePaymentInfoDoesNotCreateOrderPaymentFromAnotherCustomersPayment() {
+        BroadleafPaymentInfoController skipAddressController = new BroadleafPaymentInfoController() {
+            @Override
+            protected void preProcessBillingAddress(PaymentInfoForm paymentForm, Order cart) {
+                // isolate the order payment creation path
+            }
+        };
+        OrderPaymentService orderPaymentService = EasyMock.createStrictMock(OrderPaymentService.class);
+        CheckoutPaymentInfoFormValidator validator = EasyMock.createNiceMock(CheckoutPaymentInfoFormValidator.class);
+        BindingResult bindingResult = EasyMock.createNiceMock(BindingResult.class);
+        EasyMock.expect(bindingResult.hasErrors()).andStubReturn(false);
+        EasyMock.replay(orderPaymentService, validator, bindingResult);
+
+        skipAddressController.customerPaymentService = customerPaymentService;
+        skipAddressController.orderPaymentService = orderPaymentService;
+        skipAddressController.paymentInfoFormValidator = validator;
+
+        PaymentInfoForm form = form(VICTIM_PAYMENT_ID);
+        form.setShouldSaveNewPayment(false);
+
+        assertSecurityException(() -> skipAddressController.savePaymentInfo(null, null, null, form, bindingResult));
+        EasyMock.verify(orderPaymentService);
     }
 
     private void assertSecurityException(ThrowingRunnable runnable) {
