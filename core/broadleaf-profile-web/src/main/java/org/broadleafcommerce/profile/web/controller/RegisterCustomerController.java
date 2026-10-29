@@ -55,6 +55,7 @@ public class RegisterCustomerController {
             "customer.emailAddress",
             "customer.firstName",
             "customer.lastName",
+            "customer.receiveEmail",
             "customer.challengeQuestion",
             "customer.unencodedChallengeAnswer",
             "password",
