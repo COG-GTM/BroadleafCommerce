@@ -44,7 +44,7 @@ import jakarta.annotation.Resource;
  * email address to that customer.
  * <p>
  * Registration does not prove control of the email address, so only guest orders owned by a customer bound to the
- * registering browser session (the registering customer itself or the session's anonymous customer) are merged.
+ * registering browser session (the session's anonymous customer) are merged.
  * Implementors that verify email ownership can widen this by overriding
  * {@link #isOrderEligibleForMerge(Customer, Order, Set)}.
  */
@@ -107,14 +107,11 @@ public class MergeOrdersByEmailPostRegistrationObserver implements PostRegistrat
     }
 
     /**
-     * Ids of the customers bound to the current browser session: the registering customer and the anonymous
-     * customer stored in session by {@code CustomerStateRequestProcessor}.
+     * Ids of the anonymous customer stored in session by {@code CustomerStateRequestProcessor}. The registering
+     * customer's own id is deliberately not trusted, since it may originate from submitted form data.
      */
     protected Set<Long> resolveSessionCustomerIds(Customer customer) {
         Set<Long> ids = new HashSet<>();
-        if (customer.getId() != null) {
-            ids.add(customer.getId());
-        }
         BroadleafRequestContext context = BroadleafRequestContext.getBroadleafRequestContext();
         WebRequest request = context == null ? null : context.getWebRequest();
         if (request != null) {

@@ -88,6 +88,18 @@ public class MergeOrdersByEmailPostRegistrationObserverTest {
     }
 
     @Test
+    public void doesNotTrustRegisteringCustomerIdWithoutSessionBinding() {
+        Customer registering = customer(7L, true);
+        Order victimOrder = order(customer(7L, false));
+        expectOrders(victimOrder);
+
+        observer.processRegistrationEvent(registering);
+
+        EasyMock.verify(orderService, handler, victimOrder);
+        Assert.assertTrue(mergedOrders.getValue().isEmpty());
+    }
+
+    @Test
     public void mergesGuestOrdersOfSessionAnonymousCustomerById() {
         request.getSession().setAttribute(
                 MergeOrdersByEmailPostRegistrationObserver.ANONYMOUS_CUSTOMER_ID_SESSION_ATTRIBUTE_NAME, 7L);
