@@ -35,6 +35,7 @@ import org.broadleafcommerce.core.web.checkout.validator.OrderInfoFormValidator;
 import org.broadleafcommerce.core.web.checkout.validator.ShippingInfoFormValidator;
 import org.broadleafcommerce.core.web.order.service.CartStateService;
 import org.broadleafcommerce.core.web.service.InitBinderService;
+import org.broadleafcommerce.profile.core.domain.CustomerPayment;
 import org.broadleafcommerce.profile.core.service.AddressService;
 import org.broadleafcommerce.profile.core.service.CountryService;
 import org.broadleafcommerce.profile.core.service.CountrySubdivisionService;
@@ -42,6 +43,7 @@ import org.broadleafcommerce.profile.core.service.CustomerAddressService;
 import org.broadleafcommerce.profile.core.service.CustomerPaymentService;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.PhoneService;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.ui.Model;
@@ -171,6 +173,21 @@ public abstract class AbstractCheckoutController extends BroadleafAbstractContro
 
     protected String getConfirmationView(String orderNumber) {
         return getBaseConfirmationView() + "/" + orderNumber;
+    }
+
+    /**
+     * Resolves a client-supplied saved payment id, requiring that it belongs to the active customer.
+     *
+     * @throws SecurityException if the saved payment does not exist or is owned by another customer
+     */
+    protected CustomerPayment readActiveCustomerPayment(Long customerPaymentId) {
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByIdAndCustomer(
+                customerPaymentId, CustomerState.getCustomer()
+        );
+        if (customerPayment == null) {
+            throw new SecurityException("The requested saved payment does not belong to the active customer.");
+        }
+        return customerPayment;
     }
 
     protected void populateModelWithReferenceData(HttpServletRequest request, Model model) {
