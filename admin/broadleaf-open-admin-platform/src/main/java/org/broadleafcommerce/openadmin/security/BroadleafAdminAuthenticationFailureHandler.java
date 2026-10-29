@@ -94,12 +94,13 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
 
     /**
      * Preserves the original successUrl from the referer. If the referer carries a successUrl parameter its value is
-     * used, otherwise the referer itself. Referers from another host and successUrl values that are not local to the
-     * application are dropped.
+     * used, otherwise the referer itself. The raw (still encoded) header is split on parameter boundaries so encoded
+     * characters in the destination survive; only the decoded value is used for validation. Referers from another host
+     * and successUrl values that are not local to the application are dropped.
      */
     protected String getSuccessUrlFromReferer(HttpServletRequest request) {
-        String referer = StringUtils.trimToNull(StringUtil.cleanseUrlString(request.getHeader("referer")));
-        if (referer == null || !isSameHostUrl(referer, request)) {
+        String referer = StringUtils.trimToNull(request.getHeader("referer"));
+        if (referer == null || containsWhitespaceOrControl(referer) || !isSameHostUrl(referer, request)) {
             return null;
         }
 
@@ -113,7 +114,8 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         if (nextParamPos >= 0) {
             successUrl = successUrl.substring(0, nextParamPos);
         }
-        if (isLocalPath(successUrl) || isSameHostUrl(successUrl, request)) {
+        String decodedSuccessUrl = StringUtil.cleanseUrlString(successUrl);
+        if (isLocalPath(decodedSuccessUrl) || isSameHostUrl(decodedSuccessUrl, request)) {
             return successUrl;
         }
         return null;
@@ -137,15 +139,16 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         if (StringUtils.isEmpty(url) || url.charAt(0) != '/') {
             return false;
         }
-        if (url.startsWith("//") || url.contains("\\") || url.contains("://")) {
-            return false;
-        }
+        return !url.startsWith("//") && !url.contains("\\") && !url.contains("://") && !containsWhitespaceOrControl(url);
+    }
+
+    protected boolean containsWhitespaceOrControl(String url) {
         for (int i = 0; i < url.length(); i++) {
             if (Character.isISOControl(url.charAt(i)) || Character.isWhitespace(url.charAt(i))) {
-                return false;
+                return true;
             }
         }
-        return true;
+        return false;
     }
 
     /**

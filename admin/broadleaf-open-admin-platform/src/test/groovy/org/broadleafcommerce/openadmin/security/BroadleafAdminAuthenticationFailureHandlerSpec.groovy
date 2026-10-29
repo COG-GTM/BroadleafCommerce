@@ -114,6 +114,18 @@ class BroadleafAdminAuthenticationFailureHandlerSpec extends Specification {
     }
 
     @Unroll
+    def "encoded characters in a referer successUrl #successUrl are preserved"() {
+        given:
+        request.addHeader("referer", "https://admin.acme.test/admin/login?successUrl=" + successUrl + "&foo=bar")
+
+        expect:
+        fail() == "/admin/login?error=true&successUrl=" + successUrl
+
+        where:
+        successUrl << ["/admin/search?q=red%26blue", "/admin/search?q=red+blue", "%2Fadmin%2Fproduct"]
+    }
+
+    @Unroll
     def "referer #referer is ignored"() {
         given:
         request.addHeader("referer", referer)
@@ -126,7 +138,9 @@ class BroadleafAdminAuthenticationFailureHandlerSpec extends Specification {
                 "https://evil.example/admin/login",
                 "https://admin.acme.test.evil.example/admin",
                 "https://admin.acme.test/admin/login?successUrl=https://evil.example",
-                "https://admin.acme.test/admin/login?successUrl=//evil.example"
+                "https://admin.acme.test/admin/login?successUrl=//evil.example",
+                "https://admin.acme.test/admin/login?successUrl=%2F%2Fevil.example",
+                "https://admin.acme.test/admin/login?successUrl=https%3A%2F%2Fevil.example"
         ]
     }
 
