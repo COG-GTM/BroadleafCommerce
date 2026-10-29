@@ -145,6 +145,26 @@ public class MvelRuleValidatorTest extends TestCase {
         assertFalse(marker.exists());
     }
 
+    @SuppressWarnings("unchecked")
+    public void testSerializedCacheEntriesAreRecompiled() throws Exception {
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("customer", Collections.singletonMap("firstName", "bob"));
+        String rule = "customer.firstName==\"bob\"";
+        HashMap<String, java.io.Serializable> cache = new HashMap<>();
+        assertTrue(MvelHelper.evaluateRule(rule, vars, cache));
+
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(bytes)) {
+            out.writeObject(cache);
+        }
+        Map<String, java.io.Serializable> restored;
+        try (java.io.ObjectInputStream in = new java.io.ObjectInputStream(
+                new java.io.ByteArrayInputStream(bytes.toByteArray()))) {
+            restored = (Map<String, java.io.Serializable>) in.readObject();
+        }
+        assertTrue(MvelHelper.evaluateRule(rule, vars, restored));
+    }
+
     public void testAllowedRulesStillEvaluate() {
         Map<String, Object> vars = new HashMap<>();
         Map<String, String> customer = new HashMap<>();

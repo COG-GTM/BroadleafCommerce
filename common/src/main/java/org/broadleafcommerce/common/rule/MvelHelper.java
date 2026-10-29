@@ -183,8 +183,10 @@ public class MvelHelper {
             Serializable exp = null;
             if (expressionCache != null) {
                 exp = expressionCache.get(rule);
-                if (!(exp instanceof ValidatedRule) && exp != RejectedRule.INSTANCE) {
-                    // only trust entries this method validated and compiled itself
+                if (exp != RejectedRule.INSTANCE
+                        && !(exp instanceof ValidatedRule && ((ValidatedRule) exp).compiled != null)) {
+                    // only trust entries this method validated and compiled itself; the compiled expression is
+                    // transient so a deserialized entry is recompiled
                     exp = null;
                 }
             }
