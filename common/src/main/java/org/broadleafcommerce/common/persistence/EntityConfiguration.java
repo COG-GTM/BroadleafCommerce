@@ -84,6 +84,13 @@ public class EntityConfiguration implements ApplicationContextAware {
         return applicationcontext.getBeanDefinitionNames();
     }
 
+    /**
+     * Resolves the type of an entity bean from its definition without creating an instance.
+     */
+    public Class<?> getEntityBeanType(String beanId) {
+        return applicationcontext.getType(beanId, false);
+    }
+
     public <T> Class<T> lookupEntityClass(String beanId, Class<T> resultClass) {
         Class<T> clazz;
         if (entityMap.containsKey(beanId)) {

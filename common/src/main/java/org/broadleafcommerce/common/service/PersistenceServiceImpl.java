@@ -33,8 +33,12 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jakarta.annotation.Resource;
@@ -59,6 +63,13 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
     protected static final String TRANSACTION_MANAGER_KEY = "transactionManager";
     private final Map<String, EntityManager> ENTITY_MANAGER_CACHE = new ConcurrentHashMap<>();
     private final Map<String, PlatformTransactionManager> TRANSACTION_MANAGER_CACHE = new ConcurrentHashMap<>();
+    protected static final String[] NON_ENTITY_TYPE_PREFIXES = {"java.", "javax.", "jakarta.", "org.hibernate."};
+    /**
+     * Names of the registered entity classes, the application supertypes/interfaces in their hierarchy, and the
+     * entity bean ids whose bean type is one of those entity classes. {@link #validateEntityClassName(String)} checks untrusted names against this set before
+     * anything is resolved reflectively.
+     */
+    private final Set<String> ALLOWED_ENTITY_NAMES = ConcurrentHashMap.newKeySet();
     @Resource(name = "blEntityConfiguration")
     protected EntityConfiguration entityConfiguration;
     @Resource(name = "blTargetModeMaps")
@@ -114,6 +125,7 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
                 }, RuntimeException.class, getTransactionManager(managerMap));
             }
         }
+        registerEntityBeanNames();
     }
 
     protected void populateCaches(String targetMode, Map<String, Object> managerMap) {
@@ -122,18 +134,92 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
 
         SessionFactory sessionFactory = em.unwrap(Session.class).getSessionFactory();
         for (EntityType<?> item : sessionFactory.getMetamodel().getEntities()) {
-            Class<?> mappedClass = item.getJavaType();
-
-            String managerCacheKey = buildManagerCacheKey(targetMode, mappedClass);
-            ENTITY_MANAGER_CACHE.put(managerCacheKey, em);
-            TRANSACTION_MANAGER_CACHE.put(managerCacheKey, txManager);
+            registerEntity(targetMode, item.getJavaType(), em, txManager);
         }
+    }
+
+    protected void registerEntity(
+            String targetMode, Class<?> mappedClass, EntityManager em, PlatformTransactionManager txManager
+    ) {
+        registerEntityTypeNames(mappedClass);
+        String managerCacheKey = buildManagerCacheKey(targetMode, mappedClass);
+        ENTITY_MANAGER_CACHE.put(managerCacheKey, em);
+        TRANSACTION_MANAGER_CACHE.put(managerCacheKey, txManager);
+    }
+
+    /**
+     * Allows the entity bean ids whose bean type is a registered entity type. Must run after the entity types have
+     * been registered. Bean types are read from the definitions, so no bean is instantiated.
+     */
+    protected void registerEntityBeanNames() {
+        if (entityConfiguration == null) {
+            return;
+        }
+        String[] beanNames = entityConfiguration.getEntityBeanNames();
+        if (beanNames == null) {
+            return;
+        }
+        Set<String> entityBeanNames = new HashSet<>();
+        for (String beanName : beanNames) {
+            try {
+                Class<?> beanType = entityConfiguration.getEntityBeanType(beanName);
+                if (beanType != null && ALLOWED_ENTITY_NAMES.contains(beanType.getName())) {
+                    entityBeanNames.add(beanName);
+                }
+            } catch (RuntimeException e) {
+                LOG.debug("Unable to determine the type of entity bean " + beanName, e);
+            }
+        }
+        ALLOWED_ENTITY_NAMES.addAll(entityBeanNames);
+    }
+
+    protected void registerEntityTypeNames(Class<?> mappedClass) {
+        Set<Class<?>> visited = new HashSet<>();
+        Deque<Class<?>> toVisit = new ArrayDeque<>();
+        toVisit.push(mappedClass);
+        while (!toVisit.isEmpty()) {
+            Class<?> type = toVisit.pop();
+            if (isNonEntityType(type) || !visited.add(type)) {
+                continue;
+            }
+            ALLOWED_ENTITY_NAMES.add(type.getName());
+            if (type.getSuperclass() != null) {
+                toVisit.push(type.getSuperclass());
+            }
+            for (Class<?> iface : type.getInterfaces()) {
+                toVisit.push(iface);
+            }
+        }
+    }
+
+    protected boolean isNonEntityType(Class<?> type) {
+        String name = type.getName();
+        for (String prefix : NON_ENTITY_TYPE_PREFIXES) {
+            if (name.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Pure string lookup that never loads or initializes a class, so it is safe for untrusted input.
+     */
+    protected boolean isAllowedEntityName(String entityClassName) {
+        return entityClassName != null && ALLOWED_ENTITY_NAMES.contains(entityClassName);
     }
 
     @Override
     public boolean validateEntityClassName(String entityClassName) {
-        String cacheKey = buildManagerCacheKey(TargetModeType.SANDBOX.getType(), entityClassName);
-        boolean isValid = ENTITY_MANAGER_CACHE.containsKey(cacheKey);
+        boolean isValid = false;
+        if (isAllowedEntityName(entityClassName)) {
+            try {
+                String cacheKey = buildManagerCacheKey(TargetModeType.SANDBOX.getType(), entityClassName);
+                isValid = ENTITY_MANAGER_CACHE.containsKey(cacheKey);
+            } catch (RuntimeException e) {
+                LOG.debug("Unable to resolve the registered entity for a submitted class name", e);
+            }
+        }
 
         if (!isValid) {
             LOG.warn("The system detected an entity class name submitted that is not present in the registered entities known to the system.");
@@ -233,7 +319,7 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
 
     protected Class<?> getClassForName(String className) {
         try {
-            return Class.forName(className);
+            return Class.forName(className, false, PersistenceServiceImpl.class.getClassLoader());
         } catch (ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
