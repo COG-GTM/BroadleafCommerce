@@ -911,6 +911,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
         if (searchCriteria.getFilterCriteria() != null) {
             for (Entry<String, String[]> filterCriteria : searchCriteria.getFilterCriteria().entrySet()) {
                 String solrKey = null;
+                List<SearchFacetDTO> activeFacets = new ArrayList<>();
 
                 for (Entry<String, SearchFacetDTO> namedFacet : namedFacetMap.entrySet()) {
                     String facetFieldAbbreviation = namedFacet.getValue()
@@ -919,7 +920,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                             .getAbbreviation();
                     if (facetFieldAbbreviation.equals(filterCriteria.getKey())) {
                         solrKey = namedFacet.getKey();
-                        namedFacet.getValue().setActive(true);
+                        activeFacets.add(namedFacet.getValue());
                     }
                 }
 
@@ -948,6 +949,9 @@ public class SolrHelperServiceImpl implements SolrHelperService {
 
                 if (selectedValueList.isEmpty()) {
                     continue;
+                }
+                for (SearchFacetDTO activeFacet : activeFacets) {
+                    activeFacet.setActive(true);
                 }
                 String[] selectedValues = selectedValueList.toArray(new String[0]);
 

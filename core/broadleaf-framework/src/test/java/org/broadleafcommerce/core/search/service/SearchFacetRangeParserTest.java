@@ -57,6 +57,9 @@ public class SearchFacetRangeParserTest extends TestCase {
         assertNull(SearchFacetRangeParser.parse("range[1:2:3]"));
         assertNull(SearchFacetRangeParser.parse("range[NaN:null]"));
         assertNull(SearchFacetRangeParser.parse("range[ 1:2]"));
+        assertNull(SearchFacetRangeParser.parse("range[0:5]junk"));
+        assertNull(SearchFacetRangeParser.parse("xrange[0:5]"));
+        assertNull(SearchFacetRangeParser.parse("range[0:5]]"));
         assertNull(SearchFacetRangeParser.parse("blue"));
         assertNull(SearchFacetRangeParser.parse(null));
     }

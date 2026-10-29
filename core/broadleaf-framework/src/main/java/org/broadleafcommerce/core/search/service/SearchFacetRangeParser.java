@@ -47,12 +47,10 @@ public final class SearchFacetRangeParser {
         if (!isRange(value)) {
             return null;
         }
-        int open = value.indexOf(RANGE_PREFIX) + RANGE_PREFIX.length();
-        int close = value.indexOf(']', open);
-        if (close < 0) {
+        if (!value.startsWith(RANGE_PREFIX) || !value.endsWith("]")) {
             return null;
         }
-        String[] bounds = value.substring(open, close).split(":", -1);
+        String[] bounds = value.substring(RANGE_PREFIX.length(), value.length() - 1).split(":", -1);
         if (bounds.length != 2) {
             return null;
         }

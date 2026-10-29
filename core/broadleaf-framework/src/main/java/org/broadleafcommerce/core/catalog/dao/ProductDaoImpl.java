@@ -377,6 +377,24 @@ public class ProductDaoImpl implements ProductDao {
             List<String> eqValues = new ArrayList<>();
             List<BigDecimal[]> rangeValues = new ArrayList<>();
 
+            // Values can be equality checks (ie manufacturer=Dave's) or range checks, which take the form
+            // key=range[minRange:maxRange]. Figure out what type of check this is
+            for (String value : entry.getValue()) {
+                if (SearchFacetRangeParser.isRange(value)) {
+                    BigDecimal[] rangeValue = SearchFacetRangeParser.parse(value);
+                    if (rangeValue != null) {
+                        rangeValues.add(rangeValue);
+                    }
+                } else {
+                    eqValues.add(value);
+                }
+            }
+
+            // Invalid ranges are ignored; don't join or restrict on a facet that has nothing left to filter by
+            if (eqValues.isEmpty() && rangeValues.isEmpty()) {
+                continue;
+            }
+
             // Determine which path is the appropriate one to use
             Path<?> pathToUse;
             if (key.contains("defaultSku.")) {
@@ -396,19 +414,6 @@ public class ProductDaoImpl implements ProductDao {
                 // We don't know which path this facet is built on - resolves previous bug that attempted
                 // to attach search facet to any query parameter
                 continue;
-            }
-
-            // Values can be equality checks (ie manufacturer=Dave's) or range checks, which take the form
-            // key=range[minRange:maxRange]. Figure out what type of check this is
-            for (String value : entry.getValue()) {
-                if (SearchFacetRangeParser.isRange(value)) {
-                    BigDecimal[] rangeValue = SearchFacetRangeParser.parse(value);
-                    if (rangeValue != null) {
-                        rangeValues.add(rangeValue);
-                    }
-                } else {
-                    eqValues.add(value);
-                }
             }
 
             // Add the equality range restriction with the "in" builder. That means that the query string

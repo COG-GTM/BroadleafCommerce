@@ -65,6 +65,7 @@ public class SolrHelperServiceImplActiveFacetFilterTest extends TestCase {
 
     public void testValidRangeBecomesFilterQuery() {
         String[] fqs = attach("range[0:5]", "range[10:null]");
+        assertTrue(namedFacetMap.get(SOLR_KEY).isActive());
         assertEquals(1, fqs.length);
         assertEquals("{!tag=price_td}price_td:(price_td:[0 TO 5] OR price_td:[10 TO *])", fqs[0]);
     }
@@ -72,6 +73,7 @@ public class SolrHelperServiceImplActiveFacetFilterTest extends TestCase {
     public void testHugeExponentIsIgnored() {
         String[] fqs = attach("range[1e999999999:null]");
         assertNull(fqs);
+        assertFalse(namedFacetMap.get(SOLR_KEY).isActive());
     }
 
     public void testHugeExponentDroppedButValidRangeKept() {
