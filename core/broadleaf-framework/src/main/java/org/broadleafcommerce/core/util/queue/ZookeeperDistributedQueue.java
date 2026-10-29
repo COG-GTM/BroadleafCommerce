@@ -762,6 +762,8 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
                                             if (remove) {
                                                 getZookeeperClient().delete(entryPath, 0);
+                                            } else if (deserialized == null) {
+                                                discardNullEntry(entryPath);
                                             }
 
                                             return deserialized;
@@ -1147,6 +1149,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      */
     protected void discardRejectedEntry(String entryPath, RejectedQueueEntryException cause) throws Exception {
         LOG.error("Discarding Zookeeper queue entry " + entryPath + " because its payload was rejected by the deserialization filter.", cause);
+        try {
+            getZookeeperClient().delete(entryPath, -1);
+        } catch (KeeperException.NoNodeException e) {
+            //Already removed by another consumer.
+        }
+    }
+
+    /**
+     * Null entries can no longer be enqueued, but ones written before that check would otherwise look like an empty
+     * queue to readers while still counting toward capacity.
+     */
+    protected void discardNullEntry(String entryPath) throws Exception {
+        LOG.warn("Discarding Zookeeper queue entry " + entryPath + " because it deserialized to null.");
         try {
             getZookeeperClient().delete(entryPath, -1);
         } catch (KeeperException.NoNodeException e) {
