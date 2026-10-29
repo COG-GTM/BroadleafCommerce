@@ -795,9 +795,28 @@ public class AdminBasicEntityController extends AdminAbstractController {
                     + ") is not valid for the requested section (" + StringUtil.sanitize(ceilingType) + ")");
         }
 
+        entityForm.setIdProperty(getIdPropertyOfSection(sectionMetadata, entityForm.getIdProperty()));
         if (id != null) {
             entityForm.setId(id);
         }
+    }
+
+    /**
+     * The persistence layer reads the primary key from the section's ID field, so the URL id must be written to that
+     * field rather than to a client-supplied idProperty.
+     */
+    protected String getIdPropertyOfSection(ClassMetadata sectionMetadata, String defaultIdProperty) {
+        if (sectionMetadata.getProperties() != null) {
+            for (Property property : sectionMetadata.getProperties()) {
+                FieldMetadata metadata = property.getMetadata();
+                if (metadata instanceof BasicFieldMetadata
+                        && ((BasicFieldMetadata) metadata).getFieldType() == SupportedFieldType.ID
+                        && !property.getName().contains(".")) {
+                    return property.getName();
+                }
+            }
+        }
+        return StringUtils.isNotBlank(defaultIdProperty) ? defaultIdProperty : "id";
     }
 
     protected boolean isEntityTypeOfSection(String entityType, ClassMetadata sectionMetadata) {

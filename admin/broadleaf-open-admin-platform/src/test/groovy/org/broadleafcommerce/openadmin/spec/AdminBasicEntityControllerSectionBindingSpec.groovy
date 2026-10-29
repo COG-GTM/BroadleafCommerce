@@ -18,8 +18,11 @@
 package org.broadleafcommerce.openadmin.spec
 
 import org.broadleafcommerce.common.exception.SecurityServiceException
+import org.broadleafcommerce.common.presentation.client.SupportedFieldType
+import org.broadleafcommerce.openadmin.dto.BasicFieldMetadata
 import org.broadleafcommerce.openadmin.dto.ClassMetadata
 import org.broadleafcommerce.openadmin.dto.ClassTree
+import org.broadleafcommerce.openadmin.dto.Property
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUserImpl
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermission
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermissionImpl
@@ -76,5 +79,24 @@ class AdminBasicEntityControllerSectionBindingSpec extends Specification {
         then:
         form.ceilingEntityClassname == AdminPermission.name
         form.entityType == null
+    }
+
+    def "the URL id is written to the section's ID field, not a posted idProperty"() {
+        given:
+        sectionMetadata.properties = [idProperty("id"), idProperty("parent.id")] as Property[]
+        EntityForm form = new EntityForm(ceilingEntityClassname: AdminPermission.name,
+                entityType: AdminPermissionImpl.name, idProperty: "description")
+
+        when:
+        controller.bindEntityFormToSection(form, sectionMetadata, "42")
+
+        then:
+        form.idProperty == "id"
+        form.id == "42"
+    }
+
+    private static Property idProperty(String name) {
+        BasicFieldMetadata metadata = new BasicFieldMetadata(fieldType: SupportedFieldType.ID)
+        return new Property(name: name, metadata: metadata)
     }
 }
