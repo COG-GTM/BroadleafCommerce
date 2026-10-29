@@ -941,6 +941,13 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
                 propertyId = getIdPropertyName(mergedProperties);
                 found = mergedProperties.containsKey(propertyId);
             }
+            if (found && !isFilterableProperty(mergedProperties.get(propertyId))) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug(String.format("Ignoring filter/sort criteria on non-filterable property %s for %s",
+                            StringUtil.sanitize(realPropertyId), ceilingEntityFullyQualifiedClassname));
+                }
+                found = false;
+            }
             if (found) {
                 boolean handled = false;
                 AddSearchMappingRequest addSearchMappingRequest;
@@ -972,6 +979,23 @@ public class BasicPersistenceModule implements PersistenceModule, RecordHelper, 
             }
         }
         return filterMappings;
+    }
+
+    /**
+     * Whether request criteria may filter or sort on the given property. Password fields are never filterable or
+     * sortable, otherwise any reader of the entity could use the list grid as an oracle for the stored value.
+     */
+    protected boolean isFilterableProperty(FieldMetadata metadata) {
+        if (metadata instanceof BasicFieldMetadata) {
+            BasicFieldMetadata basicMetadata = (BasicFieldMetadata) metadata;
+            return !isPasswordFieldType(basicMetadata.getFieldType())
+                    && !isPasswordFieldType(basicMetadata.getExplicitFieldType());
+        }
+        return true;
+    }
+
+    protected boolean isPasswordFieldType(SupportedFieldType fieldType) {
+        return SupportedFieldType.PASSWORD == fieldType || SupportedFieldType.PASSWORD_CONFIRM == fieldType;
     }
 
     @Override
