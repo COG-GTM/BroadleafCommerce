@@ -34,8 +34,12 @@ import org.mvel2.ParserContext;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.text.DateFormat;
 import java.text.ParseException;
 import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -157,8 +161,10 @@ public class MvelHelper {
      * @param rule
      * @param ruleParameters
      * @param expressionCache
-     * @param additionalContextImports additional imports to give to the {@link ParserContext} besides "MVEL" ({@link MVEL} and
-     *                                 "MvelHelper" ({@link MvelHelper}) since they are automatically added
+     * @param additionalContextImports additional imports to give to the {@link ParserContext} besides "MvelHelper"
+     *                                 ({@link MvelHelper}) and "CollectionUtils" ({@link SelectizeCollectionUtils}) since
+     *                                 they are automatically added. Rules are validated with {@link MvelRuleValidator}
+     *                                 before they are compiled and evaluate to false when they are not allowed.
      * @return
      */
     public static boolean evaluateRule(
@@ -178,22 +184,36 @@ public class MvelHelper {
                 exp = expressionCache.get(rule);
             }
             if (exp == null) {
-                ParserContext context = new ParserContext();
-                context.addImport("MVEL", MVEL.class);
-                context.addImport("MvelHelper", MvelHelper.class);
-                context.addImport("CollectionUtils", SelectizeCollectionUtils.class);
-                if (MapUtils.isNotEmpty(additionalContextImports)) {
-                    for (Entry<String, Class<?>> entry : additionalContextImports.entrySet()) {
-                        context.addImport(entry.getKey(), entry.getValue());
+                ParserContext context = buildParserContext(additionalContextImports);
+
+                String modifiedRule = modifyExpression(
+                        MvelRuleValidator.rewriteLegacyExpressions(rule), ruleParameters, context
+                );
+
+                try {
+                    MvelRuleValidator.validate(modifiedRule, getContextImportNames(additionalContextImports));
+                } catch (UnsafeMvelRuleException e) {
+                    LOG.warn("Refusing to evaluate the mvel expression (" + StringUtil.sanitize(rule) + "): "
+                            + e.getMessage() + ". Returning false for the match expression");
+                    exp = RejectedRule.INSTANCE;
+                }
+
+                if (expressionCache == null) {
+                    if (exp == null) {
+                        exp = MVEL.compileExpression(modifiedRule, context);
+                    }
+                } else {
+                    synchronized (expressionCache) {
+                        if (exp == null) {
+                            exp = MVEL.compileExpression(modifiedRule, context);
+                        }
+                        expressionCache.put(rule, exp);
                     }
                 }
+            }
 
-                String modifiedRule = modifyExpression(rule, ruleParameters, context);
-
-                synchronized (expressionCache) {
-                    exp = MVEL.compileExpression(modifiedRule, context);
-                    expressionCache.put(rule, exp);
-                }
+            if (exp == RejectedRule.INSTANCE) {
+                return false;
             }
 
             Map<String, Object> mvelParameters = new HashMap<>();
@@ -217,6 +237,47 @@ public class MvelHelper {
                 return false;
             }
         }
+    }
+
+    /**
+     * Builds the {@link ParserContext} rules are compiled with. The {@link MVEL} facade is intentionally not imported
+     * so that a rule cannot evaluate expressions assembled at runtime.
+     */
+    public static ParserContext buildParserContext(Map<String, Class<?>> additionalContextImports) {
+        ParserContext context = new ParserContext();
+        context.addImport("MvelHelper", MvelHelper.class);
+        context.addImport("CollectionUtils", SelectizeCollectionUtils.class);
+        if (MapUtils.isNotEmpty(additionalContextImports)) {
+            for (Entry<String, Class<?>> entry : additionalContextImports.entrySet()) {
+                context.addImport(entry.getKey(), entry.getValue());
+            }
+        }
+        return context;
+    }
+
+    /**
+     * Validates that the rule, after legacy rewrites, stays within the restricted rule language.
+     *
+     * @param rule                     the rule to validate
+     * @param additionalContextImports names of the additional context imports the rule is evaluated with
+     * @throws UnsafeMvelRuleException when the rule is not allowed
+     */
+    public static void validateRule(String rule, Collection<String> additionalContextImports) {
+        MvelRuleValidator.validate(MvelRuleValidator.rewriteLegacyExpressions(rule), additionalContextImports);
+    }
+
+    /**
+     * Equivalent of {@code java.text.DateFormat.getDateTimeInstance(3,3).parse(value)} used by legacy rules.
+     */
+    public static Date parseLegacyDate(String value) throws ParseException {
+        return DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).parse(value);
+    }
+
+    protected static Collection<String> getContextImportNames(Map<String, Class<?>> additionalContextImports) {
+        if (MapUtils.isEmpty(additionalContextImports)) {
+            return Collections.emptySet();
+        }
+        return additionalContextImports.keySet();
     }
 
     /**
@@ -318,6 +379,13 @@ public class MvelHelper {
         }
 
         return mvelParameters;
+    }
+
+    /**
+     * Cached in place of a compiled expression for rules rejected by {@link MvelRuleValidator}.
+     */
+    private enum RejectedRule {
+        INSTANCE
     }
 
     protected static void populateParamsFromMap(Map<String, Object> blcRuleMap, Map<String, Object> mvelParameters) {

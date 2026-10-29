@@ -820,9 +820,8 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
                             quantityBasedRule = (QuantityBasedRule) memberType.newInstance();
                             quantityBasedRule.setQuantity(dto.getQuantity());
                             quantityBasedRule.setMatchRule(clearMvelString(translator, entityKey, fieldService, dto));
-                            if (StringUtils.isEmpty(quantityBasedRule.getMatchRule())
-                                    && !StringUtils.isEmpty(dw.getRawMvel())) {
-                                quantityBasedRule.setMatchRule(dw.getRawMvel());
+                            if (StringUtils.isEmpty(quantityBasedRule.getMatchRule())) {
+                                ruleFieldExtractionUtility.rejectRawMvel(dw);
                             }
                             PropertyUtils.setNestedProperty(quantityBasedRule, mappedBy, parent);
                         } catch (Exception e) {
@@ -906,13 +905,7 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
             String entityKey,
             String fieldService,
             DataDTO dto) throws MVELTranslationException {
-        String mvelString = ruleFieldExtractionUtility.convertDTOToMvelString(
-                translator, entityKey, dto, fieldService
-        );
-        if (mvelString != null) {
-            mvelString = mvelString.replace("\\\"", "\"");
-        }
-        return mvelString;
+        return ruleFieldExtractionUtility.convertQuantityRuleDTOToMvelString(translator, entityKey, dto, fieldService);
     }
 
     protected void updateSimpleRule(

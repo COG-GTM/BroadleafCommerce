@@ -35,6 +35,7 @@ public class MVELTranslationException extends TranslatableException {
     public static final int INCOMPATIBLE_INTEGER_VALUE = 106;
     public static final int INCOMPATIBLE_RULE = 107;
     public static final int SUB_GROUP_DETECTED = 108;
+    public static final int UNSAFE_RULE = 109;
     @Serial
     private static final long serialVersionUID = 1L;
 

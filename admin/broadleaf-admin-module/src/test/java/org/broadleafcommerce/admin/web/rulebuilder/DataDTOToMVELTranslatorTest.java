@@ -24,12 +24,18 @@ import org.broadleafcommerce.admin.web.rulebuilder.service.OrderItemFieldService
 import org.broadleafcommerce.common.presentation.RuleOperatorType;
 import org.broadleafcommerce.common.presentation.RuleOptionType;
 import org.broadleafcommerce.common.presentation.client.SupportedFieldType;
+import org.broadleafcommerce.common.rule.MvelHelper;
 import org.broadleafcommerce.openadmin.web.rulebuilder.BLCOperator;
 import org.broadleafcommerce.openadmin.web.rulebuilder.DataDTOToMVELTranslator;
 import org.broadleafcommerce.openadmin.web.rulebuilder.MVELTranslationException;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.ExpressionDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.FieldData;
+import org.broadleafcommerce.profile.core.domain.Customer;
+import org.broadleafcommerce.profile.core.domain.CustomerImpl;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import junit.framework.TestCase;
 
@@ -319,6 +325,78 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         
         assert(d1Mvel.equals(d1Translated));
 
+    }
+
+    public void testFieldComparisonRejectsExpressions() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("emailAddress");
+        expressionDTO.setOperator(BLCOperator.NOT_EQUAL_FIELD.name());
+        expressionDTO.setValue("username");
+        assertTrue(translator.createMVEL("customer", expressionDTO, customerFieldService).endsWith("customer.username"));
+
+        expressionDTO.setValue("username||java.lang.Runtime.getRuntime().exec(\"touch /tmp/pwned\")!=null");
+        try {
+            translator.createMVEL("customer", expressionDTO, customerFieldService);
+            fail("field comparison value was not validated");
+        } catch (MVELTranslationException e) {
+            assertEquals(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND, e.getCode());
+        }
+    }
+
+    public void testBooleanValueIsCanonicalized() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("receiveEmail");
+        expressionDTO.setOperator(BLCOperator.EQUALS.name());
+        expressionDTO.setValue("TRUE");
+        assertTrue(translator.createMVEL("customer", expressionDTO, customerFieldService).endsWith("==true"));
+
+        expressionDTO.setValue("true||Runtime.getRuntime().exec(\"id\")!=null");
+        try {
+            translator.createMVEL("customer", expressionDTO, customerFieldService);
+            fail("boolean value was not validated");
+        } catch (MVELTranslationException e) {
+            assertEquals(MVELTranslationException.INCOMPATIBLE_RULE, e.getCode());
+        }
+    }
+
+    public void testStringValueCannotBreakOutOfLiteral() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        String[] values = {"a\" || 1==1 || \"", "a\\\" || 1==1 || \"\nb", "a\\"};
+        for (String value : values) {
+            ExpressionDTO expressionDTO = new ExpressionDTO();
+            expressionDTO.setId("firstName");
+            expressionDTO.setOperator(BLCOperator.EQUALS.name());
+            expressionDTO.setValue(value);
+            String mvel = translator.createMVEL("customer", expressionDTO, customerFieldService);
+            MvelHelper.validateRule(mvel, null);
+
+            Map<String, Object> vars = new HashMap<>();
+            Customer customer = new CustomerImpl();
+            customer.setFirstName("bob");
+            vars.put("customer", customer);
+            assertFalse(mvel, MvelHelper.evaluateRule(mvel, vars, null));
+            customer.setFirstName(value);
+            assertTrue(mvel, MvelHelper.evaluateRule(mvel, vars, null));
+        }
+    }
+
+    public void testUnquotedValuesMustBeLiterals() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("firstName");
+        expressionDTO.setOperator(BLCOperator.BETWEEN.name());
+        expressionDTO.setValue("[\"a\",\"z\"]");
+        MvelHelper.validateRule(translator.createMVEL("customer", expressionDTO, customerFieldService), null);
+
+        expressionDTO.setValue("[a,Runtime.getRuntime().exec(\"id\")]");
+        try {
+            translator.createMVEL("customer", expressionDTO, customerFieldService);
+            fail("unquoted value was not validated");
+        } catch (MVELTranslationException e) {
+            assertEquals(MVELTranslationException.INCOMPATIBLE_RULE, e.getCode());
+        }
     }
 
 }
