@@ -108,7 +108,8 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
 
     public String validateUrlParam(final String url) {
         if (url != null) {
-            if (url.contains("http") || url.contains("www") || url.contains(".")) {
+            if (url.contains("http") || url.contains("www") || url.contains(".")
+                    || LocalRedirectStrategy.hasUnsafeRedirectSyntax(url)) {
                 return null;
             }
         }

@@ -18,6 +18,7 @@
 package org.broadleafcommerce.core.web.order.security;
 
 import org.apache.commons.lang3.StringUtils;
+import org.broadleafcommerce.common.security.LocalRedirectStrategy;
 import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
@@ -49,7 +50,8 @@ public class BroadleafAuthenticationSuccessHandler extends SavedRequestAwareAuth
         if (BLCRequestUtils.isOKtoUseSession(new ServletWebRequest(request))) {
             request.getSession().removeAttribute(SESSION_ATTR);
         }
-        if (StringUtils.isNotBlank(targetUrl) && targetUrl.contains(":")) {
+        if (StringUtils.isNotBlank(targetUrl)
+                && (targetUrl.contains(":") || LocalRedirectStrategy.hasUnsafeRedirectSyntax(targetUrl))) {
             getRedirectStrategy().sendRedirect(request, response, getDefaultTargetUrl());
         } else {
             super.onAuthenticationSuccess(request, response, authentication);
