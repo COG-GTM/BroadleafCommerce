@@ -91,7 +91,11 @@ public class MvelRuleValidator {
             "java", "javax", "jakarta", "jdk", "sun", "com", "org", "net", "io", "groovy", "bsh", "ognl"
     )));
 
-    protected static final Pattern SETTER = Pattern.compile("set[A-Z_].*");
+    protected static final Set<String> OPERATOR_KEYWORDS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "in", "contains", "instanceof", "is", "soundslike", "strsim", "convertable_to", "and", "or", "return"
+    )));
+
+        protected static final Pattern SETTER = Pattern.compile("set[A-Z_].*");
 
     protected static final String DENIED_CHARACTERS = ";{}@#$`\\";
 
@@ -207,7 +211,7 @@ public class MvelRuleValidator {
      * {@code value['getClass']} style property access is treated like {@code value.getClass}.
      */
     protected static void validateIndexedMember(List<Token> tokens, int index) {
-        if (index > 0 && tokens.get(index - 1).is("[")) {
+        if (index > 1 && tokens.get(index - 1).is("[") && isIndexTarget(tokens.get(index - 2))) {
             String text = tokens.get(index).text;
             String name = text.substring(1, text.length() - 1).trim();
             if (DENIED_MEMBERS.contains(name) || SETTER.matcher(name).matches()) {
@@ -264,6 +268,15 @@ public class MvelRuleValidator {
         if (segments.size() > 1 && PACKAGE_ROOTS.contains(root)) {
             throw new UnsafeMvelRuleException("Rules may not reference '" + typeName + "'");
         }
+    }
+
+    /**
+     * Whether a {@code [} following the token indexes into a value ({@code a['x']}, {@code a()['x']},
+     * {@code a[0]['x']}) rather than opening a list literal ({@code ['x', 'y']}).
+     */
+    protected static boolean isIndexTarget(Token token) {
+        return token.type == TokenType.IDENTIFIER && !OPERATOR_KEYWORDS.contains(token.text)
+                || token.type == TokenType.STRING || token.is(")") || token.is("]");
     }
 
     protected static boolean isMemberAccess(List<Token> tokens, int index) {

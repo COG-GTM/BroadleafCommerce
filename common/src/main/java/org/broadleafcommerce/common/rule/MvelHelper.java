@@ -32,6 +32,7 @@ import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.mvel2.MVEL;
 import org.mvel2.ParserContext;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.text.DateFormat;
@@ -182,6 +183,10 @@ public class MvelHelper {
             Serializable exp = null;
             if (expressionCache != null) {
                 exp = expressionCache.get(rule);
+                if (!(exp instanceof ValidatedRule) && exp != RejectedRule.INSTANCE) {
+                    // only trust entries this method validated and compiled itself
+                    exp = null;
+                }
             }
             if (exp == null) {
                 ParserContext context = buildParserContext(additionalContextImports);
@@ -200,12 +205,12 @@ public class MvelHelper {
 
                 if (expressionCache == null) {
                     if (exp == null) {
-                        exp = MVEL.compileExpression(modifiedRule, context);
+                        exp = new ValidatedRule(MVEL.compileExpression(modifiedRule, context));
                     }
                 } else {
                     synchronized (expressionCache) {
                         if (exp == null) {
-                            exp = MVEL.compileExpression(modifiedRule, context);
+                            exp = new ValidatedRule(MVEL.compileExpression(modifiedRule, context));
                         }
                         expressionCache.put(rule, exp);
                     }
@@ -221,7 +226,7 @@ public class MvelHelper {
             populateParamsFromMap(ruleParameters, mvelParameters);
 
             try {
-                Object test = MVEL.executeExpression(exp, mvelParameters);
+                Object test = MVEL.executeExpression(((ValidatedRule) exp).compiled, mvelParameters);
                 if (test == null) {
                     // This can occur if there is no actual rule
                     return true;
@@ -386,6 +391,21 @@ public class MvelHelper {
      */
     private enum RejectedRule {
         INSTANCE
+    }
+
+    /**
+     * Cached compiled expression of a rule that passed {@link MvelRuleValidator}.
+     */
+    private static final class ValidatedRule implements Serializable {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private final transient Serializable compiled;
+
+        private ValidatedRule(Serializable compiled) {
+            this.compiled = compiled;
+        }
     }
 
     protected static void populateParamsFromMap(Map<String, Object> blcRuleMap, Map<String, Object> mvelParameters) {

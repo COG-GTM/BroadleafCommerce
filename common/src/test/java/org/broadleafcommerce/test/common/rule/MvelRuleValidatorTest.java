@@ -53,7 +53,9 @@ public class MvelRuleValidatorTest extends TestCase {
                 "customer.firstName==\"java.lang.Runtime.getRuntime().exec(\\\"id\\\"); new Thread()\"",
                 "x == null ? false : x.name contains 'a'",
                 "MVEL.eval(\"toUpperCase()\",customer.firstName)==\"BOB\"",
-                "java.text.DateFormat.getDateTimeInstance(3,3).parse(\"1/1/20 1:00 PM\")!=null"
+                "java.text.DateFormat.getDateTimeInstance(3,3).parse(\"1/1/20 1:00 PM\")!=null",
+                "CollectionUtils.intersection(discreteOrderItem.category.name,[\"set\", \"getClass\"]).size()>0",
+                "discreteOrderItem.category.name in ['add','remove']"
         };
         for (String rule : rules) {
             MvelHelper.validateRule(rule, OFFER_IMPORTS);
@@ -73,6 +75,8 @@ public class MvelRuleValidatorTest extends TestCase {
                 "customer.class.classLoader!=null",
                 "customer.?getClass()!=null",
                 "customer['class']!=null",
+                "customer.attributes()['getClass']!=null",
+                "customer.list[0]['getClass']!=null",
                 "Class.forName(\"java.lang.Runtime\")!=null",
                 "MVEL.eval(\"java.lang.Runtime.getRuntime()\")!=null",
                 "MvelHelper.evaluateRule(\"true\", null)",
@@ -126,6 +130,17 @@ public class MvelRuleValidatorTest extends TestCase {
             assertFalse(MvelHelper.evaluateRule(rule, new HashMap<>(), cache));
             assertFalse(MvelHelper.evaluateRule(rule, new HashMap<>(), cache));
         }
+        Thread.sleep(200);
+        assertFalse(marker.exists());
+    }
+
+    public void testUnvalidatedCacheEntriesAreIgnored() throws Exception {
+        File marker = new File(Files.createTempDirectory("mvel-rule").toFile(), "pwned");
+        String rule = "true";
+        Map<String, java.io.Serializable> cache = new HashMap<>();
+        cache.put(rule, org.mvel2.MVEL.compileExpression(
+                "java.lang.Runtime.getRuntime().exec(\"touch " + marker.getAbsolutePath() + "\")==null"));
+        assertTrue(MvelHelper.evaluateRule(rule, new HashMap<>(), cache));
         Thread.sleep(200);
         assertFalse(marker.exists());
     }
