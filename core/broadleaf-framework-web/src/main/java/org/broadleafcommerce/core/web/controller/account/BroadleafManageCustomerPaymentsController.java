@@ -116,15 +116,37 @@ public class BroadleafManageCustomerPaymentsController extends BroadleafAbstract
             throw new IllegalArgumentException("Requested customer payment does not exist.");
         }
 
+        validateCustomerOwnedData(customerPayment);
+
         customerPaymentService.setAsDefaultPayment(customerPayment);
 
         return getCustomerPaymentView();
     }
 
     public String removeCustomerPayment(HttpServletRequest request, Model model, Long customerPaymentId) {
-        customerPaymentService.deleteCustomerPaymentById(customerPaymentId);
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(customerPaymentId);
+
+        // we don't care if the payment is null on a remove
+        if (customerPayment != null) {
+            validateCustomerOwnedData(customerPayment);
+            customerPaymentService.deleteCustomerPaymentById(customerPayment.getId());
+        }
 
         return getCustomerPaymentView();
+    }
+
+    protected void validateCustomerOwnedData(CustomerPayment customerPayment) {
+        Customer activeCustomer = getActiveCustomer();
+        Customer owner = customerPayment.getCustomer();
+
+        if (activeCustomer == null || activeCustomer.getId() == null
+                || owner == null || !activeCustomer.getId().equals(owner.getId())) {
+            throw new SecurityException("The active customer does not own the payment that they are trying to modify or remove.");
+        }
+    }
+
+    protected Customer getActiveCustomer() {
+        return CustomerState.getCustomer();
     }
 
     public String getCustomerPaymentView() {
