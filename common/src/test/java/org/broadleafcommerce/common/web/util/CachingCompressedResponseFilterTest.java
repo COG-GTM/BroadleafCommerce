@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.common.web.util;
 
+import org.broadleafcommerce.common.io.AtomicMove;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -276,6 +277,99 @@ public class CachingCompressedResponseFilterTest {
         assertEquals(1, cacheFiles().length);
     }
 
+    @Test
+    public void nonResourceHandlerResponseIsNotCached() throws Exception {
+        MockHttpServletRequest request = get("user.json");
+        request.removeAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        byte[] body = "{\"user\":\"alice\"}".getBytes(StandardCharsets.UTF_8);
+        FilterChain controller = (req, res) -> res.getOutputStream().write(body);
+        MockHttpServletResponse response = execute(request, controller);
+        assertEquals(200, response.getStatus());
+        assertArrayEquals(body, gunzip(response.getContentAsByteArray()));
+        assertEquals(0, cacheFiles().length);
+    }
+
+    @Test
+    public void responseVaryingOnOtherHeadersIsNotCached() throws Exception {
+        byte[] body = "var user = 'alice';".getBytes(StandardCharsets.UTF_8);
+        FilterChain varying = (req, res) -> {
+            ((HttpServletResponse) res).addHeader("Vary", "Accept-Encoding, Cookie");
+            res.getOutputStream().write(body);
+        };
+        assertArrayEquals(body, gunzip(execute(get("user.js"), varying).getContentAsByteArray()));
+        assertEquals(0, cacheFiles().length);
+    }
+
+    @Test
+    public void corsVaryHeadersStillAllowCaching() throws Exception {
+        FilterChain cors = (req, res) -> {
+            HttpServletResponse response = (HttpServletResponse) res;
+            response.addHeader("Vary", "Origin");
+            response.addHeader("Vary", "Access-Control-Request-Method");
+            response.addHeader("Vary", "Access-Control-Request-Headers");
+            resourceChain.doFilter(req, res);
+        };
+        assertFullGzipBody(execute(get("app.js"), cors), javascript("app"));
+        assertEquals(1, cacheFiles().length);
+    }
+
+    @Test
+    public void authorizationOrQueryStringRequestsBypassCache() throws Exception {
+        execute(get("app.js"));
+        MockHttpServletRequest authorized = get("app.js");
+        authorized.addHeader("Authorization", "Bearer token");
+        assertFullGzipBody(execute(authorized), javascript("app"));
+        MockHttpServletRequest query = get("other.js");
+        query.setQueryString("user=alice");
+        assertFullGzipBody(execute(query), javascript("other"));
+        assertEquals(3, chainInvocations.get());
+        assertEquals(1, cacheFiles().length);
+    }
+
+    @Test
+    public void expiredEntriesAreEvictedWhenCacheIsFull() throws Exception {
+        filter.staticFileCacheMaxEntries = 1;
+        execute(get("app.js"));
+        File appTarget = filter.prepareTargetFile(get("app.js"));
+        assertTrue(appTarget.setLastModified(System.currentTimeMillis() - 2 * 86400 * 1000L));
+        filter.lastStaticCacheScan = 0L;
+
+        assertFullGzipBody(execute(get("other.js")), javascript("other"));
+        assertFalse(appTarget.exists());
+        assertTrue(filter.prepareTargetFile(get("other.js")).exists());
+        assertEquals(1, cacheFiles().length);
+    }
+
+    @Test
+    public void failedCacheWriteDoesNotConsumeAnEntry() throws Exception {
+        filter.staticFileCacheMaxEntries = 1;
+        AtomicMove realMove = filter.atomicMove;
+        filter.atomicMove = (src, dest) -> {
+            throw new IOException("disk full");
+        };
+        assertFullGzipBody(execute(get("app.js")), javascript("app"));
+        assertEquals(0, cacheFiles().length);
+
+        filter.atomicMove = realMove;
+        assertFullGzipBody(execute(get("other.js")), javascript("other"));
+        assertTrue(filter.prepareTargetFile(get("other.js")).exists());
+        String[] leftovers = cacheDir.list((dir, name) -> name.endsWith(".tmp") || name.endsWith(".tmpgz"));
+        assertEquals(0, leftovers.length);
+    }
+
+    @Test
+    public void rewritingAnExistingEntryCountsOnce() throws Exception {
+        filter.staticFileCacheMaxEntries = 2;
+        File target = filter.prepareTargetFile(get("app.js"));
+        for (int i = 0; i < 2; i++) {
+            File compressed = new File(cacheDir, "app" + i + ".tmpgz");
+            Files.write(compressed.toPath(), gzip(javascript("app")));
+            assertTrue(filter.storeStaticCacheFile(compressed, target));
+        }
+        assertFullGzipBody(execute(get("other.js")), javascript("other"));
+        assertEquals(2, cacheFiles().length);
+    }
+
     private MockHttpServletResponse execute(MockHttpServletRequest request) throws Exception {
         return execute(request, resourceChain);
     }
@@ -295,6 +389,7 @@ public class CachingCompressedResponseFilterTest {
         request.setServerName(HOST);
         request.addHeader("Accept-Encoding", "gzip, deflate");
         request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, file);
+        request.setAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE, resourceHandler);
         return request;
     }
 
