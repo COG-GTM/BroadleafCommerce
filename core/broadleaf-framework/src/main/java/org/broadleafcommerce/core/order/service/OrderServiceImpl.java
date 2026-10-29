@@ -846,7 +846,7 @@ public class OrderServiceImpl implements OrderService {
                 findAllChildrenToRemove(childrenToRemove, oi);
             }
             Set<Long> orderItemIdsInOrder = new HashSet<>();
-            Order order = findOrderById(orderId);
+            Order order = findOrderByIdOrByOrderItemId(orderId, orderItemId);
             if (order != null) {
                 for (OrderItem orderItem : order.getOrderItems()) {
                     orderItemIdsInOrder.add(orderItem.getId());
@@ -903,10 +903,20 @@ public class OrderServiceImpl implements OrderService {
     protected Order findOrderByIdOrByOrderItemId(final Long orderId, final Long orderItemId) {
         final OrderItem orderItem = orderItemService.readOrderItemById(orderItemId);
         final String namedType = OrderStatus.NAMED.getType();
-        if (orderItem != null && orderItem.getOrder() != null && namedType.equals(orderItem.getOrder().getStatus().getType())) {
+        final Order order = findOrderById(orderId);
+        if (orderItem != null && orderItem.getOrder() != null
+                && namedType.equals(orderItem.getOrder().getStatus().getType())
+                && isSameCustomer(order, orderItem.getOrder())) {
             return orderItem.getOrder();
         }
-        return findOrderById(orderId);
+        return order;
+    }
+
+    protected boolean isSameCustomer(Order order, Order otherOrder) {
+        return order != null && otherOrder != null
+                && order.getCustomer() != null && otherOrder.getCustomer() != null
+                && order.getCustomer().getId() != null
+                && order.getCustomer().getId().equals(otherOrder.getCustomer().getId());
     }
 
     @Override

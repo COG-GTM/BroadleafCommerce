@@ -330,8 +330,9 @@ class ValidateAddRequestActivitySpec extends BaseAddItemActivitySpec {
         when: "The activity is executed"
         context = activity.execute(context)
 
-        then: "No exception is thrown and the sku is set"
+        then: "No exception is thrown, the sku is set and the overridable single-argument hook still runs"
         notThrown(IllegalArgumentException)
         context.seedData.itemRequest.skuId == 2
+        1 * activity.validateIfParentOrderItemExists(_)
     }
 }

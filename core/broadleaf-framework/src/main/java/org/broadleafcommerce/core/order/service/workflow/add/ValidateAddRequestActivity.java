@@ -338,10 +338,9 @@ public class ValidateAddRequestActivity extends BaseActivity<ProcessContext<Cart
     }
 
     /**
-     * @deprecated use {@link #validateIfParentOrderItemExists(OrderItemRequestDTO, CartOperationRequest)}, which
-     * also verifies that the parent order item belongs to the order being modified
+     * Extension hook for additional parent order item checks. Order ownership of the parent is verified by
+     * {@link #validateIfParentOrderItemExists(OrderItemRequestDTO, CartOperationRequest)}, which calls this method.
      */
-    @Deprecated
     protected void validateIfParentOrderItemExists(OrderItemRequestDTO orderItemRequestDTO) {
         if (orderItemRequestDTO.getParentOrderItemId() != null) {
             OrderItem parent = orderItemService.readOrderItemById(orderItemRequestDTO.getParentOrderItemId());
@@ -353,6 +352,7 @@ public class ValidateAddRequestActivity extends BaseActivity<ProcessContext<Cart
     }
 
     protected void validateIfParentOrderItemExists(OrderItemRequestDTO orderItemRequestDTO, CartOperationRequest request) {
+        validateIfParentOrderItemExists(orderItemRequestDTO);
         // If the user has specified a parent order item to attach this to, it must exist in this cart
         if (orderItemRequestDTO.getParentOrderItemId() != null) {
             OrderItem parent = orderItemService.readOrderItemById(orderItemRequestDTO.getParentOrderItemId());
