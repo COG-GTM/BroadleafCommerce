@@ -62,7 +62,7 @@ public class PaginationSizeLinkProcessor extends AbstractBroadleafAttributeModif
 
         HttpServletRequest request = BroadleafRequestContext.getBroadleafRequestContext().getRequest();
 
-        String baseUrl = request.getRequestURL().toString();
+        String baseUrl = ProcessorUtils.getRequestBaseUrl(request);
 
         Map<String, String[]> params = new HashMap<>(request.getParameterMap());
 

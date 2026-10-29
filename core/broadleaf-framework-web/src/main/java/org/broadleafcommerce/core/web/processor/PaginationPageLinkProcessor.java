@@ -64,7 +64,7 @@ public class PaginationPageLinkProcessor extends AbstractBroadleafAttributeModif
         BroadleafRequestContext blcContext = BroadleafRequestContext.getBroadleafRequestContext();
         HttpServletRequest request = blcContext.getRequest();
 
-        String baseUrl = request.getRequestURL().toString();
+        String baseUrl = ProcessorUtils.getRequestBaseUrl(request);
         Map<String, String[]> params = new HashMap<>(request.getParameterMap());
 
         Integer page = (Integer) context.parseExpression(attributeValue);
