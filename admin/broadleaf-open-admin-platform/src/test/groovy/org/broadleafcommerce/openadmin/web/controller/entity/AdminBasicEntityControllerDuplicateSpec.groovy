@@ -23,6 +23,7 @@ import org.broadleafcommerce.common.service.GenericEntityService
 import org.broadleafcommerce.openadmin.dto.ClassMetadata
 import org.broadleafcommerce.openadmin.dto.DynamicResultSet
 import org.broadleafcommerce.openadmin.dto.Entity
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser
 import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType
@@ -159,6 +160,21 @@ class AdminBasicEntityControllerDuplicateSpec extends Specification {
 
         then:
         1 * adminEntityService.getRecord(_, "42", cmd, false) >> { throw new SecurityServiceException("no read") }
+        view == null
+        1 * response.setStatus(HttpServletResponse.SC_FORBIDDEN)
+        0 * duplicator.copy(_, _)
+        body.toString().contains("Duplication_Unauthorized")
+    }
+
+    def "duplication is rejected when the source record is missing or filtered out"() {
+        given:
+        rowLevelSecurityService.canAdd(adminUser, CEILING, cmd) >> true
+
+        when:
+        def view = duplicate()
+
+        then:
+        1 * adminEntityService.getRecord(_, "42", cmd, false) >> { throw new EntityNotFoundException("not found") }
         view == null
         1 * response.setStatus(HttpServletResponse.SC_FORBIDDEN)
         0 * duplicator.copy(_, _)

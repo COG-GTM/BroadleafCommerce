@@ -50,6 +50,7 @@ import org.broadleafcommerce.openadmin.dto.MapMetadata;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.dto.SectionCrumb;
 import org.broadleafcommerce.openadmin.dto.TabMetadata;
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.security.dao.AdminUserDao;
@@ -519,7 +520,7 @@ public class AdminBasicEntityController extends AdminAbstractController {
             final Entity[] records = service.getRecord(ppr, id, cmd, false).getDynamicResultSet().getRecords();
 
             return records != null && records.length > 0;
-        } catch (ServiceException e) {
+        } catch (ServiceException | EntityNotFoundException e) {
             return false;
         }
     }
