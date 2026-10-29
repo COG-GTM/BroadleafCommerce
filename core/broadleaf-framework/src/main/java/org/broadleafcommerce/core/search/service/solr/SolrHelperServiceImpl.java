@@ -91,6 +91,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import jakarta.annotation.Resource;
 
@@ -111,6 +112,9 @@ public class SolrHelperServiceImpl implements SolrHelperService {
     private static final Log LOG = LogFactory.getLog(SolrHelperServiceImpl.class);
     private static final String SOLR_SORTABLE_FIELD_TYPES = "solr.sortable.field.types";
     private static final String DEFAULT_SORTABLE_FIELD_TYPES = "sort,s,p,i,l";
+    private static final String SOLR_ALLOWED_UNMANAGED_SORT_FIELDS = "solr.sort.allowed.unmanaged.fields";
+    private static final String DEFAULT_ALLOWED_UNMANAGED_SORT_FIELDS = "score";
+    protected static final Pattern SORT_FIELD_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     protected static Locale defaultLocale;
 
     @Resource(name = "blSystemPropertiesService")
@@ -770,13 +774,58 @@ public class SolrHelperServiceImpl implements SolrHelperService {
         return strings;
     }
 
+    /**
+     * Sort fields that are not managed as index fields but may still be requested via
+     * {@link SearchCriteria#getSortQuery()} (e.g. fields added to the index programmatically).
+     */
+    protected List<String> getAllowedUnmanagedSortFields() {
+        String value;
+        try {
+            value = systemPropertiesService.resolveSystemProperty(SOLR_ALLOWED_UNMANAGED_SORT_FIELDS,
+                    DEFAULT_ALLOWED_UNMANAGED_SORT_FIELDS);
+        } catch (Exception ex) {
+            LOG.error(String.format("Error reading property %s. Using default values: %s",
+                    SOLR_ALLOWED_UNMANAGED_SORT_FIELDS, DEFAULT_ALLOWED_UNMANAGED_SORT_FIELDS), ex);
+            value = DEFAULT_ALLOWED_UNMANAGED_SORT_FIELDS;
+        }
+        List<String> fields = new ArrayList<>();
+        if (value != null) {
+            for (String field : value.split(",")) {
+                if (StringUtils.isNotBlank(field)) {
+                    fields.add(field.trim());
+                }
+            }
+        }
+        return fields;
+    }
+
+    /**
+     * Whether a sort field that did not resolve to a managed index field may be sent to Solr as-is. It must be a
+     * plain field name (no function queries or local params) and, if it came from the request, must also be listed
+     * in {@code solr.sort.allowed.unmanaged.fields}. The application-supplied default sort is trusted.
+     */
+    protected boolean isAllowedUnmanagedSortField(String sortFieldName, boolean fromRequest) {
+        if (StringUtils.isBlank(sortFieldName) || !SORT_FIELD_NAME_PATTERN.matcher(sortFieldName).matches()) {
+            return false;
+        }
+        return !fromRequest || getAllowedUnmanagedSortFields().contains(sortFieldName);
+    }
+
     @Override
     public void attachSortClause(SolrQuery query, SearchCriteria searchCriteria, String defaultSort) {
         String sortQuery = searchCriteria.getSortQuery();
-        if (StringUtils.isBlank(sortQuery)) {
-            sortQuery = defaultSort;
+        if (StringUtils.isBlank(sortQuery) || !attachSortFields(query, sortQuery, true)) {
+            attachSortFields(query, defaultSort, false);
         }
+    }
 
+    /**
+     * Attaches the sorts in {@code sortQuery} to the query.
+     *
+     * @return whether at least one sort was attached or handled by an extension handler
+     */
+    protected boolean attachSortFields(SolrQuery query, String sortQuery, boolean fromRequest) {
+        boolean sortAttached = false;
         if (StringUtils.isNotBlank(sortQuery)) {
             String[] sortFields = sortQuery.split(",");
             List<String> sortableFieldTypes = getSortableFieldTypes();
@@ -792,6 +841,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
 
                 if (!ExtensionResultStatusType.NOT_HANDLED.equals(result)) {
                     // if an index field was not found, or the extension handler handled attaching the sort field, move to the next field
+                    sortAttached = true;
                     continue;
                 }
 
@@ -845,16 +895,23 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                     for (SortClause sortClause : sortClauses) {
                         query.addSort(sortClause);
                     }
+                    sortAttached = true;
                 }
 
-                // At the end here, it's possible that the field that was passed in to sort by was not managed in the
-                // database in the list of index fields and their types. If that's the case, go ahead and add it as a sort
-                // field anyway since we're trusting that the field was actually added to the index by some programmatic means
+                // The requested field may not be managed in the database as an index field. Only pass it through if it
+                // is a plain field name that is trusted to have been added to the index programmatically.
                 if (!requestedSortFieldAdded) {
-                    query.addSort(new SortClause(requestedSortFieldName, order));
+                    if (isAllowedUnmanagedSortField(requestedSortFieldName, fromRequest)) {
+                        query.addSort(new SortClause(requestedSortFieldName, order));
+                        sortAttached = true;
+                    } else {
+                        LOG.warn(String.format("Ignoring unrecognized Solr sort field: %s",
+                                StringUtil.sanitize(requestedSortFieldName)));
+                    }
                 }
             }
         }
+        return sortAttached;
     }
 
     protected ORDER getSortOrder(String[] sortFieldsSegments, String sortQuery) {
