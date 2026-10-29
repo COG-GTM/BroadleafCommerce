@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.core.web.service;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.i18n.domain.ISOCountry;
 import org.broadleafcommerce.common.i18n.service.ISOService;
@@ -36,6 +37,19 @@ import jakarta.annotation.Resource;
 @Service("blInitBinderService")
 public class InitBinderServiceImpl implements InitBinderService {
 
+    /**
+     * Entity identifiers that must never be bound from request parameters. A bound id would make {@code em.merge}
+     * overwrite whichever row it points to, including another customer's address.
+     */
+    public static final String[] ADDRESS_DISALLOWED_FIELDS = {
+            "address.id",
+            "address.phonePrimary.id",
+            "address.phoneSecondary.id",
+            "address.phoneFax.id",
+            "customerAddressId",
+            "personalMessage.id"
+    };
+
     @Resource(name = "blCountryService")
     protected CountryService countryService;
 
@@ -44,6 +58,7 @@ public class InitBinderServiceImpl implements InitBinderService {
 
     @Override
     public void configAddressInitBinder(ServletRequestDataBinder binder) {
+        binder.setDisallowedFields(ArrayUtils.addAll(binder.getDisallowedFields(), ADDRESS_DISALLOWED_FIELDS));
 
         binder.registerCustomEditor(ISOCountry.class, "address.isoCountryAlpha2", new PropertyEditorSupport() {
             @Override

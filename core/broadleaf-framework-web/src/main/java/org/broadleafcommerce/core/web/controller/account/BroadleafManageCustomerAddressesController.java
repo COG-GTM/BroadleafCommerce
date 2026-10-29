@@ -79,7 +79,8 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         removeUnusedPhones(form);
 
-        Address address = addressService.saveAddress(form.getAddress());
+        // Persist a fresh copy so a request-supplied id can never point the merge at an existing row
+        Address address = addressService.saveAddress(addressService.copyAddress(form.getAddress()));
         CustomerAddress customerAddress = customerAddressService.create();
         customerAddress.setAddress(address);
         customerAddress.setAddressName(form.getAddressName());
@@ -131,7 +132,14 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         validateCustomerOwnedData(customerAddress);
 
-        customerAddress.setAddress(form.getAddress());
+        // Save the edit as a fresh row: the request-bound id is ignored and orders sharing the old row keep it intact
+        Address previous = customerAddress.getAddress();
+        Address updated = addressService.copyAddress(form.getAddress());
+        if (previous != null) {
+            updated.setDefault(previous.isDefault());
+            updated.setActive(previous.isActive());
+        }
+        customerAddress.setAddress(addressService.saveAddress(updated));
         customerAddress.setAddressName(form.getAddressName());
         customerAddressService.saveCustomerAddress(customerAddress);
 
