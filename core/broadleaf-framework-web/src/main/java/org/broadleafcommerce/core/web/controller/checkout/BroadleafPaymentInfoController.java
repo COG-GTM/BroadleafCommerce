@@ -73,6 +73,10 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
         Order cart = CartState.getCart();
         Customer customer = CustomerState.getCustomer();
 
+        if (!validateCustomerPaymentOwnership(paymentForm, result)) {
+            return getCheckoutView();
+        }
+
         preProcessBillingAddress(paymentForm, cart);
         paymentInfoFormValidator.validate(paymentForm, result);
 
@@ -89,9 +93,11 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
             }
 
             if (paymentForm.getShouldUseCustomerPayment()) {
-                CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                        paymentForm.getCustomerPaymentId()
-                );
+                CustomerPayment customerPayment = readActiveCustomerPayment(paymentForm.getCustomerPaymentId());
+                if (customerPayment == null) {
+                    result.reject(INVALID_CUSTOMER_PAYMENT_ERROR);
+                    return getCheckoutView();
+                }
 
                 if (!cartStateService.cartHasCreditCardPaymentWithSameToken(customerPayment.getPaymentToken())) {
                     orderService.removeCreditCardPaymentsFromOrder(cart);
@@ -132,6 +138,10 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
             BindingResult result
     ) throws PricingException, ServiceException {
         Order cart = CartState.getCart();
+
+        if (!validateCustomerPaymentOwnership(paymentForm, result)) {
+            return getCheckoutView();
+        }
 
         preProcessBillingAddress(paymentForm, cart);
         paymentInfoFormValidator.validate(paymentForm, result);
@@ -194,10 +204,27 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
         }
     }
 
+    /**
+     * Rejects the request when the form references a saved payment that the active customer does not own.
+     *
+     * @return true if the form does not reference a saved payment or references one owned by the active customer
+     */
+    protected boolean validateCustomerPaymentOwnership(PaymentInfoForm paymentForm, BindingResult result) {
+        boolean referencesCustomerPayment = paymentForm.getShouldUseCustomerPayment()
+                || paymentForm.getShouldSaveNewPayment();
+        if (!referencesCustomerPayment || paymentForm.getCustomerPaymentId() == null) {
+            return true;
+        }
+
+        if (readActiveCustomerPayment(paymentForm.getCustomerPaymentId()) == null) {
+            result.reject(INVALID_CUSTOMER_PAYMENT_ERROR);
+            return false;
+        }
+        return true;
+    }
+
     protected void copyCustomerPaymentAddressToBillingAddress(PaymentInfoForm paymentForm) {
-        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                paymentForm.getCustomerPaymentId()
-        );
+        CustomerPayment customerPayment = readActiveCustomerPayment(paymentForm.getCustomerPaymentId());
 
         if (customerPayment != null) {
             Address address = customerPayment.getBillingAddress();
