@@ -72,6 +72,7 @@ import org.broadleafcommerce.core.search.domain.SearchFacetDTO;
 import org.broadleafcommerce.core.search.domain.SearchFacetRange;
 import org.broadleafcommerce.core.search.domain.SearchFacetResultDTO;
 import org.broadleafcommerce.core.search.domain.solr.FieldType;
+import org.broadleafcommerce.core.search.service.SearchFacetRangeParser;
 import org.broadleafcommerce.core.search.service.solr.index.SolrIndexServiceExtensionManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -910,6 +911,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
         if (searchCriteria.getFilterCriteria() != null) {
             for (Entry<String, String[]> filterCriteria : searchCriteria.getFilterCriteria().entrySet()) {
                 String solrKey = null;
+                List<SearchFacetDTO> activeFacets = new ArrayList<>();
 
                 for (Entry<String, SearchFacetDTO> namedFacet : namedFacetMap.entrySet()) {
                     String facetFieldAbbreviation = namedFacet.getValue()
@@ -918,7 +920,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                             .getAbbreviation();
                     if (facetFieldAbbreviation.equals(filterCriteria.getKey())) {
                         solrKey = namedFacet.getKey();
-                        namedFacet.getValue().setActive(true);
+                        activeFacets.add(namedFacet.getValue());
                     }
                 }
 
@@ -926,25 +928,32 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                     continue;
                 }
 
-                String[] selectedValues = filterCriteria.getValue().clone();
-
-                for (int i = 0; i < selectedValues.length; i++) {
-                    if (selectedValues[i].contains("range[")) {
-                        String rangeValue = selectedValues[i].substring(
-                                selectedValues[i].indexOf('[') + 1,
-                                selectedValues[i].indexOf(']')
-                        );
-                        String[] rangeValues = StringUtils.split(rangeValue, ':');
-                        BigDecimal minValue = new BigDecimal(rangeValues[0]);
-                        BigDecimal maxValue = null;
-                        if (!rangeValues[1].equals("null")) {
-                            maxValue = new BigDecimal(rangeValues[1]);
+                List<String> selectedValueList = new ArrayList<>();
+                for (String selectedValue : filterCriteria.getValue()) {
+                    if (selectedValue == null) {
+                        continue;
+                    }
+                    if (SearchFacetRangeParser.isRange(selectedValue)) {
+                        BigDecimal[] range = SearchFacetRangeParser.parse(selectedValue);
+                        if (range == null) {
+                            if (LOG.isDebugEnabled()) {
+                                LOG.debug("Ignoring malformed facet range value for " + solrKey);
+                            }
+                            continue;
                         }
-                        selectedValues[i] = getSolrRangeString(solrKey, minValue, maxValue);
+                        selectedValueList.add(getSolrRangeString(solrKey, range[0], range[1]));
                     } else {
-                        selectedValues[i] = "\"" + scrubFacetValue(selectedValues[i]) + "\"";
+                        selectedValueList.add("\"" + scrubFacetValue(selectedValue) + "\"");
                     }
                 }
+
+                if (selectedValueList.isEmpty()) {
+                    continue;
+                }
+                for (SearchFacetDTO activeFacet : activeFacets) {
+                    activeFacet.setActive(true);
+                }
+                String[] selectedValues = selectedValueList.toArray(new String[0]);
 
                 List<String> valueStrings = new ArrayList<>();
                 ExtensionResultStatusType status = searchExtensionManager.getProxy().buildActiveFacetFilter(

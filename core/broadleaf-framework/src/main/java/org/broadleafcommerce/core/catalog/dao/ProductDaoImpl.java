@@ -38,6 +38,7 @@ import org.broadleafcommerce.core.catalog.domain.ProductImpl;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.service.type.ProductType;
 import org.broadleafcommerce.core.search.domain.SearchCriteria;
+import org.broadleafcommerce.core.search.service.SearchFacetRangeParser;
 import org.broadleafcommerce.core.util.service.SiteMapExtensionManager;
 import org.hibernate.jpa.QueryHints;
 import org.springframework.beans.factory.annotation.Value;
@@ -374,7 +375,25 @@ public class ProductDaoImpl implements ProductDao {
         for (Entry<String, String[]> entry : searchCriteria.getFilterCriteria().entrySet()) {
             String key = entry.getKey();
             List<String> eqValues = new ArrayList<>();
-            List<String[]> rangeValues = new ArrayList<>();
+            List<BigDecimal[]> rangeValues = new ArrayList<>();
+
+            // Values can be equality checks (ie manufacturer=Dave's) or range checks, which take the form
+            // key=range[minRange:maxRange]. Figure out what type of check this is
+            for (String value : entry.getValue()) {
+                if (SearchFacetRangeParser.isRange(value)) {
+                    BigDecimal[] rangeValue = SearchFacetRangeParser.parse(value);
+                    if (rangeValue != null) {
+                        rangeValues.add(rangeValue);
+                    }
+                } else {
+                    eqValues.add(value);
+                }
+            }
+
+            // Invalid ranges are ignored; don't join or restrict on a facet that has nothing left to filter by
+            if (eqValues.isEmpty() && rangeValues.isEmpty()) {
+                continue;
+            }
 
             // Determine which path is the appropriate one to use
             Path<?> pathToUse;
@@ -397,20 +416,6 @@ public class ProductDaoImpl implements ProductDao {
                 continue;
             }
 
-            // Values can be equality checks (ie manufacturer=Dave's) or range checks, which take the form
-            // key=range[minRange:maxRange]. Figure out what type of check this is
-            for (String value : entry.getValue()) {
-                if (value.contains("range[")) {
-                    String[] rangeValue = new String[]{
-                            value.substring(value.indexOf("[") + 1, value.indexOf(":")),
-                            value.substring(value.indexOf(":") + 1, value.indexOf("]"))
-                    };
-                    rangeValues.add(rangeValue);
-                } else {
-                    eqValues.add(value);
-                }
-            }
-
             // Add the equality range restriction with the "in" builder. That means that the query string
             // ?manufacturer=Dave&manufacturer=Bob would match either Dave or Bob
             if (eqValues.size() > 0) {
@@ -421,12 +426,9 @@ public class ProductDaoImpl implements ProductDao {
             // such that specifying range[0:5] and range[10:null] for the same field would match items
             // that were valued between 0 and 5 OR over 10 for that field
             List<Predicate> rangeRestrictions = new ArrayList<>();
-            for (String[] range : rangeValues) {
-                BigDecimal min = new BigDecimal(range[0]);
-                BigDecimal max = null;
-                if (range[1] != null && !range[1].equals("null")) {
-                    max = new BigDecimal(range[1]);
-                }
+            for (BigDecimal[] range : rangeValues) {
+                BigDecimal min = range[0];
+                BigDecimal max = range[1];
 
                 Predicate minRange = builder.greaterThan(pathToUse.get(key).as(BigDecimal.class), min);
                 Predicate maxRange = null;
