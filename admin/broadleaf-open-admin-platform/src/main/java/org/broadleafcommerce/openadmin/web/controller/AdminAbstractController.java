@@ -24,6 +24,7 @@ import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
 import org.broadleafcommerce.common.security.service.ExploitProtectionService;
+import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.JsonResponse;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
@@ -87,6 +88,7 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
     public static final String CURRENT_ADMIN_SECTION_ATTRIBUTE_NAME = "currentAdminSection";
     public static final String DEFAULT_CONTAINER_VIEW = "modules/defaultContainer";
     public static final String MODAL_CONTAINER_VIEW = "modules/modalContainer";
+    public static final int DEFAULT_MAX_PAGE_SIZE = 1000;
     protected static final Log LOG = LogFactory.getLog(AdminAbstractController.class);
 
     // ***********************
@@ -703,7 +705,7 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         }
 
         List<String> maxResults = requestParams.get(FilterAndSortCriteria.MAX_RESULTS_PARAMETER);
-        return CollectionUtils.isEmpty(maxResults) ? null : Integer.parseInt(maxResults.get(0));
+        return CollectionUtils.isEmpty(maxResults) ? null : boundPageSize(Integer.parseInt(maxResults.get(0)));
     }
 
 
@@ -749,7 +751,29 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         }
 
         List<String> pageSize = requestParams.get(FilterAndSortCriteria.PAGE_SIZE_PARAMETER);
-        return CollectionUtils.isEmpty(pageSize) ? null : Integer.parseInt(pageSize.get(0));
+        return CollectionUtils.isEmpty(pageSize) ? null : boundPageSize(Integer.parseInt(pageSize.get(0)));
+    }
+
+    /**
+     * Bounds a client-supplied page size or max results value to {@link #getMaxPageSize()}. Non-positive values are
+     * ignored so that the configured default page size applies.
+     *
+     * @param requested
+     * @return
+     */
+    protected Integer boundPageSize(Integer requested) {
+        if (requested == null || requested <= 0) {
+            return null;
+        }
+        return Math.min(requested, getMaxPageSize());
+    }
+
+    /**
+     * @return the largest number of records a single admin list request may ask for, configured by
+     * {@code admin.max.page.size}
+     */
+    protected int getMaxPageSize() {
+        return BLCSystemProperty.resolveIntSystemProperty("admin.max.page.size", DEFAULT_MAX_PAGE_SIZE);
     }
 
     // ************************
