@@ -21,6 +21,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.handler.SimpleMappingExceptionResolver;
 
@@ -57,6 +58,9 @@ public class BroadleafSimpleMappingExceptionResolver extends SimpleMappingExcept
         String viewName = getDefaultErrorView();
 
         Integer statusCode = super.determineStatusCode(request, viewName);
+        if (ex instanceof ResponseStatusException) {
+            statusCode = ((ResponseStatusException) ex).getStatusCode().value();
+        }
         if (statusCode != null) {
             applyStatusCodeIfPossible(request, response, statusCode);
         }
