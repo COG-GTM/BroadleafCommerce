@@ -652,10 +652,6 @@ public class AdminEntityServiceImpl implements AdminEntityService {
 
             if (fmd.getAddMethodType().equals(AddMethodType.LOOKUP_FOR_UPDATE)) {
                 ppr.setUpdateLookupType(true);
-                // The looked-up record is re-parented onto the entity being managed, so authorize against that
-                // entity's server-side ceiling rather than a request-supplied section crumb.
-                ppr.withSecurityCeilingEntityClassname(StringUtils.isNotBlank(mainMetadata.getSecurityCeilingType())
-                        ? mainMetadata.getSecurityCeilingType() : mainMetadata.getCeilingType());
             }
 
             Property fp = new Property();
