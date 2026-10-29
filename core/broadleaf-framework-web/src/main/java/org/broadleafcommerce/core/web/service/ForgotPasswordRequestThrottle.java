@@ -49,6 +49,10 @@ public class ForgotPasswordRequestThrottle {
     @Value("${forgot.password.throttle.max.requests.per.username:5}")
     protected int maxRequestsPerUsername = 5;
 
+    protected static final String OVERFLOW_CLIENT_KEY = "overflow:client";
+
+    protected static final String OVERFLOW_USERNAME_KEY = "overflow:username";
+
     protected int maxTrackedKeys = DEFAULT_MAX_TRACKED_KEYS;
 
     /**
@@ -60,28 +64,26 @@ public class ForgotPasswordRequestThrottle {
         if (windows.size() >= maxTrackedKeys) {
             evictExpired(now);
         }
-        boolean allowed = true;
-        if (maxRequestsPerClient > 0 && request != null && request.getRemoteAddr() != null) {
-            allowed = increment("client:" + request.getRemoteAddr(), now) <= maxRequestsPerClient;
+        if (maxRequestsPerClient > 0 && request != null && request.getRemoteAddr() != null
+                && increment("client:" + request.getRemoteAddr(), OVERFLOW_CLIENT_KEY, now) > maxRequestsPerClient) {
+            return false;
         }
         if (maxRequestsPerUsername > 0 && StringUtils.isNotBlank(username)) {
             String key = "username:" + username.trim().toLowerCase(Locale.ROOT);
-            allowed = increment(key, now) <= maxRequestsPerUsername && allowed;
+            return increment(key, OVERFLOW_USERNAME_KEY, now) <= maxRequestsPerUsername;
         }
-        return allowed;
+        return true;
     }
 
     /**
      * Returns the request count for {@code key} in the current window. Existing counters are never dropped before
-     * their window ends; when the map is full, untracked keys are allowed without being recorded (the per-customer
-     * token cap in {@code CustomerServiceImpl} still applies).
+     * their window ends. When the map is full, keys that are not yet tracked share the {@code overflowKey} counter,
+     * so they are collectively held to the same limit instead of being let through unchecked.
      */
-    protected int increment(String key, long now) {
+    protected int increment(String key, String overflowKey, long now) {
         long windowMillis = windowSeconds * 1000L;
-        if (windows.size() >= maxTrackedKeys && !windows.containsKey(key)) {
-            return 0;
-        }
-        Window window = windows.compute(key, (k, existing) -> {
+        String counterKey = windows.size() >= maxTrackedKeys && !windows.containsKey(key) ? overflowKey : key;
+        Window window = windows.compute(counterKey, (k, existing) -> {
             if (existing == null || now - existing.start >= windowMillis) {
                 return new Window(now, 1);
             }

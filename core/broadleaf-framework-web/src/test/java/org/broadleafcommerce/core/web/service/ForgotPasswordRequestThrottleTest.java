@@ -93,6 +93,29 @@ public class ForgotPasswordRequestThrottleTest {
         assertFalse(throttle.tryAcquire(request("10.0.9.9"), "alice"));
     }
 
+    @Test
+    public void untrackedKeysShareALimitWhenKeyMapIsFull() {
+        throttle.setMaxTrackedKeys(4);
+        throttle.tryAcquire(request("10.0.0.1"), "user1");
+        throttle.tryAcquire(request("10.0.0.2"), "user2");
+
+        int allowed = 0;
+        for (int i = 0; i < 20; i++) {
+            if (throttle.tryAcquire(request("10.0.2." + i), "fresh" + i)) {
+                allowed++;
+            }
+        }
+        assertTrue("allowed " + allowed, allowed <= 2);
+    }
+
+    @Test
+    public void blockedClientDoesNotFillKeyMapWithUsernames() {
+        for (int i = 0; i < 50; i++) {
+            throttle.tryAcquire(request("10.0.0.1"), "user" + i);
+        }
+        assertTrue(throttle.windows.size() <= 4);
+    }
+
     private static HttpServletRequest request(String remoteAddr) {
         return (HttpServletRequest) Proxy.newProxyInstance(HttpServletRequest.class.getClassLoader(),
                 new Class[]{HttpServletRequest.class},
