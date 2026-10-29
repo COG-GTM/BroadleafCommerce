@@ -110,11 +110,7 @@ public class BroadleafManageCustomerPaymentsController extends BroadleafAbstract
     }
 
     public String makeDefaultCustomerPayment(HttpServletRequest request, Model model, Long customerPaymentId) {
-        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(customerPaymentId);
-
-        if (customerPayment == null) {
-            throw new IllegalArgumentException("Requested customer payment does not exist.");
-        }
+        CustomerPayment customerPayment = readActiveCustomerOwnedPayment(customerPaymentId);
 
         customerPaymentService.setAsDefaultPayment(customerPayment);
 
@@ -122,9 +118,20 @@ public class BroadleafManageCustomerPaymentsController extends BroadleafAbstract
     }
 
     public String removeCustomerPayment(HttpServletRequest request, Model model, Long customerPaymentId) {
+        readActiveCustomerOwnedPayment(customerPaymentId);
         customerPaymentService.deleteCustomerPaymentById(customerPaymentId);
 
         return getCustomerPaymentView();
+    }
+
+    protected CustomerPayment readActiveCustomerOwnedPayment(Long customerPaymentId) {
+        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentByIdAndCustomer(
+                customerPaymentId, CustomerState.getCustomer()
+        );
+        if (customerPayment == null) {
+            throw new SecurityException("Requested customer payment does not belong to the active customer.");
+        }
+        return customerPayment;
     }
 
     public String getCustomerPaymentView() {

@@ -79,6 +79,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
         if (!result.hasErrors()) {
             if (paymentForm.getShouldSaveNewPayment() && !paymentForm.getShouldUseCustomerPayment()) {
                 if (paymentForm.getCustomerPaymentId() != null) {
+                    readActiveCustomerOwnedPayment(paymentForm.getCustomerPaymentId());
                     savedPaymentService.updateSavedPayment(customer, paymentForm);
                 } else if (paymentForm.getCustomerPaymentId() == null) {
                     Long customerPaymentId = savedPaymentService.addSavedPayment(customer, paymentForm);
@@ -89,9 +90,7 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
             }
 
             if (paymentForm.getShouldUseCustomerPayment()) {
-                CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                        paymentForm.getCustomerPaymentId()
-                );
+                CustomerPayment customerPayment = readActiveCustomerOwnedPayment(paymentForm.getCustomerPaymentId());
 
                 if (!cartStateService.cartHasCreditCardPaymentWithSameToken(customerPayment.getPaymentToken())) {
                     orderService.removeCreditCardPaymentsFromOrder(cart);
@@ -195,15 +194,11 @@ public class BroadleafPaymentInfoController extends AbstractCheckoutController {
     }
 
     protected void copyCustomerPaymentAddressToBillingAddress(PaymentInfoForm paymentForm) {
-        CustomerPayment customerPayment = customerPaymentService.readCustomerPaymentById(
-                paymentForm.getCustomerPaymentId()
-        );
+        CustomerPayment customerPayment = readActiveCustomerOwnedPayment(paymentForm.getCustomerPaymentId());
 
-        if (customerPayment != null) {
-            Address address = customerPayment.getBillingAddress();
-            if (address != null) {
-                paymentForm.setAddress(addressService.copyAddress(address));
-            }
+        Address address = customerPayment.getBillingAddress();
+        if (address != null) {
+            paymentForm.setAddress(addressService.copyAddress(address));
         }
     }
 

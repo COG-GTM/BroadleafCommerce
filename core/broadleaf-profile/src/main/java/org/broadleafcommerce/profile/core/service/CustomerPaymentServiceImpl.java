@@ -56,6 +56,19 @@ public class CustomerPaymentServiceImpl implements CustomerPaymentService {
     }
 
     @Override
+    public CustomerPayment readCustomerPaymentByIdAndCustomer(Long customerPaymentId, Customer customer) {
+        if (customerPaymentId == null || customer == null || customer.getId() == null) {
+            return null;
+        }
+        CustomerPayment customerPayment = readCustomerPaymentById(customerPaymentId);
+        if (customerPayment == null || customerPayment.getCustomer() == null
+                || !customer.getId().equals(customerPayment.getCustomer().getId())) {
+            return null;
+        }
+        return customerPayment;
+    }
+
+    @Override
     public CustomerPayment readCustomerPaymentByToken(String token) {
         return customerPaymentDao.readCustomerPaymentByToken(token);
     }
