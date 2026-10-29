@@ -18,6 +18,8 @@
 package org.broadleafcommerce.common.extensibility.cache.ehcache;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.extensibility.cache.DefaultJCacheUriProvider;
 import org.broadleafcommerce.common.extensibility.context.merge.MergeXmlConfigResource;
 import org.broadleafcommerce.common.extensibility.context.merge.ResourceInputStream;
@@ -50,6 +52,8 @@ import java.util.Set;
 @Component("blJCacheUriProvider")
 @ConditionalOnEhCache
 public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider implements ApplicationContextAware, InitializingBean {
+
+    private static final Log LOG = LogFactory.getLog(DefaultEhCacheUriProvider.class);
 
     @jakarta.annotation.Resource(name = "blMergedCacheConfigLocations")
     protected Set<String> mergedCacheConfigLocations;
@@ -90,6 +94,13 @@ public class DefaultEhCacheUriProvider extends DefaultJCacheUriProvider implemen
             dir = Files.createTempDirectory("broadleaf-jcache", ownerOnly);
         } else {
             dir = Files.createTempDirectory("broadleaf-jcache");
+            File dirFile = dir.toFile();
+            boolean restricted = dirFile.setReadable(false, false) && dirFile.setReadable(true, true)
+                    && dirFile.setWritable(false, false) && dirFile.setWritable(true, true)
+                    && dirFile.setExecutable(false, false) && dirFile.setExecutable(true, true);
+            if (!restricted) {
+                LOG.warn("Unable to restrict permissions on " + dir + " to the owner only");
+            }
         }
         // deleteOnExit runs in reverse registration order: the file is removed before its directory
         dir.toFile().deleteOnExit();
