@@ -17,8 +17,8 @@
  */
 package org.broadleafcommerce.core.web.controller.account;
 
-import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.ServiceException;
+import org.broadleafcommerce.common.util.UrlUtil;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
 import org.broadleafcommerce.core.order.domain.NullOrderImpl;
 import org.broadleafcommerce.core.order.domain.Order;
@@ -116,11 +116,8 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
                 orderService.save(cart, false);
             }
 
-            String redirectUrl = registerCustomerForm.getRedirectUrl();
-            if (StringUtils.isNotBlank(redirectUrl) && redirectUrl.contains(":")) {
-                redirectUrl = null;
-            }
-            return StringUtils.isBlank(redirectUrl) ? getRegisterSuccessView() : "redirect:" + redirectUrl;
+            String redirectUrl = getSafeRedirectUrl(registerCustomerForm);
+            return redirectUrl == null ? getRegisterSuccessView() : "redirect:" + redirectUrl;
         } else {
             //Initially Customer was read from the db and is "attached to session",
             //later CustomerStateFilter does order "unlock", where it starts transaction,
@@ -129,6 +126,17 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
             customerService.detachCustomer(registerCustomerForm.getCustomer());
             return getRegisterView();
         }
+    }
+
+    /**
+     * Returns the form's redirect url when it is a local path on this host, otherwise <tt>null</tt>.
+     *
+     * @param registerCustomerForm the submitted registration form
+     * @return the validated redirect url or null
+     */
+    protected String getSafeRedirectUrl(RegisterCustomerForm registerCustomerForm) {
+        String redirectUrl = registerCustomerForm.getRedirectUrl();
+        return UrlUtil.isLocalRedirectPath(redirectUrl) ? redirectUrl : null;
     }
 
     public RegisterCustomerForm initCustomerRegistrationForm() {

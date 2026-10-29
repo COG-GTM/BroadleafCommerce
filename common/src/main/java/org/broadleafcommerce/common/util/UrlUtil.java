@@ -20,6 +20,8 @@ package org.broadleafcommerce.common.util;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.owasp.esapi.ESAPI;
@@ -88,6 +90,37 @@ public class UrlUtil {
 
         if (!"/".equals(relativeUrl) && !ESAPI.validator().isValidRedirectLocation("Redirect", relativeUrl, false)) {
             throw new IOException("Redirect failed");
+        }
+    }
+
+    /**
+     * Returns <tt>true</tt> if the url is a host-relative path that is safe to use as a redirect target supplied by
+     * the client (e.g. a <tt>successUrl</tt> or <tt>redirectUrl</tt> parameter). The url must start with a single
+     * <tt>/</tt> and must not contain a scheme, a host, backslashes, whitespace or control characters, so
+     * protocol-relative targets such as <tt>//evil.example</tt> or <tt>/\\evil.example</tt> are rejected.
+     *
+     * @param url the redirect target to check
+     * @return true if the url stays on the current host
+     */
+    public static boolean isLocalRedirectPath(String url) {
+        if (StringUtils.isEmpty(url) || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            char c = url.charAt(i);
+            if (c == ':' || c == '\\' || Character.isISOControl(c) || Character.isWhitespace(c)
+                    || Character.isSpaceChar(c)) {
+                return false;
+            }
+        }
+        try {
+            URI uri = new URI(url);
+            return uri.getScheme() == null && uri.getRawAuthority() == null;
+        } catch (URISyntaxException e) {
+            return false;
         }
     }
 

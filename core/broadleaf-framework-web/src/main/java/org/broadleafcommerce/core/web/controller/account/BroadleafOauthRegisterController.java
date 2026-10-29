@@ -17,7 +17,6 @@
  */
 package org.broadleafcommerce.core.web.controller.account;
 
-import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.core.order.domain.NullOrderImpl;
 import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
@@ -133,11 +132,8 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
                 cart.setEmailAddress(newCustomer.getEmailAddress());
                 orderService.save(cart, false);
             }
-            String redirectUrl = registerCustomerForm.getRedirectUrl();
-            if (StringUtils.isNotBlank(redirectUrl) && redirectUrl.contains(":")) {
-                redirectUrl = null;
-            }
-            return StringUtils.isBlank(redirectUrl) ? getRegisterSuccessView() : "redirect:" + redirectUrl;
+            String redirectUrl = getSafeRedirectUrl(registerCustomerForm);
+            return redirectUrl == null ? getRegisterSuccessView() : "redirect:" + redirectUrl;
         } else {
             return getRegisterView();
         }
