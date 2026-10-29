@@ -25,18 +25,26 @@ import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
+import org.broadleafcommerce.profile.core.service.CustomerUserDetails;
 import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.Ordered;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -44,13 +52,22 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * This is a basic filter for finding the customer ID on the request and setting the customer object on the request.
- * This must come after the BroadleafRequestFilter (blRequestFilter). This should come after any security filters.
- * This filter DOES NOT provide any security.  It simply looks for a "customerId" parameter on the request or in the request header.  If it finds
- * this parameter it looks up the customer and makes it available as a request attribute.  This is generally for use in a filter chain for RESTful web services,
- * allowing the client consuming services to specify the customerId on whos behalf they are invoking the service.  It is assumed that services are invoked either
- * in a trusted, secured network where no additional security is required.  Or using OAuth or a similar trusted security model.  Whatever security model is used,
- * it should ensure that the caller has access to call the system, and that they have access to do so on behalf of the client whos ID is being determined by this class.
+ * Resolves the customer a RESTful API request acts on behalf of and sets it on {@link CustomerState}.
+ * This must come after the BroadleafRequestFilter (blRequestFilter) and after the Spring Security filters that
+ * authenticate the caller. Register it only behind authentication that scopes each caller to a single customer
+ * (e.g. a customer login or an OAuth token carrying the customer), not behind a shared API key alone.
+ * <p>
+ * The acting customer is bound to the authenticated caller:
+ * <ul>
+ *     <li>A {@code customerId} request attribute set by a trusted server-side component is honoured as-is.</li>
+ *     <li>A {@code customerId} request parameter is ignored.</li>
+ *     <li>A {@code customerId} request header is only honoured when it identifies the authenticated
+ *     caller's own customer, or when the caller holds one of the {@link #getImpersonationAuthorities() impersonation
+ *     authorities} (by default {@value #DEFAULT_IMPERSONATION_AUTHORITY}), e.g. a CSR or trusted service client.
+ *     Any other client-supplied {@code customerId} is rejected with {@code 403 Forbidden}.</li>
+ *     <li>Without a {@code customerId}, the customer is resolved from the authenticated principal; anonymous callers
+ *     get a new anonymous customer.</li>
+ * </ul>
  * <p>
  * For RESTful services, this should be used instead of CustomerStateFilter since it does not look at or touch cookies or session.
  * <p>
@@ -62,12 +79,15 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
 
     public static final String CUSTOMER_ID_ATTRIBUTE = "customerId";
     public static final String BLC_RULE_MAP_PARAM = "blRuleMap";
+    public static final String DEFAULT_IMPERSONATION_AUTHORITY = "ROLE_CUSTOMER_IMPERSONATION";
     protected static final Log LOG = LogFactory.getLog(RestApiCustomerStateFilter.class);
     @Autowired
     @Qualifier("blCustomerService")
     protected CustomerService customerService;
     protected AntPathMatcher pathMatcher = new AntPathMatcher();
     protected List<String> excludeUrlPatterns;
+    protected Set<String> impersonationAuthorities = new HashSet<>(
+            Collections.singleton(DEFAULT_IMPERSONATION_AUTHORITY));
 
     @Override
     protected void doFilterInternal(
@@ -76,45 +96,50 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String customerId = null;
-
         //If someone already set the customer on the request then we don't need to do anything.
         if (request.getAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName()) == null) {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            Customer customer;
 
-            //First check to see if someone already put the customerId on the request
-            if (request.getAttribute(CUSTOMER_ID_ATTRIBUTE) != null) {
-                customerId = String.valueOf(request.getAttribute(CUSTOMER_ID_ATTRIBUTE));
-            }
+            //A customerId request attribute can only have been set server-side, so it is trusted
+            Object trustedCustomerId = request.getAttribute(CUSTOMER_ID_ATTRIBUTE);
+            if (trustedCustomerId != null) {
+                customer = readCustomer(String.valueOf(trustedCustomerId));
+            } else {
+                //Only the header is honoured, so a customerId cannot be injected through a link or form
+                String requestedCustomerId = request.getHeader(CUSTOMER_ID_ATTRIBUTE);
+                if (request.getParameter(CUSTOMER_ID_ATTRIBUTE) != null) {
+                    LOG.warn("Ignoring the '" + CUSTOMER_ID_ATTRIBUTE + "' request parameter; send the '"
+                            + CUSTOMER_ID_ATTRIBUTE + "' request header instead");
+                }
 
-            if (customerId == null) {
-                //If it's not on the request attribute, try the parameter
-                customerId = request.getParameter(CUSTOMER_ID_ATTRIBUTE);
-            }
+                Customer authenticatedCustomer = resolveAuthenticatedCustomer(authentication);
+                customer = authenticatedCustomer;
 
-            if (customerId == null) {
-                //If it's not on the request parameter, look on the header
-                customerId = request.getHeader(CUSTOMER_ID_ATTRIBUTE);
-            }
-
-            if (customerId != null && customerId.trim().length() > 0) {
-
-                if (NumberUtils.isNumber(customerId)) {
-                    //If we found it, look up the customer and put it on the request.
-                    Customer customer = customerService.readCustomerById(Long.valueOf(customerId));
-                    if (customer != null) {
-                        CustomerState.setCustomer(customer);
-                        setupCustomerForRuleProcessing(customer, request);
+                if (requestedCustomerId != null && requestedCustomerId.trim().length() > 0) {
+                    Long requestedId = parseCustomerId(requestedCustomerId);
+                    if (requestedId == null) {
+                        LOG.warn(String.format("The customer id passed in '%s' was not a number",
+                                StringUtil.sanitize(requestedCustomerId)));
+                    } else if (authenticatedCustomer != null && requestedId.equals(authenticatedCustomer.getId())) {
+                        customer = authenticatedCustomer;
+                    } else if (canImpersonate(authentication)) {
+                        customer = customerService.readCustomerById(requestedId);
+                    } else {
+                        LOG.warn(String.format("Rejecting API request to act as customer '%s': the caller is not that"
+                                + " customer and does not hold an impersonation authority", requestedId));
+                        response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                        return;
                     }
-                } else {
-                    LOG.warn(String.format("The customer id passed in '%s' was not a number", StringUtil.sanitize(customerId)));
+                } else if (LOG.isDebugEnabled() && customer == null) {
+                    LOG.debug("No customer ID was found for the API request. In order to look up a customer for the request" +
+                            " send the '" + CUSTOMER_ID_ATTRIBUTE + "' request header");
                 }
             }
 
-            if (customerId == null) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("No customer ID was found for the API request. In order to look up a customer for the request" +
-                            " send a request parameter or request header for the '" + CUSTOMER_ID_ATTRIBUTE + "' attribute");
-                }
+            if (customer != null) {
+                CustomerState.setCustomer(customer);
+                setupCustomerForRuleProcessing(customer, request);
             }
         }
         if (CustomerState.getCustomer() == null) { //we need to create an anonymous customer for API calls
@@ -126,6 +151,69 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    protected Customer readCustomer(String customerId) {
+        Long id = parseCustomerId(customerId);
+        if (id == null) {
+            LOG.warn(String.format("The customer id passed in '%s' was not a number", StringUtil.sanitize(customerId)));
+            return null;
+        }
+        return customerService.readCustomerById(id);
+    }
+
+    protected Long parseCustomerId(String customerId) {
+        if (!NumberUtils.isDigits(customerId.trim())) {
+            return null;
+        }
+        try {
+            return Long.valueOf(customerId.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the customer that the authenticated caller is. Only principals that carry a customer id
+     * ({@link CustomerUserDetails} or {@link Customer}) are trusted; a bare username is never matched against customer
+     * accounts, since other authentication types (admin users, OAuth clients) may share a shopper's username.
+     * Subclasses can extend this to resolve other types of {@link Authentication}, e.g. OAuth tokens with a customer claim.
+     *
+     * @return the authenticated customer, or null for anonymous / unauthenticated / non-customer callers
+     */
+    protected Customer resolveAuthenticatedCustomer(Authentication authentication) {
+        if (!isAuthenticated(authentication)) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof CustomerUserDetails && ((CustomerUserDetails) principal).getId() != null) {
+            return customerService.readCustomerById(((CustomerUserDetails) principal).getId());
+        }
+        if (principal instanceof Customer && ((Customer) principal).getId() != null) {
+            return customerService.readCustomerById(((Customer) principal).getId());
+        }
+        return null;
+    }
+
+    /**
+     * @return whether the caller may act on behalf of any customer by passing a customerId header
+     */
+    protected boolean canImpersonate(Authentication authentication) {
+        if (!isAuthenticated(authentication) || CollectionUtils.isEmpty(impersonationAuthorities)) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            if (impersonationAuthorities.contains(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected boolean isAuthenticated(Authentication authentication) {
+        return authentication != null
+                && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken);
     }
 
     @Override
@@ -163,6 +251,18 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
 
     public void setExcludeUrlPatterns(List<String> excludeUrlPatterns) {
         this.excludeUrlPatterns = excludeUrlPatterns;
+    }
+
+    public Set<String> getImpersonationAuthorities() {
+        return impersonationAuthorities;
+    }
+
+    /**
+     * Authorities that allow a caller to act on behalf of any customer via the customerId header.
+     * An empty set disables impersonation.
+     */
+    public void setImpersonationAuthorities(Set<String> impersonationAuthorities) {
+        this.impersonationAuthorities = impersonationAuthorities;
     }
 
 }
