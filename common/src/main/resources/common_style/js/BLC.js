@@ -163,7 +163,27 @@ var BLC = (function($) {
             }
         }
         if (options.type.toUpperCase() == 'POST') {
-            if (typeof options.data == 'string') {
+            var headerCsrfToken = getCsrfToken();
+            if (headerCsrfToken) {
+                options.headers = $.extend({}, options.headers);
+                if (!options.headers['X-CSRF-TOKEN']) {
+                    options.headers['X-CSRF-TOKEN'] = headerCsrfToken;
+                }
+            }
+            if (typeof FormData != 'undefined' && options.data instanceof FormData) {
+                if (!options.data.has('csrfToken')) {
+                    var csrfToken = getCsrfToken();
+                    if (csrfToken != null) {
+                        options.data.append('csrfToken', csrfToken);
+                    }
+                }
+                if (!options.data.has('stateVersionToken')) {
+                    var stateVersionToken = getStateVersionToken();
+                    if (stateVersionToken != null) {
+                        options.data.append('stateVersionToken', stateVersionToken);
+                    }
+                }
+            } else if (typeof options.data == 'string') {
                 if (options.data.indexOf('csrfToken') < 0) {
                     var csrfToken = getCsrfToken();
                     if (csrfToken != null) {
