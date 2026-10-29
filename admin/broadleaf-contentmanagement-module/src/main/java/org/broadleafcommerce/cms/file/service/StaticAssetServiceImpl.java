@@ -25,7 +25,6 @@ import org.apache.tika.Tika;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.mime.MediaType;
-import org.apache.tika.mime.MimeType;
 import org.apache.tika.mime.MimeTypeException;
 import org.apache.tika.mime.MimeTypes;
 import org.broadleafcommerce.cms.field.type.StorageType;
@@ -50,7 +49,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,7 @@ public class StaticAssetServiceImpl implements StaticAssetService {
 
     private static final Log LOG = LogFactory.getLog(StaticAssetServiceImpl.class);
     private static final String UPLOAD_FILE_EXTENSION_EXCEPTION = "java.io.IOException: Invalid extension type of file.";
+    private static final MimeTypes MIME_TYPES = MimeTypes.getDefaultMimeTypes();
     private final Random random = new Random();
     private final String FILE_NAME_CHARS = "0123456789abcdef";
     @Resource(name = "blImageArtifactProcessor")
@@ -95,32 +97,72 @@ public class StaticAssetServiceImpl implements StaticAssetService {
     @Value("${static.asset.invalid.chars.replacement}")
     protected String replacementString;
 
+    @Value("${static.asset.reject.mismatched.content.type:true}")
+    protected boolean rejectMismatchedContentType = true;
+
     private static String normalizeFileExtension(MultipartFile file) {
         int index = file.getOriginalFilename().lastIndexOf(".");
         return file.getOriginalFilename().substring(0, index + 1)
                 + file.getOriginalFilename().substring(index + 1).toLowerCase();
     }
 
-    private static String getFileExtension(MultipartFile file) {
-        String tikaExtension = null;
-        String name = StringUtils.isNotBlank(file.getOriginalFilename()) ? file.getOriginalFilename() : file.getName();
-        try {
-            final Tika tika = new Tika();
-            final MimeTypes allTypes = MimeTypes.getDefaultMimeTypes();
-            Metadata metadata = new Metadata();
-            //let's try to detect type from the data and not just file extension
-            MediaType tikaType = tika.getDetector().detect(TikaInputStream.get(file.getBytes(), metadata), metadata);
-            if (tikaType != null) {
-                String detectedType = tikaType.toString();
-                if (detectedType != null && !detectedType.isEmpty()) {
-                    final MimeType mimeType = allTypes.forName(detectedType);
-                    tikaExtension = mimeType.getExtension().replace(".", "").toLowerCase();
-                }
+    private static String getUploadedFileName(MultipartFile file) {
+        return StringUtils.isNotBlank(file.getOriginalFilename()) ? file.getOriginalFilename() : file.getName();
+    }
+
+    private static List<String> parseExtensionList(String extensionList) {
+        return Arrays.asList(extensionList.toLowerCase().trim().split("\\s*,\\s*"));
+    }
+
+    /**
+     * Detects the media type of the uploaded file from its bytes only (the file name is not used as a hint).
+     *
+     * @return the detected type, or null if detection failed or only yielded {@code application/octet-stream}
+     */
+    protected MediaType detectContentType(MultipartFile file) {
+        try (TikaInputStream stream = TikaInputStream.get(file.getBytes())) {
+            MediaType detected = new Tika().getDetector().detect(stream, new Metadata());
+            if (detected != null && !MediaType.OCTET_STREAM.equals(detected)) {
+                return MIME_TYPES.getMediaTypeRegistry().normalize(detected.getBaseType());
             }
-        } catch (MimeTypeException | IOException ignored) {
+        } catch (IOException ignored) {
         }
-        //in case something is wrong fallback to simply take extension from the file name
-        return (tikaExtension != null && !tikaExtension.isEmpty()) ? tikaExtension : FilenameUtils.getExtension(name);
+        return null;
+    }
+
+    protected MediaType detectNameType(String fileName) {
+        MediaType nameType = MediaType.parse(new Tika().detect(fileName));
+        return nameType == null ? null : MIME_TYPES.getMediaTypeRegistry().normalize(nameType.getBaseType());
+    }
+
+    protected List<String> getExtensions(MediaType type) {
+        if (type == null) {
+            return Collections.emptyList();
+        }
+        try {
+            List<String> extensions = new ArrayList<>();
+            for (String extension : MIME_TYPES.forName(type.toString()).getExtensions()) {
+                extensions.add(StringUtils.removeStart(extension, ".").toLowerCase());
+            }
+            return extensions;
+        } catch (MimeTypeException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * The name-based type is consistent with the content when the content type is unknown, when the file name
+     * extension is registered for the content type, or when the name type is the content type or a
+     * specialization of it (e.g. {@code text/css} for {@code text/plain} content).
+     */
+    protected boolean isNameConsistentWithContent(String nameExtension, MediaType nameType, MediaType contentType) {
+        if (contentType == null) {
+            return true;
+        }
+        if (StringUtils.isNotEmpty(nameExtension) && getExtensions(contentType).contains(nameExtension)) {
+            return true;
+        }
+        return nameType != null && MIME_TYPES.getMediaTypeRegistry().isInstanceOf(nameType, contentType);
     }
 
     @Override
@@ -204,21 +246,43 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         return path.append(fileName).toString();
     }
 
+    /**
+     * Validates both the file name extension and the type detected from the file content against
+     * {@code allowed.file.extensions} / {@code disabled.file.extensions}. The stored MIME type of an asset is
+     * derived from its file name, so uploads whose name does not match their content are rejected as well
+     * (see {@code static.asset.reject.mismatched.content.type}).
+     */
     public void validateFileExtension(MultipartFile file) throws IOException {
-        final String extension = getFileExtension(file);
+        final String fileName = getUploadedFileName(file);
+        final String nameExtension = StringUtils.defaultString(FilenameUtils.getExtension(fileName)).toLowerCase();
+        final MediaType contentType = detectContentType(file);
+        final MediaType nameType = detectNameType(fileName);
+        final List<String> contentExtensions = getExtensions(contentType);
         //if we have whitelist, don't care about blacklist
-        if (StringUtils.isNotEmpty(allowedFileExtensions)) {
-            final List<String> extensions = Arrays.asList(allowedFileExtensions.toLowerCase().split("\\s*,\\s*"));
-            if (!extensions.contains(extension)) {
-                LOG.error("Invalid extension type of file " + file.getName() + ". Only following is allowed:" + allowedFileExtensions);
+        if (StringUtils.isNotBlank(allowedFileExtensions)) {
+            final List<String> extensions = parseExtensionList(allowedFileExtensions);
+            boolean nameAllowed = extensions.contains(nameExtension);
+            boolean contentAllowed = contentType == null
+                    || !Collections.disjoint(extensions, contentExtensions)
+                    || (nameAllowed && isNameConsistentWithContent(nameExtension, nameType, contentType));
+            if (!nameAllowed || !contentAllowed) {
+                LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + " (detected content type "
+                        + contentType + "). Only following is allowed:" + allowedFileExtensions);
                 throw new IOException("Not allowed extension type of file.");
             }
-        } else if (disabledFileExtensions != null && !disabledFileExtensions.isEmpty()) {
-            final List<String> extensions = Arrays.asList(disabledFileExtensions.toLowerCase().split("\\s*,\\s*"));
-            if (extensions.contains(extension)) {
-                LOG.error("Invalid extension type of file " + file.getName() + ". Disabled files:" + disabledFileExtensions);
+        } else if (StringUtils.isNotBlank(disabledFileExtensions)) {
+            final List<String> extensions = parseExtensionList(disabledFileExtensions);
+            boolean contentDisabled = !contentExtensions.isEmpty() && extensions.contains(contentExtensions.get(0));
+            if (extensions.contains(nameExtension) || contentDisabled) {
+                LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + " (detected content type "
+                        + contentType + "). Disabled files:" + disabledFileExtensions);
                 throw new IOException("Invalid extension type of file.");
             }
+        }
+        if (rejectMismatchedContentType && !isNameConsistentWithContent(nameExtension, nameType, contentType)) {
+            LOG.error("Invalid extension type of file " + StringUtil.sanitize(fileName) + ": name implies " + nameType
+                    + " but content was detected as " + contentType);
+            throw new IOException("Invalid extension type of file.");
         }
     }
 
@@ -452,6 +516,14 @@ public class StaticAssetServiceImpl implements StaticAssetService {
 
     public void setAllowedFileExtensions(String allowedFileExtensions) {
         this.allowedFileExtensions = allowedFileExtensions;
+    }
+
+    public boolean isRejectMismatchedContentType() {
+        return rejectMismatchedContentType;
+    }
+
+    public void setRejectMismatchedContentType(boolean rejectMismatchedContentType) {
+        this.rejectMismatchedContentType = rejectMismatchedContentType;
     }
 
 }
