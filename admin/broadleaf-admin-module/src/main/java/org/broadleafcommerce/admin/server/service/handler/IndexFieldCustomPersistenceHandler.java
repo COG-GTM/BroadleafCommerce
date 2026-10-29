@@ -96,7 +96,10 @@ public class IndexFieldCustomPersistenceHandler extends CustomPersistenceHandler
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(IndexField.class.getName(), persistencePerspective);
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Serializable instance = dynamicEntityDao.retrieve(getValidatedEntityClass(entity, IndexField.class, dynamicEntityDao), primaryKey);
+            Class<?> ceilingClass = IndexFieldTypeImpl.class.getName().equalsIgnoreCase(
+                    persistencePackage.getCeilingEntityFullyQualifiedClassname()
+            ) ? IndexFieldType.class : IndexField.class;
+            Serializable instance = dynamicEntityDao.retrieve(getValidatedEntityClass(entity, ceilingClass, dynamicEntityDao), primaryKey);
             if (instance instanceof Status) {
                 ((Status) instance).setArchived('Y');
                 dynamicEntityDao.merge(instance);
