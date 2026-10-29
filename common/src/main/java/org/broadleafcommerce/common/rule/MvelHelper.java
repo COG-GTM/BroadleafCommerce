@@ -73,6 +73,10 @@ public class MvelHelper {
                     + "|loadClass|defineClass|invoke)(?![\\w$])"
                     + "|(?<![\\w$.])(?!org\\.apache\\.commons\\.lang3\\.StringUtils\\.)"
                     + "(org|com|net|io|java|javax|jakarta|sun|jdk)\\.");
+    private static final Pattern STATE_CHANGING_RULE_CONSTRUCT = Pattern.compile(
+            "(?<![=!<>])=(?!=)|<<=|>>=|[-+*/%&|^]=|\\+\\+|--|;"
+                    + "|\\.(set[A-Z]\\w*|add\\w*|remove\\w*|clear|put\\w*|retainAll|compute\\w*|merge|delete|persist"
+                    + "|save\\w*)\\(");
 
     static {
         System.setProperty("mvel2.disable.jit", "true");
@@ -296,8 +300,9 @@ public class MvelHelper {
     /**
      * Checks a rule for constructs that are never produced by the admin rule builder and that would let a rule escape
      * its role as a boolean match expression: object construction, imports and function definitions, reflection and
-     * class loading, process, thread and JVM control classes, nested MVEL evaluation, and fully qualified class
-     * references other than {@code org.apache.commons.lang3.StringUtils}. String literals are ignored, and the legacy
+     * class loading, process, thread and JVM control classes, nested MVEL evaluation, fully qualified class references
+     * other than {@code org.apache.commons.lang3.StringUtils}, and state changes (assignments, increments, statement
+     * separators, setters and collection mutators). String literals are ignored, and the legacy
      * {@code MVEL.eval("toUpperCase()", ...)} form is still accepted.
      *
      * @param rule the rule to check
@@ -335,6 +340,10 @@ public class MvelHelper {
         }
         String normalized = withoutLiterals.toString().replaceAll("\\s*\\.\\s*\\??\\s*", ".");
         Matcher matcher = UNSAFE_RULE_CONSTRUCT.matcher(normalized);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+        matcher = STATE_CHANGING_RULE_CONSTRUCT.matcher(normalized.replaceAll("\\s+", ""));
         if (matcher.find()) {
             return matcher.group();
         }

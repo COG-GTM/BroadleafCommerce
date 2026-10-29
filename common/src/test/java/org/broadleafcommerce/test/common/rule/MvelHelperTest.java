@@ -196,6 +196,8 @@ public class MvelHelperTest extends TestCase {
         assertNull(MvelHelper.findUnsafeConstruct("(MvelHelper.convertField(\"DATE\",?customer.?getCustomerAttributes()"
                 + "[\"invoice_date\"])>MvelHelper.convertField(\"DATE\",MvelHelper.subtractFromCurrentTime(12)))"));
         assertNull(MvelHelper.findUnsafeConstruct("locale.localeCode == 'US'"));
+        assertNull(MvelHelper.findUnsafeConstruct("?order.?subTotal.getAmount()>=100&&?order.?subTotal.getAmount()!=5"
+                + "&&?order.?subTotal.getAmount()<=200&&!(?order.?status==\"a = b; c.set(d)\")"));
     }
 
     /**
@@ -211,6 +213,12 @@ public class MvelHelperTest extends TestCase {
         assertNotNull(MvelHelper.findUnsafeConstruct("org.springframework.util.ClassUtils.isPresent(\"x\", null)"));
         assertNotNull(MvelHelper.findUnsafeConstruct("java . lang . System.exit(0)"));
         assertNotNull(MvelHelper.findUnsafeConstruct("orderItem.?name==\"unterminated"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("(order.subTotal = null) == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.?subTotal += 1"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.setStatus(null) == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.?orderItems.clear() == null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("order.orderItems.remove(0) != null"));
+        assertNotNull(MvelHelper.findUnsafeConstruct("x == 1; order.status"));
     }
 
     /**
