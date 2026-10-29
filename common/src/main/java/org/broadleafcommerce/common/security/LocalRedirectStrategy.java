@@ -50,7 +50,7 @@ public class LocalRedirectStrategy implements RedirectStrategy {
      */
     @Override
     public void sendRedirect(HttpServletRequest request, HttpServletResponse response, String url) throws IOException {
-        if (!url.startsWith("/")) {
+        if (!url.startsWith("/") || url.startsWith("//") || url.startsWith("/\\")) {
             if (StringUtils.equals(request.getParameter("successUrl"), url)
                     || StringUtils.equals(request.getParameter("failureUrl"), url)) {
                 validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());

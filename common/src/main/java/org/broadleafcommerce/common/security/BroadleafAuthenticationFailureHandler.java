@@ -22,7 +22,10 @@ import org.broadleafcommerce.common.util.StringUtil;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -54,6 +57,8 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
      *     </pre>
      * </p>
      */
+    private static final int MAX_DECODE_PASSES = 3;
+
     private final Map<String, String> failureUrlMap = new HashMap<>();
     private String defaultFailureUrl;
 
@@ -92,10 +97,11 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
 
         if (failureUrl != null) {
             if (StringUtils.isNotEmpty(successUrlParam)) {
+                String encodedSuccessUrl = URLEncoder.encode(successUrlParam, StandardCharsets.UTF_8);
                 if (!failureUrl.contains("?")) {
-                    failureUrl += "?successUrl=" + successUrlParam;
+                    failureUrl += "?successUrl=" + encodedSuccessUrl;
                 } else {
-                    failureUrl += "&successUrl=" + successUrlParam;
+                    failureUrl += "&successUrl=" + encodedSuccessUrl;
                 }
             }
 
@@ -106,14 +112,87 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
         }
     }
 
+    /**
+     * Returns the url only if it is a path local to this application, otherwise null. See {@link #isLocalPath(String)}.
+     */
     public String validateUrlParam(final String url) {
-        if (url != null) {
-            if (url.contains("http") || url.contains("www") || url.contains(".")) {
-                return null;
+        return isLocalPath(url) ? url : null;
+    }
+
+    /**
+     * A local path starts with a single {@code /} followed by something other than {@code /} or {@code \\}, so it
+     * can carry neither a scheme nor an authority. Backslashes, whitespace and control characters are rejected because
+     * browsers normalize or strip them. The check is repeated after each of up to {@value #MAX_DECODE_PASSES}
+     * percent-decodings so an encoded value such as {@code /%2F%2Fhost} cannot become protocol-relative if a later
+     * consumer decodes it again; values still changing after that are rejected.
+     */
+    protected boolean isLocalPath(final String url) {
+        if (url == null) {
+            return false;
+        }
+        String candidate = url;
+        for (int pass = 0; pass <= MAX_DECODE_PASSES; pass++) {
+            if (!isLocalPathSyntax(candidate)) {
+                return false;
+            }
+            final String decoded = percentDecode(candidate);
+            if (decoded.equals(candidate)) {
+                return true;
+            }
+            candidate = decoded;
+        }
+        return false;
+    }
+
+    /**
+     * Decodes valid {@code %XX} escapes as UTF-8, leaving malformed escapes and {@code +} untouched (unlike
+     * {@link java.net.URLDecoder}, which throws on the former and turns the latter into a space).
+     */
+    private static String percentDecode(final String value) {
+        if (value.indexOf('%') < 0) {
+            return value;
+        }
+        final StringBuilder result = new StringBuilder(value.length());
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int i = 0;
+        while (i < value.length()) {
+            final char c = value.charAt(i);
+            if (c == '%' && i + 2 < value.length() && isHex(value.charAt(i + 1)) && isHex(value.charAt(i + 2))) {
+                bytes.write(Character.digit(value.charAt(i + 1), 16) << 4 | Character.digit(value.charAt(i + 2), 16));
+                i += 3;
+            } else {
+                if (bytes.size() > 0) {
+                    result.append(bytes.toString(StandardCharsets.UTF_8));
+                    bytes.reset();
+                }
+                result.append(c);
+                i++;
             }
         }
+        if (bytes.size() > 0) {
+            result.append(bytes.toString(StandardCharsets.UTF_8));
+        }
+        return result.toString();
+    }
 
-        return url;
+    private static boolean isHex(final char c) {
+        return Character.digit(c, 16) >= 0 && c < 128;
+    }
+
+    private static boolean isLocalPathSyntax(final String url) {
+        if (url.isEmpty() || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            final char c = url.charAt(i);
+            if (c == '\\' || Character.isISOControl(c) || Character.isWhitespace(c) || Character.isSpaceChar(c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public void setExceptionMappings(final Map<String, String> failureUrlMap) {
