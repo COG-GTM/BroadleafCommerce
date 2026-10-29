@@ -50,8 +50,9 @@ class AdminTranslationControllerSpec extends Specification {
         }
     }
 
-    def translation(TranslatedEntity type, String entityId, String fieldName) {
+    def translation(TranslatedEntity type, String entityId, String fieldName, Long id = 42L) {
         Translation translation = Mock(Translation)
+        translation.getId() >> id
         translation.getEntityType() >> type
         translation.getEntityId() >> entityId
         translation.getFieldName() >> fieldName
@@ -82,6 +83,7 @@ class AdminTranslationControllerSpec extends Specification {
         given:
         Translation stored = translation(TranslatedEntity.CATEGORY, "2001", "name")
         translationService.findTranslationById(42L) >> stored
+        translationService.getTranslations(CATEGORY, "2001", "name") >> [stored]
 
         when:
         def result = controller.checkTranslationAccess(form(CATEGORY, 42L, "2001", "name"), EntityOperationType.UPDATE)
@@ -105,9 +107,26 @@ class AdminTranslationControllerSpec extends Specification {
         thrown(SecurityServiceException)
     }
 
+    def "a sandbox copy's id is resolved the same way as the translation list"() {
+        given:
+        Translation stored = translation(TranslatedEntity.CATEGORY, "100", "name")
+        translationService.findTranslationById(42L) >> stored
+        translationService.getTranslations(CATEGORY, "501", "name") >> [stored]
+
+        when:
+        def result = controller.checkTranslationAccess(form(CATEGORY, 42L, "501", "name"), EntityOperationType.UPDATE)
+
+        then:
+        1 * securityVerifier.securityCheck(CATEGORY, EntityOperationType.UPDATE)
+        result.is(stored)
+    }
+
     def "a translation of a different record or property of the same entity type is rejected"() {
         given:
         translationService.findTranslationById(42L) >> translation(TranslatedEntity.CATEGORY, "2001", "name")
+        translationService.getTranslations(CATEGORY, "9999", "name") >> [translation(TranslatedEntity.CATEGORY, "9999", "name", 77L)]
+        translationService.getTranslations(CATEGORY, "2001", "description") >> []
+        translationService.getTranslations(CATEGORY, "abc", "name") >> { throw new NumberFormatException("abc") }
 
         when:
         controller.checkTranslationAccess(form(CATEGORY, 42L, entityId, propertyName), EntityOperationType.UPDATE)
@@ -120,6 +139,9 @@ class AdminTranslationControllerSpec extends Specification {
         entityId | propertyName
         "9999"   | "name"
         "2001"   | "description"
+        "abc"    | "name"
+        "2001"   | null
+        null     | "name"
     }
 
     def "unknown, missing or unidentified translations are rejected"() {

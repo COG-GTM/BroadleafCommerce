@@ -457,16 +457,44 @@ public class AdminTranslationController extends AdminAbstractController {
             requestedType = null;
         }
         boolean belongsToRequest = translation.getEntityType().equals(requestedType)
-                && (StringUtils.isBlank(form.getEntityId())
-                        || StringUtils.equals(form.getEntityId(), translation.getEntityId()))
-                && (StringUtils.isBlank(form.getPropertyName())
-                        || StringUtils.equals(form.getPropertyName(), translation.getFieldName()));
+                && belongsToSubmittedField(form, translation);
         if (!belongsToRequest) {
             throw new SecurityServiceException("Security Check Failed: translation " + form.getTranslationId()
                     + " does not belong to the requested entity");
         }
         adminRemoteSecurityService.securityCheck(form.getCeilingEntity(), operationType);
         return translation;
+    }
+
+    /**
+     * When the form names a specific entity and property, the translation must be one of that field's translations.
+     * The lookup goes through {@link TranslationService#getTranslations(String, String, String)} so sandbox entity
+     * ids are resolved to their original ids exactly as they are when the translation list is rendered.
+     */
+    protected boolean belongsToSubmittedField(TranslationForm form, Translation translation) {
+        if (StringUtils.isBlank(form.getEntityId()) && StringUtils.isBlank(form.getPropertyName())) {
+            return true;
+        }
+        if (StringUtils.isBlank(form.getEntityId()) || StringUtils.isBlank(form.getPropertyName())) {
+            return false;
+        }
+        List<Translation> fieldTranslations;
+        try {
+            fieldTranslations = translationService.getTranslations(
+                    form.getCeilingEntity(), form.getEntityId(), form.getPropertyName()
+            );
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (fieldTranslations == null) {
+            return false;
+        }
+        for (Translation fieldTranslation : fieldTranslations) {
+            if (fieldTranslation != null && form.getTranslationId().equals(fieldTranslation.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
