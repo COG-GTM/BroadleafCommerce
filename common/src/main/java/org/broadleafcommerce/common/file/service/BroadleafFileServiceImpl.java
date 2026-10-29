@@ -26,9 +26,11 @@ import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.extension.ExtensionResultHolder;
 import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.file.FileServiceException;
+import org.broadleafcommerce.common.file.ResourcePathUtils;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 import org.broadleafcommerce.common.file.service.type.FileApplicationType;
 import org.broadleafcommerce.common.sitemap.service.SiteMapGenerator;
+import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -38,6 +40,8 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -138,11 +142,19 @@ public class BroadleafFileServiceImpl implements BroadleafFileService {
     }
 
     protected File getLocalResource(String resourceName, boolean skipSite) {
+        if (ResourcePathUtils.containsParentDirectorySegment(resourceName)) {
+            throw new FileServiceException("Resource name must not contain a parent directory segment: "
+                    + StringUtil.sanitize(resourceName));
+        }
         if (skipSite) {
             String baseDirectory = getBaseDirectory(skipSite);
             // convert the separators to the system this is currently run on
             String systemResourcePath = FilenameUtils.separatorsToSystem(resourceName);
             String filePath = FilenameUtils.normalize(baseDirectory + File.separator + systemResourcePath);
+            if (filePath == null || !isWithinDirectory(baseDirectory, filePath)) {
+                throw new FileServiceException("Resource resolves outside of the file service base directory: "
+                        + StringUtil.sanitize(resourceName));
+            }
             return new File(filePath);
         } else {
             String baseDirectory = getBaseDirectory(true);
@@ -195,10 +207,20 @@ public class BroadleafFileServiceImpl implements BroadleafFileService {
 
     protected ClassPathResource lookupResourceOnClassPath(String name) {
         if (fileServiceClasspathDirectory != null && !"".equals(fileServiceClasspathDirectory)) {
+            if (ResourcePathUtils.containsParentDirectorySegment(name)) {
+                LOG.warn("Rejecting classpath resource lookup with a parent directory segment: "
+                        + StringUtil.sanitize(name));
+                return null;
+            }
             try {
                 String resourceName = FilenameUtils.separatorsToUnix(
                         FilenameUtils.normalize(fileServiceClasspathDirectory + '/' + name)
                 );
+                if (resourceName == null || !isWithinClasspathDirectory(resourceName)) {
+                    LOG.warn("Rejecting classpath resource lookup outside of the configured directory: "
+                            + StringUtil.sanitize(name));
+                    return null;
+                }
                 ClassPathResource resource = new ClassPathResource(resourceName);
                 if (resource.exists()) {
                     return resource;
@@ -208,6 +230,32 @@ public class BroadleafFileServiceImpl implements BroadleafFileService {
             }
         }
         return null;
+    }
+
+    /**
+     * Returns true if the given path, once normalized, is located inside the given directory.
+     */
+    protected boolean isWithinDirectory(String directory, String path) {
+        Path directoryPath = Paths.get(directory).toAbsolutePath().normalize();
+        Path resolvedPath = Paths.get(path).toAbsolutePath().normalize();
+        return resolvedPath.startsWith(directoryPath);
+    }
+
+    /**
+     * Returns true if the given normalized, unix separated classpath resource name is located strictly inside
+     * {@link #fileServiceClasspathDirectory}.
+     */
+    protected boolean isWithinClasspathDirectory(String resourceName) {
+        String directory = FilenameUtils.normalizeNoEndSeparator(fileServiceClasspathDirectory, true);
+        if (directory == null) {
+            return false;
+        }
+        String resource = StringUtils.removeStart(resourceName, "/");
+        directory = StringUtils.removeStart(directory, "/");
+        if (directory.isEmpty()) {
+            return !resource.isEmpty();
+        }
+        return resource.startsWith(directory + "/") && resource.length() > directory.length() + 1;
     }
 
     @Override

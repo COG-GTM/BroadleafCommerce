@@ -36,6 +36,7 @@ import org.broadleafcommerce.cms.file.domain.ImageStaticAssetImpl;
 import org.broadleafcommerce.cms.file.domain.StaticAsset;
 import org.broadleafcommerce.cms.file.domain.StaticAssetImpl;
 import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
+import org.broadleafcommerce.common.file.ResourcePathUtils;
 import org.broadleafcommerce.common.file.service.StaticAssetPathService;
 import org.broadleafcommerce.common.util.StringUtil;
 import org.broadleafcommerce.common.util.TransactionUtils;
@@ -267,6 +268,10 @@ public class StaticAssetServiceImpl implements StaticAssetService {
         urlBuilder.append(fullUrl);
         ExtensionResultStatusType resultStatusType = staticAssetExtensionManager.getProxy().modifyDuplicateAssetURL(urlBuilder);
         fullUrl = urlBuilder.toString();
+        if (ResourcePathUtils.containsParentDirectorySegment(fullUrl)) {
+            throw new IllegalArgumentException("Asset URL must not contain a parent directory segment: "
+                    + StringUtil.sanitize(fullUrl));
+        }
         StaticAsset newAsset = staticAssetDao.readStaticAssetByFullUrl(fullUrl);
         // If no ExtensionManager modified the URL to handle duplicates, then go ahead and run default
         // logic for handling duplicate files.

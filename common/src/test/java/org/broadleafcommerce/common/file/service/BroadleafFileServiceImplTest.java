@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.common.file.service;
 
+import org.broadleafcommerce.common.file.FileServiceException;
 import org.broadleafcommerce.common.file.domain.FileWorkArea;
 
 import java.io.File;
@@ -148,5 +149,42 @@ public class BroadleafFileServiceImplTest extends TestCase {
 
         resource = bfs.getResource("test5.txt");
         assertFalse(resource.exists());
+    }
+    public void testSharedLocalResourceRejectsParentDirectorySegments() throws Exception {
+        String[] names = {"/a/b/../../../x.png", "/a/b/c/../../../../application.properties", "\\a\\..\\..\\x.png", "/.."};
+        for (String name : names) {
+            try {
+                bfs.getSharedLocalResource(name);
+                fail("Expected a FileServiceException for " + name);
+            } catch (FileServiceException e) {
+                // expected
+            }
+        }
+    }
+
+    public void testLocalResourceRejectsParentDirectorySegments() throws Exception {
+        try {
+            bfs.getLocalResource("/a/../../x.png");
+            fail("Expected a FileServiceException");
+        } catch (FileServiceException e) {
+            // expected
+        }
+    }
+
+    public void testSharedLocalResourceIsUnderBaseDirectory() throws Exception {
+        File baseDirectory = new File(bfs.getBaseDirectory(true)).getCanonicalFile();
+        File resource = bfs.getSharedLocalResource("/a/b/./x---1234.png").getCanonicalFile();
+        assertTrue(resource.getPath().startsWith(baseDirectory.getPath() + File.separator));
+        assertEquals("x---1234.png", resource.getName());
+    }
+
+    public void testClasspathLookupStaysInClasspathDirectory() throws Exception {
+        bfs.fileServiceClasspathDirectory = "org/broadleafcommerce/common/file";
+        assertTrue(bfs.checkForResourceOnClassPath("/service/BroadleafFileServiceImpl.class"));
+        assertFalse(bfs.checkForResourceOnClassPath("/../file/service/BroadleafFileServiceImpl.class"));
+        assertFalse(bfs.checkForResourceOnClassPath("/../../../../junit/framework/TestCase.class"));
+        assertFalse(bfs.checkForResourceOnClassPath("\\..\\..\\..\\..\\junit\\framework\\TestCase.class"));
+        assertFalse(bfs.checkForResourceOnClassPath("/../application.properties"));
+        assertNull(bfs.getClasspathResource("/../../../../junit/framework/TestCase.class"));
     }
 }
