@@ -78,7 +78,7 @@ public class OfferCodeCustomPersistenceHandler extends ClassCustomPersistenceHan
         Entity entity = persistencePackage.getEntity();
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            OfferCode offerCodeInstance = (OfferCode) Class.forName(entity.getType()[0]).newInstance();
+            OfferCode offerCodeInstance = newValidatedEntityInstance(entity, OfferCode.class, dynamicEntityDao);
             Map<String, FieldMetadata> offerCodeProperties = helper.getSimpleMergedProperties(
                     OfferCode.class.getName(), persistencePerspective
             );
@@ -110,7 +110,7 @@ public class OfferCodeCustomPersistenceHandler extends ClassCustomPersistenceHan
             );
             Object primaryKey = helper.getPrimaryKey(entity, offerCodeProperties);
             OfferCode offerCodeInstance = (OfferCode) dynamicEntityDao.retrieve(
-                    Class.forName(entity.getType()[0]), primaryKey
+                    getValidatedEntityClass(entity, OfferCode.class, dynamicEntityDao), primaryKey
             );
             offerCodeInstance = (OfferCode) helper.createPopulatedInstance(
                     offerCodeInstance, entity, offerCodeProperties, false

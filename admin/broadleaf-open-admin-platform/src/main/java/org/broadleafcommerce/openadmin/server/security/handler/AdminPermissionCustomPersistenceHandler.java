@@ -74,7 +74,7 @@ public class AdminPermissionCustomPersistenceHandler extends CustomPersistenceHa
         Entity entity = checkPermissionName(persistencePackage);
         try {
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            AdminPermission adminInstance = (AdminPermission) Class.forName(entity.getType()[0]).newInstance();
+            AdminPermission adminInstance = newValidatedEntityInstance(entity, AdminPermission.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(
                     AdminPermission.class.getName(), persistencePerspective
             );
@@ -123,7 +123,7 @@ public class AdminPermissionCustomPersistenceHandler extends CustomPersistenceHa
             );
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
             AdminPermission adminInstance = (AdminPermission) dynamicEntityDao.retrieve(
-                    Class.forName(entity.getType()[0]), primaryKey
+                    getValidatedEntityClass(entity, AdminPermission.class, dynamicEntityDao), primaryKey
             );
             adminInstance = (AdminPermission) helper.createPopulatedInstance(
                     adminInstance, entity, adminProperties, false

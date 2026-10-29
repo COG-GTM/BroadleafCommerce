@@ -740,7 +740,7 @@ public class SkuCustomPersistenceHandler extends CustomPersistenceHandlerAdapter
 
             //Fill out the Sku instance from the form
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
-            Sku adminInstance = (Sku) Class.forName(entity.getType()[0]).newInstance();
+            Sku adminInstance = newValidatedEntityInstance(entity, Sku.class, dynamicEntityDao);
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(Sku.class.getName(), persistencePerspective);
             filterOutProductMetadata(adminProperties);
             adminInstance = (Sku) helper.createPopulatedInstance(adminInstance, entity, adminProperties, false);
@@ -803,7 +803,7 @@ public class SkuCustomPersistenceHandler extends CustomPersistenceHandlerAdapter
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(Sku.class.getName(), persistencePerspective);
             filterOutProductMetadata(adminProperties);
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Sku adminInstance = (Sku) dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Sku adminInstance = (Sku) dynamicEntityDao.retrieve(getValidatedEntityClass(entity, Sku.class, dynamicEntityDao), primaryKey);
             adminInstance = (Sku) helper.createPopulatedInstance(adminInstance, entity, adminProperties, false);
 
             //Verify that there isn't already a Sku for this particular product option value combo

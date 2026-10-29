@@ -43,6 +43,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -59,6 +60,10 @@ import jakarta.servlet.http.HttpServletResponse;
 public class BroadleafAdminRequestFilter extends AbstractBroadleafAdminRequestFilter {
 
     private final Log LOG = LogFactory.getLog(BroadleafAdminRequestFilter.class);
+
+    protected static final Pattern DYNAMIC_FORM_CLASS_NAME_PARAM = Pattern.compile(
+            "^dynamicForms\\[[^\\]]*\\]\\.(entityType|ceilingEntityClassname)$"
+    );
 
     @Autowired
     @Qualifier("blAdminRequestProcessor")
@@ -145,6 +150,13 @@ public class BroadleafAdminRequestFilter extends AbstractBroadleafAdminRequestFi
         params.put("ceilingEntity", ceilingEntity);
         params.put("ceilingEntityFullyQualifiedClassname", ceilingEntityFullyQualifiedClassname);
         params.put("__originalType", originalType);
+        Enumeration<String> parameterNames = request.getParameterNames();
+        while (parameterNames != null && parameterNames.hasMoreElements()) {
+            String parameterName = parameterNames.nextElement();
+            if (DYNAMIC_FORM_CLASS_NAME_PARAM.matcher(parameterName).matches()) {
+                params.put(parameterName, request.getParameter(parameterName));
+            }
+        }
         return validationService.validateClassNameParams(params, "blPU");
     }
 

@@ -17,6 +17,8 @@
  */
 package org.broadleafcommerce.openadmin.server.service.handler;
 
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.presentation.client.OperationType;
 import org.broadleafcommerce.common.util.dao.DynamicDaoHelperImpl;
@@ -167,6 +169,46 @@ public class CustomPersistenceHandlerAdapter implements CustomPersistenceHandler
             result[i] = classes[i].getName();
         }
         return result;
+    }
+
+    /**
+     * Resolves the entity class requested in {@code entity.getType()[0]} without loading arbitrary classes by name.
+     * The requested type is only accepted if it is the given ceiling class itself or one of the registered
+     * persistent entities polymorphic to it; anything else is rejected before any class is loaded or instantiated.
+     */
+    protected Class<?> getValidatedEntityClass(
+            Entity entity,
+            Class<?> ceilingClass,
+            DynamicEntityDao dynamicEntityDao
+    ) throws ServiceException {
+        String requestedType = (entity == null || ArrayUtils.isEmpty(entity.getType())) ? null : entity.getType()[0];
+        if (StringUtils.isNotBlank(requestedType)) {
+            if (ceilingClass.getName().equals(requestedType)) {
+                return ceilingClass;
+            }
+            Class<?>[] entities = dynamicEntityDao.getAllPolymorphicEntitiesFromCeiling(ceilingClass);
+            if (entities != null) {
+                for (Class<?> candidate : entities) {
+                    if (candidate.getName().equals(requestedType)) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        throw new ServiceException("Entity type is not a registered " + ceilingClass.getName() + " entity");
+    }
+
+    protected <T> T newValidatedEntityInstance(
+            Entity entity,
+            Class<T> ceilingClass,
+            DynamicEntityDao dynamicEntityDao
+    ) throws ServiceException {
+        Class<?> entityClass = getValidatedEntityClass(entity, ceilingClass, dynamicEntityDao);
+        try {
+            return ceilingClass.cast(entityClass.getDeclaredConstructor().newInstance());
+        } catch (ReflectiveOperationException e) {
+            throw new ServiceException("Unable to instantiate " + entityClass.getName(), e);
+        }
     }
 
     protected Class getClassForName(String ceilingEntityFullyQualifiedClassname) {
