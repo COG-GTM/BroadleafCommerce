@@ -25,6 +25,8 @@ import org.springframework.security.web.RedirectStrategy;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -37,6 +39,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class LocalRedirectStrategy implements RedirectStrategy {
 
     private static final Log LOG = LogFactory.getLog(LocalRedirectStrategy.class);
+    private static final int MAX_DECODE_PASSES = 3;
     private boolean contextRelative = false;
     private boolean enforcePortMatch = false;
 
@@ -50,11 +53,13 @@ public class LocalRedirectStrategy implements RedirectStrategy {
      */
     @Override
     public void sendRedirect(HttpServletRequest request, HttpServletResponse response, String url) throws IOException {
-        if (!url.startsWith("/")) {
-            if (StringUtils.equals(request.getParameter("successUrl"), url)
-                    || StringUtils.equals(request.getParameter("failureUrl"), url)) {
-                validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
+        if (url.startsWith("/") || url.startsWith("\\")) {
+            if (!isLocalPath(url)) {
+                rejectRedirectUrl(url);
             }
+        } else if (StringUtils.equals(request.getParameter("successUrl"), url)
+                || StringUtils.equals(request.getParameter("failureUrl"), url)) {
+            validateRedirectUrl(request.getContextPath(), url, request.getServerName(), request.getServerPort());
         }
         String redirectUrl = calculateRedirectUrl(request.getContextPath(), url);
         redirectUrl = response.encodeRedirectURL(redirectUrl);
@@ -120,9 +125,90 @@ public class LocalRedirectStrategy implements RedirectStrategy {
                 }
             }
         }
+        rejectRedirectUrl(url);
+    }
+
+    protected void rejectRedirectUrl(String url) throws MalformedURLException {
         String errorMessage = "Invalid redirect url specified.  Must be of the form /<relative view> or http[s]://<server name>[:<server port>][/<context path>]/...";
         LOG.warn(errorMessage + ":  " + url);
         throw new MalformedURLException(errorMessage + ":  " + url);
+    }
+
+    /**
+     * Whether the url is a path on the current server: a single leading {@code /} followed by a path, with no
+     * scheme, authority ({@code //host}), backslash, dot segment or whitespace/control characters. The path portion
+     * is also checked after percent-decoding, so encoded delimiters such as {@code %2f}, {@code %5c} or
+     * {@code %2e%2e} cannot hide an authority. Browsers treat {@code //host}, {@code /\host} and
+     * {@code /<tab>/host} as links to {@code host}, so such values must never be used as a local redirect target.
+     * The query and fragment may contain spaces (servlet parameters arrive decoded) but no control characters.
+     *
+     * @param url the url to check
+     * @return true if the url is safe to use as a local redirect target
+     */
+    public static boolean isLocalPath(String url) {
+        if (url == null) {
+            return false;
+        }
+        int queryOrFragment = StringUtils.indexOfAny(url, "?#");
+        String path = queryOrFragment < 0 ? url : url.substring(0, queryOrFragment);
+        String queryAndFragment = queryOrFragment < 0 ? "" : url.substring(queryOrFragment);
+        if (!hasLocalPathSyntax(path, false) || containsControlCharacter(queryAndFragment)) {
+            return false;
+        }
+        for (int i = 0; i < MAX_DECODE_PASSES; i++) {
+            if (hasDotSegment(path)) {
+                return false;
+            }
+            String decoded;
+            try {
+                decoded = URLDecoder.decode(path.replace("+", "%2B"), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+            if (decoded.equals(path)) {
+                return true;
+            }
+            if (!hasLocalPathSyntax(decoded, true)) {
+                return false;
+            }
+            path = decoded;
+        }
+        return false;
+    }
+
+    private static boolean hasLocalPathSyntax(String value, boolean allowSpace) {
+        if (value.isEmpty() || value.charAt(0) != '/') {
+            return false;
+        }
+        if (value.length() > 1 && (value.charAt(1) == '/' || value.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\\' || Character.isISOControl(c)
+                    || ((Character.isWhitespace(c) || Character.isSpaceChar(c)) && !(allowSpace && c == ' '))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsControlCharacter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasDotSegment(String path) {
+        for (String segment : StringUtils.splitPreserveAllTokens(path, "/?#;")) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
