@@ -26,9 +26,13 @@ import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 import java.net.SocketException;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -43,6 +47,23 @@ public class StaticAssetView implements View {
     protected boolean browserAssetCachingEnabled = true;
     protected long cacheSeconds = 60 * 60 * 24;
 
+    /**
+     * MIME types that a browser would execute as a document (and so could run script on the asset host) if they were
+     * opened directly. These are still served, so they keep working when embedded (e.g. an SVG in an img tag), but are
+     * sandboxed and downloaded instead of rendered when navigated to.
+     */
+    protected Set<String> activeContentMimeTypes = new HashSet<>(Arrays.asList(
+            "text/html",
+            "application/xhtml+xml",
+            "image/svg+xml",
+            "text/xml",
+            "application/xml",
+            "text/xsl",
+            "application/xslt+xml",
+            "application/vnd.wap.xhtml+xml",
+            "multipart/x-mixed-replace"
+    ));
+
     @Override
     public String getContentType() {
         return null;
@@ -55,6 +76,7 @@ public class StaticAssetView implements View {
         try {
             String mimeType = (String) model.get("mimeType");
             response.setContentType(mimeType);
+            applyContentSecurityHeaders(mimeType, response);
             if (!browserAssetCachingEnabled) {
                 response.setHeader("Cache-Control", "no-cache");
                 response.setHeader("Pragma", "no-cache");
@@ -109,6 +131,30 @@ public class StaticAssetView implements View {
                 //do nothing
             }
         }
+    }
+
+    protected void applyContentSecurityHeaders(String mimeType, HttpServletResponse response) {
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        if (isActiveContent(mimeType)) {
+            response.setHeader("Content-Disposition", "attachment");
+            response.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+        }
+    }
+
+    protected boolean isActiveContent(String mimeType) {
+        if (StringUtils.isBlank(mimeType)) {
+            return false;
+        }
+        String baseType = StringUtils.substringBefore(mimeType, ";").trim().toLowerCase(Locale.ROOT);
+        return activeContentMimeTypes.contains(baseType);
+    }
+
+    public Set<String> getActiveContentMimeTypes() {
+        return activeContentMimeTypes;
+    }
+
+    public void setActiveContentMimeTypes(Set<String> activeContentMimeTypes) {
+        this.activeContentMimeTypes = activeContentMimeTypes;
     }
 
     public boolean isBrowserAssetCachingEnabled() {

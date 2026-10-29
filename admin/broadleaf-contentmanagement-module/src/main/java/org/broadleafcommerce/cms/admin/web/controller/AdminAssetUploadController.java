@@ -21,7 +21,11 @@ import org.broadleafcommerce.cms.file.domain.ImageStaticAssetImpl;
 import org.broadleafcommerce.cms.file.domain.StaticAsset;
 import org.broadleafcommerce.cms.file.service.StaticAssetService;
 import org.broadleafcommerce.cms.file.service.StaticAssetStorageService;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
+import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
+import org.broadleafcommerce.openadmin.server.security.service.RowLevelSecurityService;
 import org.broadleafcommerce.openadmin.server.service.handler.CustomPersistenceHandler;
 import org.broadleafcommerce.openadmin.web.controller.AdminAbstractController;
 import org.broadleafcommerce.openadmin.web.controller.modal.ModalHeaderType;
@@ -34,6 +38,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -74,11 +79,16 @@ public class AdminAssetUploadController extends AdminAbstractController {
     @Resource(name = "blAdminAssetController")
     protected AdminAssetController assetController;
 
+    @Resource(name = "blRowLevelSecurityService")
+    protected RowLevelSecurityService rowLevelSecurityService;
+
     @RequestMapping(value = "/{id}/chooseAsset", method = RequestMethod.GET)
     public String chooseMediaForMapKey(HttpServletRequest request, HttpServletResponse response, Model model,
                                        @PathVariable(value = "sectionKey") String sectionKey,
                                        @PathVariable(value = "id") String id,
                                        @RequestParam MultiValueMap<String, String> requestParams) throws Exception {
+        checkStaticAssetPermission(EntityOperationType.FETCH);
+
         Map<String, String> pathVars = new HashMap<String, String>();
         pathVars.put("sectionKey", AdminAssetController.SECTION_KEY);
         assetController.viewEntityList(request, response, model, pathVars, requestParams);
@@ -106,7 +116,9 @@ public class AdminAssetUploadController extends AdminAbstractController {
     @RequestMapping(value = "/{id}/uploadAsset", method = RequestMethod.POST, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> upload(HttpServletRequest request,
                                                       @RequestParam("file") MultipartFile file,
-                                                      @PathVariable(value = "sectionKey") String sectionKey, @PathVariable(value = "id") String id) throws IOException {
+                                                      @PathVariable(value = "sectionKey") String sectionKey, @PathVariable(value = "id") String id) throws IOException, SecurityServiceException {
+        checkStaticAssetPermission(EntityOperationType.ADD);
+
         Map<String, Object> responseMap = new HashMap<String, Object>();
 
         Map<String, String> properties = new HashMap<String, String>();
@@ -154,6 +166,7 @@ public class AdminAssetUploadController extends AdminAbstractController {
                          @PathVariable Map<String, String> pathVars,
                          @RequestParam("file") MultipartFile file,
                          @RequestParam MultiValueMap<String, String> requestParams) throws Exception {
+        checkStaticAssetPermission(EntityOperationType.ADD);
 
         StaticAsset staticAsset = staticAssetService.createStaticAssetFromFile(file, null);
         staticAssetStorageService.createStaticAssetStorageFromFile(file, staticAsset);
@@ -181,7 +194,35 @@ public class AdminAssetUploadController extends AdminAbstractController {
                                                       @RequestParam("file") MultipartFile file,
                                                       @PathVariable(value = "sectionKey") String sectionKey,
                                                       @PathVariable(value = "addlSectionKey") String addlSectionKey,
-                                                      @PathVariable(value = "id") String id) throws IOException {
+                                                      @PathVariable(value = "id") String id) throws IOException, SecurityServiceException {
         return upload(request, file, sectionKey, id);
+    }
+
+    /**
+     * These handlers call the asset services directly instead of going through the persistence manager, so they must
+     * apply the same {@link StaticAsset} entity permission (and, for adds, row-level) checks themselves. The section
+     * key in the URL only identifies where the asset will be attached and grants nothing.
+     */
+    protected void checkStaticAssetPermission(EntityOperationType operationType) throws SecurityServiceException {
+        String ceilingEntity = StaticAsset.class.getName();
+        try {
+            adminRemoteSecurityService.securityCheck(ceilingEntity, operationType);
+        } catch (SecurityServiceException e) {
+            throw e;
+        } catch (ServiceException e) {
+            throw new SecurityServiceException("Security check failed for " + operationType + " on " + ceilingEntity, e);
+        }
+
+        if (EntityOperationType.ADD == operationType
+                && !rowLevelSecurityService.canAdd(adminRemoteSecurityService.getPersistentAdminUser(), ceilingEntity, null)) {
+            throw new SecurityServiceException("Row level security check failed for " + operationType + " on " + ceilingEntity);
+        }
+    }
+
+    @ExceptionHandler(SecurityServiceException.class)
+    public ResponseEntity<Map<String, Object>> handleSecurityServiceException(SecurityServiceException e) {
+        Map<String, Object> responseMap = new HashMap<String, Object>();
+        responseMap.put("error", "Access is denied");
+        return new ResponseEntity<Map<String, Object>>(responseMap, new HttpHeaders(), HttpStatus.FORBIDDEN);
     }
 }
