@@ -119,12 +119,12 @@ public class BroadleafSandBoxResolverImpl implements BroadleafSandBoxResolver {
                 LOG.trace("Sandbox preview disabled. Setting sandbox to production");
             }
             request.setAttribute(SANDBOX_VAR, currentSandbox, WebRequest.SCOPE_REQUEST);
-        } else if (crossAppAuthService != null && !crossAppAuthService.isAuthedFromAdmin()) {
+        } else if (!isAuthenticatedForPreview()) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Sandbox preview attempted without authentication");
             }
             request.setAttribute(SANDBOX_VAR, currentSandbox, WebRequest.SCOPE_REQUEST);
-        } else if (crossAppAuthService != null && crossAppAuthService.hasCsrPermission()) {
+        } else if (crossAppAuthService.hasCsrPermission()) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Sandbox preview attempted in CSR mode");
             }
@@ -183,6 +183,15 @@ public class BroadleafSandBoxResolverImpl implements BroadleafSandBoxResolver {
         request.setAttribute(SANDBOX_DISPLAY_DATE_TIME_MINUTES_PARAM, CONTENT_DATE_DISPLAY_MINUTES_FORMATTER.format(currentSystemDateTime), WebRequest.SCOPE_REQUEST);
         request.setAttribute(SANDBOX_DISPLAY_DATE_TIME_AMPM_PARAM, sandboxDateTimeCalendar.get(Calendar.AM_PM), WebRequest.SCOPE_REQUEST);
         return currentSandbox;
+    }
+
+    /**
+     * Sandbox preview (including the date/time override) is only honored for a session that has proven an admin
+     * login through {@link CrossAppAuthService}. Without that service there is no way to verify the caller, so
+     * preview is denied.
+     */
+    protected boolean isAuthenticatedForPreview() {
+        return crossAppAuthService != null && crossAppAuthService.isAuthedFromAdmin();
     }
 
     /**
