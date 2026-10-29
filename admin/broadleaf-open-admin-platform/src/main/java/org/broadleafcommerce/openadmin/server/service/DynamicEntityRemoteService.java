@@ -42,6 +42,7 @@ import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceMan
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceManagerFactory;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceResponse;
 import org.broadleafcommerce.openadmin.server.service.persistence.PersistenceThreadManager;
+import org.broadleafcommerce.openadmin.web.form.entity.DynamicEntityFormInfo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,6 +50,7 @@ import org.springframework.transaction.TransactionDefinition;
 
 import java.lang.reflect.Constructor;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -201,6 +203,30 @@ public class DynamicEntityRemoteService implements DynamicEntityService {
                 cleanEntity(subPackage.getEntity());
             }
             cleanSubPackages(subPackage);
+            propagateNestedValidationErrors(subPackage);
+        }
+    }
+
+    /**
+     * PersistenceManagerImpl only collects the validation errors of the root's direct sub-packages, so errors found on
+     * deeper sub-packages are copied up (keyed as {@code nestedKey|field}) to make the direct sub-package fail as well.
+     */
+    protected void propagateNestedValidationErrors(PersistencePackage subPackage) {
+        if (subPackage.getEntity() == null || MapUtils.isEmpty(subPackage.getSubPackages())) {
+            return;
+        }
+        for (Map.Entry<String, PersistencePackage> nested : subPackage.getSubPackages().entrySet()) {
+            Entity nestedEntity = nested.getValue() == null ? null : nested.getValue().getEntity();
+            if (nestedEntity == null || MapUtils.isEmpty(nestedEntity.getPropertyValidationErrors())) {
+                continue;
+            }
+            for (Map.Entry<String, List<String>> error : nestedEntity.getPropertyValidationErrors().entrySet()) {
+                for (String message : error.getValue()) {
+                    subPackage.getEntity().addValidationError(
+                            nested.getKey() + DynamicEntityFormInfo.FIELD_SEPARATOR + error.getKey(), message
+                    );
+                }
+            }
         }
     }
 

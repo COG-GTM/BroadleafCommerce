@@ -60,7 +60,7 @@ class DynamicEntityRemoteServiceCleaningSpec extends Specification {
         dynamicForm.getEntity().findProperty("body").getRawValue() == SCRIPT
     }
 
-    def "nested sub-packages are cleaned recursively"() {
+    def "nested sub-packages are cleaned recursively and their errors fail the direct sub-package"() {
         given:
         PersistencePackage root = pkg(PAGE, entity("description", "About us"))
         PersistencePackage child = pkg(PAGE_TEMPLATE_FIELD, entity("title", "Safe"))
@@ -72,8 +72,10 @@ class DynamicEntityRemoteServiceCleaningSpec extends Specification {
         service.clean(root)
 
         then:
-        !child.getEntity().isValidationFailure()
         grandChild.getEntity().getPropertyValidationErrors().containsKey("body")
+        child.getEntity().isValidationFailure()
+        child.getEntity().getPropertyValidationErrors().containsKey("nested|body")
+        !child.getEntity().getPropertyValidationErrors().containsKey("title")
     }
 
     def "safe sub-package HTML is kept and passes validation"() {
