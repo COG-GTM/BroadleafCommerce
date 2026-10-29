@@ -414,6 +414,31 @@
         },
 
         /**
+         * Builds the read-only summary of a filter rule ("<filter> <operator> <value(s)>") using text nodes only,
+         * so that filter labels and user-supplied values are never interpreted as HTML.
+         * @param tagName - the wrapper element tag (e.g. "div" or "span")
+         * @param cssClass - the wrapper element class
+         * @param filterText - the filter label
+         * @param operatorText - the operator label
+         * @param values - an array of values (or a single value), each rendered in its own <strong>
+         * @param separator - the text placed between values
+         * @returns {jQuery}
+         */
+        getReadOnlyRuleElement: function(tagName, cssClass, filterText, operatorText, values, separator) {
+            var $el = $("<" + tagName + ">", {'class': cssClass});
+            $el.append($("<strong>").text(filterText == null ? '' : String(filterText)));
+            $el.append(document.createTextNode(" " + (operatorText == null ? '' : String(operatorText)) + " "));
+            var valueArray = $.isArray(values) ? values : [values];
+            $.each(valueArray, function(i, v) {
+                if (i > 0) {
+                    $el.append(document.createTextNode(separator));
+                }
+                $el.append($("<strong>", {'class': 'read-only-value'}).text(v == null ? '' : String(v)));
+            });
+            return $el;
+        },
+
+        /**
          * Gets the query variable value from the url for a specific variable
          * @param variable
          * @returns {*}
@@ -518,9 +543,12 @@
                                     $selectize.addItem(Number(dataHydrate[k]), false);
                                     var name = $selectize.getItem(Number(dataHydrate[k])).text();
                                     var $readonly = this.$input.parent().parent().find('.read-only');
-                                    if ($readonly.html() !== undefined) {
-                                        $readonly.html($readonly.html().replace(Number(dataHydrate[k]), name));
-                                    }
+                                    var idText = String(Number(dataHydrate[k]));
+                                    $readonly.find('strong.read-only-value').filter(function () {
+                                        return $(this).text().indexOf(idText) !== -1;
+                                    }).first().each(function () {
+                                        $(this).text($(this).text().replace(idText, name));
+                                    });
                                 }
                             }
                         },
@@ -1016,7 +1044,7 @@
                     rules.splice(i, 1);
                     shouldRefreshFilters = true;
                 } else {
-                    $container.append(asFilterItemHtml(filterBuilder, rules[i]));
+                    $container.append(asFilterItemElement(filterBuilder, rules[i]));
                 }
             }
             if (shouldRefreshFilters) window.location.reload();
@@ -1035,18 +1063,18 @@
                 return false;
             }
 
-            function asFilterItemHtml(filterBuilder, rule) {
+            function asFilterItemElement(filterBuilder, rule) {
                 var field = filterBuilder.getFieldById(rule.id);
-                var label = "<b>" + field.label + "</b>";
                 var operator = filterBuilder.builders.length ? filterBuilder.getOperatorLabelByOperatorType(rule.operator) : rule.operator;
-                var value = "";
+                var values = [];
+                var separator = "";
 
                 switch(rule.operator) {
                     case "IS_NULL":
                         break;
                     case "BETWEEN":
                         var arr = Array.isArray(rule.value) ? rule.value : JSON.parse(rule.value);
-                        value = "<b>" + arr[0] + " AND " + arr[1] + "</b>";
+                        values = [arr[0] + " AND " + arr[1]];
                         break;
                     case "COLLECTION_IN":
                     case "COLLECTION_NOT_IN":
@@ -1064,21 +1092,28 @@
                             async: false,
                         });
                         if (data && data.responseJSON && data.responseJSON.options) {
-                            arr = $.map(data.responseJSON.options, function(o) {
-                                return "<b>" + o.name + "</b>";
+                            values = $.map(data.responseJSON.options, function(o) {
+                                return o.name;
                             });
                         } else {
-                            arr = $.map(arr, function (v) {
-                                return "<b>" + v + "</b>";
-                            });
+                            values = arr;
                         }
-                        value = arr.join(", ");
+                        separator = ", ";
                         break;
                     default:
-                        value = "<b>" + rule.value + "</b>";
+                        values = [rule.value];
                 }
 
-                return "<div class='item filter-pillow'>" + label + " " + operator + " " + value + "</div>";
+                var $item = $("<div>", {'class': 'item filter-pillow'});
+                $item.append($("<b>").text(field.label == null ? '' : String(field.label)));
+                $item.append(document.createTextNode(" " + (operator == null ? '' : String(operator)) + " "));
+                $.each(values, function(i, v) {
+                    if (i > 0) {
+                        $item.append(document.createTextNode(separator));
+                    }
+                    $item.append($("<b>").text(v == null ? '' : String(v)));
+                });
+                return $item;
             }
         },
 
@@ -1200,11 +1235,7 @@ $(document).ready(function() {
 
         el.find('.read-only').remove();
         el.find('.filter-text').remove();
-        var readonlySpan = $("<div>", {
-            html: "<strong>" + filterText + "</strong> " + operatorText + " <strong>" + valueText + "</strong>",
-            'class': "read-only"
-        });
-        el.append($(readonlySpan));
+        el.append(BLCAdmin.filterBuilders.getReadOnlyRuleElement("div", "read-only", filterText, operatorText, valueText, ""));
 
         el.find('.rule-filter-container').hide();
         el.find('.rule-operator-container').hide();
@@ -1270,11 +1301,8 @@ $(document).ready(function() {
 
         // make rule filter field readonly
         var filterText = el.find('div.rule-filter-container > div > div.selectize-input .item').text();
-        var readonlyFilter = $("<span>", {
-            html: "<strong>" + filterText + "</strong>",
-            'class': "filter-text"
-        });
-        el.find('div.rule-filter-container').append($(readonlyFilter));
+        var readonlyFilter = $("<span>", {'class': "filter-text"}).append($("<strong>").text(filterText));
+        el.find('div.rule-filter-container').append(readonlyFilter);
 
         el.find('.rule-filter-container').show();
         el.find('.rule-operator-container').show();
@@ -1436,33 +1464,31 @@ $(document).ready(function() {
             var filterText = el.find('.rule-filter-container .selectize-input .item').text();
             var operatorText = el.find('.rule-operator-container .selectize-input .item').text();
             var valueText = el.find('.rule-value-container .selectize-input .item').text();
+            var values = [valueText];
+            var separator = "";
             if (valueText == '') {
-                var valueArray = [];
-                valueText = el.find('.rule-value-container input');
-                $.each(valueText, function(i, val) {
-                    valueArray.push($(val).val());
+                values = [];
+                $.each(el.find('.rule-value-container input'), function(i, val) {
+                    values.push($(val).val());
                 });
-                valueText = valueArray.join("</strong> and <strong>");
-            }
+                separator = " and ";
 
-            // check for selectize value
-            if (valueText == "</strong> and <strong>") {
-                valueText = el.find('.rule-value-container input').data('hydrate');
-                valueText = valueText.toString().replace(',', "</strong>, <strong>");
+                // check for selectize value
+                if (values.length == 2 && values[0] == '' && values[1] == '') {
+                    var hydrate = el.find('.rule-value-container input').data('hydrate');
+                    values = hydrate == null ? [] : hydrate.toString().split(',');
+                    separator = ", ";
+                }
             }
 
             // if no value is set, this is probably an empty row
-            if (!valueText) {
+            if (!values.join(separator)) {
                 //el.find('.remove-row').click();
                 return;
             }
 
             el.find('.read-only').remove();
-            var readonlySpan = $("<span>", {
-                html: "<strong>" + filterText + "</strong> " + operatorText + " <strong>" + valueText + "</strong>",
-                'class': "read-only"
-        });
-            el.append($(readonlySpan));
+            el.append(BLCAdmin.filterBuilders.getReadOnlyRuleElement("span", "read-only", filterText, operatorText, values, separator));
 
             el.find('div.rule-filter-container > div > div.selectize-input').hide();
             el.find('.rule-filter-container').hide();
