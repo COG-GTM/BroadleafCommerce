@@ -131,7 +131,14 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         validateCustomerOwnedData(customerAddress);
 
-        customerAddress.setAddress(addressService.copyAddress(customerAddress.getAddress(), form.getAddress()));
+        // Replace rather than update the stored row: past orders (e.g. multiship fulfillment groups) may reference it
+        Address previousAddress = customerAddress.getAddress();
+        Address updatedAddress = addressService.copyAddress(form.getAddress());
+        if (previousAddress != null) {
+            updatedAddress.setDefault(previousAddress.isDefault());
+            updatedAddress.setActive(previousAddress.isActive());
+        }
+        customerAddress.setAddress(updatedAddress);
         customerAddress.setAddressName(form.getAddressName());
         customerAddressService.saveCustomerAddress(customerAddress);
 
