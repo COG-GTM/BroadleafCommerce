@@ -31,13 +31,12 @@ class AdminAccountRecoveryRateLimiterSpec extends Specification {
         limiter.windowSeconds = 900
     }
 
-    def "identifiers that differ only by case or whitespace have separate allowances"() {
+    def "case and whitespace variants of an identifier share one allowance"() {
         expect:
         limiter.tryAcquire("resetPassword", "10.0.0.1", "admin")
-        limiter.tryAcquire("resetPassword", "10.0.0.2", "admin")
-        !limiter.tryAcquire("resetPassword", "10.0.0.3", "admin")
-        limiter.tryAcquire("resetPassword", "10.0.0.4", "Admin")
-        limiter.tryAcquire("resetPassword", "10.0.0.5", " admin ")
+        limiter.tryAcquire("resetPassword", "10.0.0.2", " Admin ")
+        !limiter.tryAcquire("resetPassword", "10.0.0.3", "ADMIN")
+        !limiter.tryAcquire("resetPassword", "10.0.0.4", "aDmIn")
     }
 
     def "client limit applies across identifiers"() {
@@ -85,30 +84,33 @@ class AdminAccountRecoveryRateLimiterSpec extends Specification {
         limiter.tryAcquire("resetPassword", "10.0.0.3", "alice")
     }
 
-    def "tracked keys are capped and new callers are allowed untracked once the cap is reached"() {
+    def "tracked keys are capped by evicting the least recently used key"() {
         given:
         limiter.maxTrackedKeys = 4
 
-        expect:
+        expect: "a and its identifier are tracked and at their limit"
         limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
-        limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
-        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
-        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
-        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
-        limiter.attempts.size() == 4
-
-        and: "callers that are already tracked are still limited"
         limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
         !limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
+
+        and: "new callers beyond the cap are still counted and limited"
+        limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
+        limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
+        !limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
+        limiter.attempts.size() == 4
+
+        and: "the most recently used keys survive eviction"
+        !limiter.tryAcquire("resetPassword", "10.0.0.3", "b")
+        limiter.attempts.size() == 4
+        limiter.attempts.containsKey("resetPassword|id|b")
     }
 
-    def "expired keys are pruned to make room once the cap is reached"() {
+    def "the key map never grows past the cap"() {
         given:
         limiter.maxTrackedKeys = 4
-        limiter.windowSeconds = 0
 
         expect:
         (1..10).every { limiter.tryAcquire("resetPassword", "10.0.0." + it, "user" + it) }
-        limiter.attempts.size() <= 4
+        limiter.attempts.size() == 4
     }
 }

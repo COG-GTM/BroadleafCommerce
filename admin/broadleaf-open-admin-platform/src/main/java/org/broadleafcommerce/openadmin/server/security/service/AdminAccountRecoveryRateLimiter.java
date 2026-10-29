@@ -18,17 +18,15 @@
 package org.broadleafcommerce.openadmin.server.security.service;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.time.SystemTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory, per-node sliding window limiter for the anonymous admin forgot password / forgot username
@@ -36,26 +34,26 @@ import java.util.concurrent.ConcurrentHashMap;
  * Callers must treat a rejected request exactly like an accepted one from the user's point of view so the
  * limiter itself does not become an account enumeration oracle.
  * <p>
- * Identifiers are compared exactly as submitted, matching the exact-match account lookups, so distinct
- * logins never share an allowance.
+ * Identifiers are trimmed and case-folded so that case or whitespace variants which a case-insensitive
+ * database would resolve to the same account cannot be used to get extra allowances for that account.
  * <p>
  * At most {@link #maxTrackedKeys} keys are tracked so that a flood of unique identifiers or addresses cannot
- * exhaust the heap. When that cap is reached and no expired keys can be pruned, requests that would need a
- * new key are allowed without being tracked, so the flood cannot lock legitimate users out of recovery.
+ * exhaust the heap. When the cap is reached the least recently used key is evicted, so a flood can neither
+ * lock legitimate users out nor stop new callers from being counted; resetting a particular caller's
+ * allowance requires pushing {@link #maxTrackedKeys} other keys through the limiter first.
  */
 @Component("blAdminAccountRecoveryRateLimiter")
 public class AdminAccountRecoveryRateLimiter {
 
-    private static final Log LOG = LogFactory.getLog(AdminAccountRecoveryRateLimiter.class);
-
-    protected final Map<String, Deque<Long>> attempts = new ConcurrentHashMap<>();
-
     /**
-     * Earliest time at which a prune can free a key; avoids rescanning a full map on every request.
+     * Access ordered so the eldest entry is the least recently used key. Guarded by this instance's lock.
      */
-    protected volatile long nextPruneAt = 0L;
-
-    protected boolean capReachedLogged = false;
+    protected final LinkedHashMap<String, Deque<Long>> attempts = new LinkedHashMap<String, Deque<Long>>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Deque<Long>> eldest) {
+            return size() > maxTrackedKeys;
+        }
+    };
 
     @Value("${admin.account.recovery.rateLimit.maxPerClient:10}")
     protected int maxAttemptsPerClient = 10;
@@ -77,10 +75,9 @@ public class AdminAccountRecoveryRateLimiter {
      * @param identifier    the submitted username or email address
      * @return true if the request may be processed, false if it should be silently dropped
      */
-    public boolean tryAcquire(String action, String clientAddress, String identifier) {
+    public synchronized boolean tryAcquire(String action, String clientAddress, String identifier) {
         long now = SystemTime.asMillis();
         long windowStart = now - windowSeconds * 1000L;
-        pruneIfNeeded(now, windowStart);
 
         if (!record(action + "|client|" + StringUtils.defaultString(clientAddress),
                 maxAttemptsPerClient, now, windowStart)) {
@@ -95,77 +92,19 @@ public class AdminAccountRecoveryRateLimiter {
         if (max <= 0) {
             return true;
         }
-        Deque<Long> timestamps = attempts.get(key);
-        if (timestamps == null) {
-            timestamps = trackNewKey(key);
-            if (timestamps == null) {
-                return true;
-            }
-        }
-        synchronized (timestamps) {
-            evictOlderThan(timestamps, windowStart);
-            if (timestamps.size() >= max) {
-                return false;
-            }
-            timestamps.addLast(now);
-            return true;
-        }
-    }
-
-    /**
-     * Keys are only added here and only removed in {@link #pruneIfNeeded}, both under this instance's lock, so
-     * the capacity check is exact even under concurrent requests.
-     *
-     * @return the timestamps for the key, or null if the cap has been reached and the key is not tracked
-     */
-    protected synchronized Deque<Long> trackNewKey(String key) {
-        Deque<Long> timestamps = attempts.get(key);
-        if (timestamps == null) {
-            if (attempts.size() >= maxTrackedKeys) {
-                if (!capReachedLogged) {
-                    capReachedLogged = true;
-                    LOG.warn("Admin account recovery rate limiter is tracking " + attempts.size()
-                            + " keys (the configured maximum); new callers are not rate limited until entries expire");
-                }
-                return null;
-            }
-            timestamps = new ArrayDeque<>();
-            attempts.put(key, timestamps);
-        }
-        return timestamps;
-    }
-
-    protected synchronized void pruneIfNeeded(long now, long windowStart) {
-        if (attempts.size() < maxTrackedKeys || now < nextPruneAt) {
-            return;
-        }
-        long oldestRemaining = Long.MAX_VALUE;
-        Iterator<Map.Entry<String, Deque<Long>>> it = attempts.entrySet().iterator();
-        while (it.hasNext()) {
-            Deque<Long> timestamps = it.next().getValue();
-            synchronized (timestamps) {
-                evictOlderThan(timestamps, windowStart);
-                if (timestamps.isEmpty()) {
-                    it.remove();
-                } else {
-                    oldestRemaining = Math.min(oldestRemaining, timestamps.peekFirst());
-                }
-            }
-        }
-        nextPruneAt = oldestRemaining == Long.MAX_VALUE ? 0L : oldestRemaining + windowSeconds * 1000L;
-        if (attempts.size() < maxTrackedKeys) {
-            capReachedLogged = false;
-        }
-    }
-
-    protected void evictOlderThan(Deque<Long> timestamps, long windowStart) {
+        Deque<Long> timestamps = attempts.computeIfAbsent(key, k -> new ArrayDeque<>());
         while (!timestamps.isEmpty() && timestamps.peekFirst() <= windowStart) {
             timestamps.pollFirst();
         }
+        if (timestamps.size() >= max) {
+            return false;
+        }
+        timestamps.addLast(now);
+        return true;
     }
 
     protected String normalize(String identifier) {
-        return StringUtils.defaultString(identifier);
+        return StringUtils.trimToEmpty(identifier).toLowerCase(Locale.ROOT);
     }
 
     public void setMaxAttemptsPerClient(int maxAttemptsPerClient) {
