@@ -50,6 +50,7 @@ import org.broadleafcommerce.openadmin.dto.MapMetadata;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.dto.SectionCrumb;
 import org.broadleafcommerce.openadmin.dto.TabMetadata;
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.security.dao.AdminUserDao;
@@ -458,6 +459,17 @@ public class AdminBasicEntityController extends AdminAbstractController {
     ) throws Exception {
         final String sectionKey = getSectionKey(pathVars);
         final String sectionClassName = getClassNameForSection(sectionKey);
+        final List<SectionCrumb> sectionCrumbs = getSectionCrumbs(request, null, null);
+        final PersistencePackageRequest ppr = getSectionPersistencePackageRequest(
+                sectionClassName, sectionCrumbs, pathVars
+        );
+        final ClassMetadata cmd = service.getClassMetadata(ppr).getDynamicResultSet().getClassMetaData();
+
+        if (!isDuplicateActionAllowed(ppr, id, sectionClassName, cmd)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            return getErrorDuplicatingResponse(response, "Duplication_Unauthorized");
+        }
+
         final Class<?> entityClass = dynamicEntityDao.getImplClass(sectionClassName);
         final long identifier = Long.parseLong(id);
 
@@ -477,6 +489,39 @@ public class AdminBasicEntityController extends AdminAbstractController {
             return "ajaxredirect:" + getContextPath(request) + sectionKey + "/" + dupId;
         } else {
             return getErrorDuplicatingResponse(response, "Validation_Failure");
+        }
+    }
+
+    /**
+     * Duplicating an entity creates a new record from an existing one, so the current admin user must hold the
+     * {@link EntityOperationType#ADD} permission on the section's security ceiling, pass the row-level add check,
+     * and be able to read the source record through the admin persistence layer (FETCH permission and row-level
+     * fetch restrictions).
+     */
+    protected boolean isDuplicateActionAllowed(
+            final PersistencePackageRequest ppr,
+            final String id,
+            final String sectionClassName,
+            final ClassMetadata cmd
+    ) {
+        final String securityClassName = StringUtils.isEmpty(cmd.getSecurityCeilingType())
+                ? sectionClassName
+                : cmd.getSecurityCeilingType();
+
+        try {
+            adminRemoteSecurityService.securityCheck(securityClassName, EntityOperationType.ADD);
+
+            if (!rowLevelSecurityService.canAdd(
+                    adminRemoteSecurityService.getPersistentAdminUser(), securityClassName, cmd
+            )) {
+                return false;
+            }
+
+            final Entity[] records = service.getRecord(ppr, id, cmd, false).getDynamicResultSet().getRecords();
+
+            return records != null && records.length > 0;
+        } catch (ServiceException | EntityNotFoundException e) {
+            return false;
         }
     }
 
