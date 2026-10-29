@@ -85,6 +85,7 @@ public class CustomerServiceImpl implements CustomerService {
     protected RoleDao roleDao;
     protected int tokenExpiredMinutes = 30;
     protected int passwordTokenLength = 20;
+    protected int maxPasswordResetTokenCandidates = 100;
     protected List<PasswordUpdatedHandler> passwordResetHandlers = new ArrayList<>();
     protected List<PasswordUpdatedHandler> passwordChangedHandlers = new ArrayList<>();
 
@@ -415,7 +416,7 @@ public class CustomerServiceImpl implements CustomerService {
         CustomerForgotPasswordSecurityToken fpst = null;
         if (!response.getHasErrors()) {
             if (customer == null) {
-                fpst = customerForgotPasswordSecurityTokenDao.readToken(encodePassword(token));
+                fpst = findTokenWithoutCustomer(rawToken);
             } else {
                 List<CustomerForgotPasswordSecurityToken> fpstoks = customerForgotPasswordSecurityTokenDao
                         .readUnusedTokensByCustomerId(customer.getId());
@@ -435,6 +436,27 @@ public class CustomerServiceImpl implements CustomerService {
             }
         }
         return fpst;
+    }
+
+    /**
+     * Tokens are stored through {@link #encodePassword(String)}, so with a salted encoder (e.g. the default BCrypt
+     * password.site.encoder) the stored value cannot be looked up by re-encoding the raw token. A deterministic encoder
+     * still resolves through the primary-key lookup; otherwise the raw token is matched against recent unused tokens.
+     */
+    protected CustomerForgotPasswordSecurityToken findTokenWithoutCustomer(String rawToken) {
+        CustomerForgotPasswordSecurityToken fpst = customerForgotPasswordSecurityTokenDao.readToken(encodePassword(rawToken));
+        if (fpst != null && isPasswordValid(rawToken, fpst.getToken())) {
+            return fpst;
+        }
+        Date createdAfter = new Date(SystemTime.asMillis() - (tokenExpiredMinutes + 1) * 60000L);
+        List<CustomerForgotPasswordSecurityToken> candidates = customerForgotPasswordSecurityTokenDao
+                .readUnusedTokensCreatedAfter(createdAfter, maxPasswordResetTokenCandidates);
+        for (CustomerForgotPasswordSecurityToken candidate : candidates) {
+            if (isPasswordValid(rawToken, candidate.getToken())) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     @Override
@@ -510,6 +532,14 @@ public class CustomerServiceImpl implements CustomerService {
 
     public void setTokenExpiredMinutes(int tokenExpiredMinutes) {
         this.tokenExpiredMinutes = tokenExpiredMinutes;
+    }
+
+    public int getMaxPasswordResetTokenCandidates() {
+        return maxPasswordResetTokenCandidates;
+    }
+
+    public void setMaxPasswordResetTokenCandidates(int maxPasswordResetTokenCandidates) {
+        this.maxPasswordResetTokenCandidates = maxPasswordResetTokenCandidates;
     }
 
     public int getPasswordTokenLength() {
