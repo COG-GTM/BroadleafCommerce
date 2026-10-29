@@ -25,9 +25,11 @@ import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityServ
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +41,7 @@ import jakarta.annotation.Resource;
  * @author Jeff Fischer
  */
 @Component("blAdminUserDetailsService")
-public class AdminUserDetailsServiceImpl implements UserDetailsService {
+public class AdminUserDetailsServiceImpl implements UserDetailsService, UserDetailsPasswordService {
 
     public static final String LEGACY_ROLE_PREFIX = "PERMISSION_";
     public static final String DEFAULT_SPRING_SECURITY_ROLE_PREFIX = "ROLE_";
@@ -56,6 +58,22 @@ public class AdminUserDetailsServiceImpl implements UserDetailsService {
         }
 
         return buildDetails(username, adminUser);
+    }
+
+    /**
+     * Persists a re-encoded password, e.g. when the configured {@code blAdminPasswordEncoder} reports that the stored
+     * value needs an upgrade after a successful login.
+     */
+    @Override
+    @Transactional("blTransactionManager")
+    public UserDetails updatePassword(UserDetails user, String newPassword) {
+        AdminUser adminUser = adminUserDao.readAdminUserByUserName(user.getUsername());
+        if (adminUser == null) {
+            return user;
+        }
+        adminUser.setPassword(newPassword);
+        adminUser = adminUserDao.saveAdminUser(adminUser);
+        return buildDetails(user.getUsername(), adminUser);
     }
 
     protected UserDetails buildDetails(final String username, final AdminUser adminUser) {

@@ -12,8 +12,9 @@
 
 --
 -- Superadmin User
+-- PASSWORD is the BCrypt hash of the demo password 'admin'. Change it before exposing the admin anywhere.
 --
-INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','admin', true);
+INSERT INTO BLC_ADMIN_USER (ADMIN_USER_ID, EMAIL, LOGIN, NAME, PASSWORD, ACTIVE_STATUS_FLAG) VALUES (-1,'admin@yourdomain.com','admin','Administrator','$2a$10$L/G5i5oWqFK/mJbpgPxcguhBMZOB3RJuCTTERsCUOSzJtWspvzfvK', true);
 
 --
 -- Roles for sample admin users.
