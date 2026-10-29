@@ -18,6 +18,7 @@
 package org.broadleafcommerce.common.sitemap.service;
 
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.config.domain.ModuleConfiguration;
@@ -38,6 +39,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPOutputStream;
 
 import jakarta.annotation.Resource;
@@ -57,7 +61,21 @@ public class SiteMapServiceImpl implements SiteMapService {
 
     protected static final String ENCODING_EXTENSION = ".gz";
 
+    protected static final String INDEX_FILE_TOKEN = "###";
+
+    protected static final String INDEX_FILE_NUMBER_REGEX = "[1-9][0-9]{0,8}";
+
     protected Boolean gzipSiteMapFiles;
+
+    /**
+     * Ensures only one sitemap generation runs at a time.
+     */
+    protected final ReentrantLock siteMapGenerationLock = new ReentrantLock();
+
+    /**
+     * Start time (millis) of the last generation triggered by {@link #getSiteMapFile(String)}, successful or not.
+     */
+    protected final AtomicLong lastOnDemandGenerationTime = new AtomicLong(0L);
 
     @Resource(name = "blModuleConfigurationService")
     protected ModuleConfigurationService moduleConfigurationService;
@@ -73,6 +91,15 @@ public class SiteMapServiceImpl implements SiteMapService {
 
     @Override
     public SiteMapGenerationResponse generateSiteMap() throws SiteMapException, IOException {
+        siteMapGenerationLock.lock();
+        try {
+            return generateSiteMapInternal();
+        } finally {
+            siteMapGenerationLock.unlock();
+        }
+    }
+
+    protected SiteMapGenerationResponse generateSiteMapInternal() throws SiteMapException, IOException {
         SiteMapGenerationResponse smgr = new SiteMapGenerationResponse();
         SiteMapConfiguration smc = findActiveSiteMapConfiguration();
         if (smc == null) {
@@ -137,20 +164,20 @@ public class SiteMapServiceImpl implements SiteMapService {
         if (LOG.isTraceEnabled()) {
             LOG.trace("Method getSiteMapFile() invoked for " + fileName);
         }
+        if (!isGeneratedSiteMapFileName(fileName)) {
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Not a sitemap file name produced by the active configuration: " + fileName);
+            }
+            return null;
+        }
         File siteMapFile = broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
         if (siteMapFile.exists()) {
 
-            if (getAutoGenerateSiteMapAfterTimeout()) {
-                long lastModified = siteMapFile.lastModified();
-                long now = System.currentTimeMillis();
-                // Create new SiteMap if timeout expired.
-                if ((now - lastModified) > getSiteMapTimeoutInMillis().longValue()) {
-                    generateSiteMap();
-                    siteMapFile = broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
-                    if (LOG.isTraceEnabled()) {
-                        LOG.trace("Generating new SiteMap after timeout");
-                    }
+            if (getAutoGenerateSiteMapAfterTimeout() && isSiteMapFileExpired(siteMapFile)) {
+                if (LOG.isTraceEnabled()) {
+                    LOG.trace("Generating new SiteMap after timeout");
                 }
+                siteMapFile = generateSiteMapOnDemand(fileName, true);
             }
             if (LOG.isTraceEnabled()) {
                 LOG.trace("Returning existing SiteMap");
@@ -162,8 +189,7 @@ public class SiteMapServiceImpl implements SiteMapService {
                 if (LOG.isTraceEnabled()) {
                     LOG.trace("Generating SiteMap");
                 }
-                generateSiteMap();
-                siteMapFile = broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
+                siteMapFile = generateSiteMapOnDemand(fileName, false);
                 if (siteMapFile.exists()) {
                     if (LOG.isTraceEnabled()) {
                         LOG.trace("Returning SiteMap file " + fileName);
@@ -178,6 +204,87 @@ public class SiteMapServiceImpl implements SiteMapService {
                 return null;
             }
         }
+    }
+
+    /**
+     * Generates the sitemap for a storefront request of {@code fileName}. Does nothing if another generation is
+     * running (the caller gets whatever is on disk instead of queueing), if the file no longer needs generating, or
+     * if the previous on-demand generation started less than {@link #getOnDemandGenerationMinIntervalInMillis()} ago.
+     *
+     * @param fileName a name accepted by {@link #isGeneratedSiteMapFileName(String)}
+     * @param expired true when regenerating an expired file, false when the file is missing
+     * @return the sitemap file after any generation (may not exist)
+     */
+    protected File generateSiteMapOnDemand(String fileName, boolean expired) throws SiteMapException, IOException {
+        if (!siteMapGenerationLock.tryLock()) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("SiteMap generation already in progress, not starting another for " + fileName);
+            }
+            return broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
+        }
+        try {
+            File siteMapFile = broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
+            boolean generationNeeded = expired
+                    ? siteMapFile.exists() && isSiteMapFileExpired(siteMapFile)
+                    : !siteMapFile.exists();
+            if (!generationNeeded) {
+                return siteMapFile;
+            }
+
+            long now = System.currentTimeMillis();
+            long lastGeneration = lastOnDemandGenerationTime.get();
+            if (lastGeneration > 0 && (now - lastGeneration) < getOnDemandGenerationMinIntervalInMillis()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Skipping on-demand SiteMap generation for " + fileName
+                            + " since the previous one started less than the minimum interval ago");
+                }
+                return siteMapFile;
+            }
+            lastOnDemandGenerationTime.set(now);
+
+            generateSiteMap();
+            return broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
+        } finally {
+            siteMapGenerationLock.unlock();
+        }
+    }
+
+    /**
+     * Whether {@code fileName} is a file {@link SiteMapBuilder} can produce for the active configuration: the sitemap
+     * file name, the indexed sitemap file name, or the index file pattern with a numeric index, each optionally
+     * followed by ".gz". Leading slashes (as passed through from the request URI) are ignored.
+     */
+    protected boolean isGeneratedSiteMapFileName(String fileName) {
+        String candidate = StringUtils.stripStart(fileName, "/");
+        if (StringUtils.isEmpty(candidate)) {
+            return false;
+        }
+        if (candidate.endsWith(ENCODING_EXTENSION)) {
+            candidate = candidate.substring(0, candidate.length() - ENCODING_EXTENSION.length());
+        }
+
+        SiteMapConfiguration smc = findActiveSiteMapConfiguration();
+        if (smc == null) {
+            return false;
+        }
+        if (candidate.equals(StringUtils.stripStart(smc.getSiteMapFileName(), "/"))
+                || candidate.equals(StringUtils.stripStart(smc.getIndexedSiteMapFileName(), "/"))) {
+            return true;
+        }
+
+        String pattern = StringUtils.stripStart(smc.getSiteMapIndexFilePattern(), "/");
+        int tokenPos = pattern == null ? -1 : pattern.indexOf(INDEX_FILE_TOKEN);
+        if (tokenPos < 0) {
+            return false;
+        }
+        String regex = Pattern.quote(pattern.substring(0, tokenPos))
+                + INDEX_FILE_NUMBER_REGEX
+                + Pattern.quote(pattern.substring(tokenPos + INDEX_FILE_TOKEN.length()));
+        return candidate.matches(regex);
+    }
+
+    protected boolean isSiteMapFileExpired(File siteMapFile) {
+        return (System.currentTimeMillis() - siteMapFile.lastModified()) > getSiteMapTimeoutInMillis().longValue();
     }
 
     protected SiteMapConfiguration findActiveSiteMapConfiguration() {
@@ -289,6 +396,10 @@ public class SiteMapServiceImpl implements SiteMapService {
 
     public boolean getAutoGenerateSiteMapAfterTimeout() {
         return BLCSystemProperty.resolveBooleanSystemProperty("sitemap.createIfTimeoutExpired", false);
+    }
+
+    public long getOnDemandGenerationMinIntervalInMillis() {
+        return BLCSystemProperty.resolveLongSystemProperty("sitemap.onDemandGeneration.minIntervalSeconds", 60L) * 1000;
     }
 
     public Long getSiteMapTimeoutInMillis() {
