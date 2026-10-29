@@ -34,6 +34,8 @@ import org.broadleafcommerce.profile.web.core.service.register.RegistrationServi
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -133,6 +135,15 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
 
     public RegisterCustomerForm initCustomerRegistrationForm() {
         return registrationService.initCustomerRegistrationForm();
+    }
+
+    /**
+     * Prevents request parameters from binding to the identity or privileged fields of the
+     * {@link Customer} entity held by a {@link RegisterCustomerForm}.
+     */
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(RegisterCustomerForm.DISALLOWED_BIND_FIELDS);
     }
 
     public boolean isUseEmailForLogin() {

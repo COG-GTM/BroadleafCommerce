@@ -25,6 +25,35 @@ import java.io.Serializable;
 
 public class RegisterCustomerForm implements Serializable {
 
+    /**
+     * Request parameter paths that must never be bound onto a {@link RegisterCustomerForm}. The nested
+     * {@link Customer} is a JPA entity, so binding these would let a registration request overwrite an
+     * existing customer (e.g. via {@code customer.id}) or set privileged state on the new account.
+     */
+    public static final String[] DISALLOWED_BIND_FIELDS = new String[] {
+            "customer.id",
+            "customer.password",
+            "customer.unencodedPassword",
+            "customer.passwordChangeRequired",
+            "customer.externalId",
+            "customer.challengeAnswer",
+            "customer.challengeQuestion.*",
+            "customer.registered",
+            "customer.anonymous",
+            "customer.cookied",
+            "customer.loggedIn",
+            "customer.deactivated",
+            "customer.preview",
+            "customer.taxExempt*",
+            "customer.auditable*",
+            "customer.customerLocale*",
+            "customer.customerAttributes*",
+            "customer.customerAddresses*",
+            "customer.customerPhones*",
+            "customer.customerPayments*",
+            "customer.customerRoles*"
+    };
+
     @Serial
     private static final long serialVersionUID = 1L;
 

@@ -21,6 +21,7 @@ import org.apache.commons.validator.GenericValidator;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.service.CustomerService;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.Errors;
@@ -55,6 +56,11 @@ public class RegisterCustomerValidator implements Validator {
     public void validate(Object obj, Errors errors, boolean useEmailForUsername) {
         RegisterCustomerForm form = (RegisterCustomerForm) obj;
 
+        if (!isRegistrableCustomerId(form.getCustomer())) {
+            errors.reject("customer.id.invalid", "Invalid registration request");
+            return;
+        }
+
         Customer customerFromDb = customerService.readCustomerByUsername(form.getCustomer().getUsername());
 
         if (customerFromDb != null && customerFromDb.isRegistered()) {
@@ -88,6 +94,24 @@ public class RegisterCustomerValidator implements Validator {
                 errors.rejectValue("customer.emailAddress", "emailAddress.invalid", null, null);
             }
         }
+    }
+
+    /**
+     * A registration may only create a new customer or promote the current request's anonymous
+     * customer. Any other id would cause the save to overwrite an existing customer record.
+     */
+    protected boolean isRegistrableCustomerId(Customer customer) {
+        Long customerId = customer.getId();
+        if (customerId == null) {
+            return true;
+        }
+        Customer currentCustomer = CustomerState.getCustomer();
+        if (currentCustomer == null || !currentCustomer.isAnonymous()
+                || !customerId.equals(currentCustomer.getId())) {
+            return false;
+        }
+        Customer customerFromDb = customerService.readCustomerById(customerId);
+        return customerFromDb == null || !customerFromDb.isRegistered();
     }
 
     public String getValidatePasswordExpression() {
