@@ -62,21 +62,31 @@ public class CatalogURLServiceImpl implements CatalogURLService {
      */
     protected String buildRelativeUrlWithParam(String currentUrl, String fragment, String idParam, String idValue) {
         try {
-            URIBuilder builder = new URIBuilder(currentUrl);
+            URIBuilder builder = new URIBuilder(StringUtils.defaultString(currentUrl));
             String path = builder.getPath();
             if (StringUtils.isEmpty(currentUrl) || currentUrl.equals("/")) {
                 path = "";
             }
-            builder.setPath(path + "/" + fragment);
-
-            if (appendIdToRelativeURI) {
-                builder.setParameter(idParam, String.valueOf(idValue));
-            }
-
-            return builder.build().toString();
+            return buildUrl(builder, StringUtils.defaultString(path), fragment, idParam, idValue);
         } catch (URISyntaxException e) {
-            return currentUrl;
+            // Never echo an unparseable (attacker-controlled) URL back; drop the current path and query instead
+            try {
+                return buildUrl(new URIBuilder(), "", fragment, idParam, idValue);
+            } catch (URISyntaxException e2) {
+                return "";
+            }
         }
+    }
+
+    protected String buildUrl(URIBuilder builder, String path, String fragment, String idParam, String idValue)
+            throws URISyntaxException {
+        builder.setPath(path + "/" + fragment);
+
+        if (appendIdToRelativeURI) {
+            builder.setParameter(idParam, String.valueOf(idValue));
+        }
+
+        return builder.build().toString();
     }
 
     protected String getProductUrlFragment(Product product) {
