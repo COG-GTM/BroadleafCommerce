@@ -170,6 +170,51 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    public void roundTripsJdbcAndJavaTimeFieldValues() throws Exception {
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>(uniquePath(), zk);
+        SolrInputDocument doc = new SolrInputDocument();
+        doc.addField("created_dt", new java.sql.Timestamp(1000L));
+        doc.addField("start_dt", new java.sql.Date(2000L));
+        doc.addField("time_dt", new java.sql.Time(3000L));
+        doc.addField("instant_dt", java.time.Instant.ofEpochMilli(4000L));
+
+        assertTrue(queue.offer(new IncrementalUpdateCommand(Collections.singletonList(doc), Collections.emptyList())));
+
+        IncrementalUpdateCommand read = (IncrementalUpdateCommand) queue.poll();
+        assertNotNull("The update must be delivered, not discarded", read);
+        SolrInputDocument readDoc = read.getSolrInputDocuments().get(0);
+        assertEquals(new java.sql.Timestamp(1000L), readDoc.getFieldValue("created_dt"));
+        assertEquals(new java.sql.Date(2000L), readDoc.getFieldValue("start_dt"));
+        assertEquals(new java.sql.Time(3000L), readDoc.getFieldValue("time_dt"));
+        assertEquals(java.time.Instant.ofEpochMilli(4000L), readDoc.getFieldValue("instant_dt"));
+    }
+
+    @Test
+    public void blockingReadsKeepWaitingAfterDiscardingAnUnreadableEntry() throws Exception {
+        final ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>(uniquePath(), zk);
+        plant(newClient(), queue, new UnexpectedPayload("x"));
+
+        Thread producer = new Thread(() -> {
+            try {
+                Thread.sleep(500L);
+                queue.offer(new SiteReindexCommand(7L));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        producer.start();
+
+        assertEquals(new SiteReindexCommand(7L), queue.poll(10, TimeUnit.SECONDS));
+        producer.join();
+        assertFalse(UnexpectedPayload.READ_OBJECT_CALLED.get());
+
+        plant(newClient(), queue, new UnexpectedPayload("y"));
+        long start = System.currentTimeMillis();
+        assertNull(queue.poll(300, TimeUnit.MILLISECONDS));
+        assertTrue("A timed poll should wait out its timeout", System.currentTimeMillis() - start >= 250L);
+    }
+
+    @Test
     public void rejectsPlantedEntryOfUnexpectedClassWithoutRunningItsReadObject() throws Exception {
         ZookeeperDistributedQueue<SolrUpdateCommand> queue = new ZookeeperDistributedQueue<>(uniquePath(), zk);
 
@@ -284,6 +329,53 @@ public class ZookeeperDistributedQueueDeserializationTest {
                 DefaultSolrIndexQueueProvider.QUEUE_PATH + '/' + queueName, otherNode, 500, true, ZooDefs.Ids.CREATOR_ALL_ACL
         );
         assertEquals(new CatalogReindexCommand(1L), otherNodeQueue.poll());
+    }
+
+    @Test
+    public void providerRestrictsQueueFoldersCreatedBeforeDigestWasConfigured() throws Exception {
+        String queueName = "upgraded-" + UUID.randomUUID();
+        ZookeeperDistributedQueue<SolrUpdateCommand> legacy = new ZookeeperDistributedQueue<>(
+                DefaultSolrIndexQueueProvider.QUEUE_PATH + '/' + queueName, zk, 500
+        );
+        assertEquals(ZooDefs.Ids.OPEN_ACL_UNSAFE, zk.getACL(legacy.getQueueEntryFolder(), null));
+
+        ZooKeeper appClient = newClient();
+        MockEnvironment env = new MockEnvironment()
+                .withProperty(DefaultSolrIndexQueueProvider.ZK_DIGEST_AUTH_PROPERTY, "broadleaf:s3cret");
+        BlockingQueue<? super SolrUpdateCommand> queue = new DefaultSolrIndexQueueProvider(appClient, env)
+                .createOrRetrieveCommandQueue(queueName);
+        String entryFolder = entryFolder(queue);
+        assertEquals(legacy.getQueueEntryFolder(), entryFolder);
+
+        for (String folder : Arrays.asList(legacy.getQueueFolderPath(), entryFolder)) {
+            List<ACL> acls = appClient.getACL(folder, null);
+            assertEquals(folder, 1, acls.size());
+            assertEquals(folder, "digest", acls.get(0).getId().getScheme());
+        }
+        try {
+            newClient().create(entryFolder + "/dz-queue-entry", serialize(new CatalogReindexCommand(1L)),
+                    ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+            fail("An unauthenticated client must not be able to add entries to an upgraded queue.");
+        } catch (KeeperException.NoAuthException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void providerPassesConfiguredAllowedClassPatternsToTheQueue() throws Exception {
+        MockEnvironment env = new MockEnvironment().withProperty(DefaultSolrIndexQueueProvider.QUEUE_ALLOWED_CLASSES_PROPERTY,
+                " " + UnexpectedPayload.class.getName() + " , java.util.TreeSet ");
+        @SuppressWarnings("unchecked")
+        ZookeeperDistributedQueue<SolrUpdateCommand> queue = (ZookeeperDistributedQueue<SolrUpdateCommand>)
+                new DefaultSolrIndexQueueProvider(zk, env).createOrRetrieveCommandQueue("custom-" + UUID.randomUUID());
+
+        assertTrue(queue.deserialize(serialize(new UnexpectedPayload("custom"))) instanceof UnexpectedPayload);
+        try {
+            queue.deserialize(serialize(new java.util.PriorityQueue<>(Collections.singletonList("x"))));
+            fail("Classes that were not configured must still be rejected.");
+        } catch (DistributedQueueException e) {
+            assertTrue(e.getCause() instanceof InvalidClassException);
+        }
     }
 
     @Test(expected = IllegalArgumentException.class)

@@ -31,6 +31,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.util.Assert;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -69,6 +70,11 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
     public static final String QUEUE_PATH = "/solr-index/command-queue";
     public static final String ZK_DIGEST_AUTH_PROPERTY = "solr.index.zookeeper.digest.auth";
     public static final String ZK_CREATOR_ACL_PROPERTY = "solr.index.zookeeper.creator.acl";
+    /**
+     * Comma-separated {@link java.io.ObjectInputFilter} class patterns accepted from the distributed queue in addition to
+     * {@link ZookeeperDistributedQueue#DEFAULT_ALLOWED_CLASS_PATTERNS}, e.g. for custom commands or Solr field value types.
+     */
+    public static final String QUEUE_ALLOWED_CLASSES_PROPERTY = "solr.index.zookeeper.queue.allowed.classes";
     protected static final Map<String, BlockingQueue<? super SolrUpdateCommand>> QUEUE_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     protected static final Map<String, Lock> LOCK_REGISTRY = Collections.synchronizedMap(new HashMap<>());
     private static final Log LOG = LogFactory.getLog(DefaultSolrIndexQueueProvider.class);
@@ -193,8 +199,26 @@ public class DefaultSolrIndexQueueProvider implements SolrIndexQueueProvider {
 
     protected BlockingQueue<? super SolrUpdateCommand> createDistributedQueue(String queueName) {
         return new ZookeeperDistributedQueue<>(
-                QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE, true, getZookeeperAcls()
+                QUEUE_PATH + '/' + queueName, getZookeeper(), MAX_QUEUE_SIZE, true, getZookeeperAcls(),
+                getAdditionalAllowedQueueClassPatterns()
         );
+    }
+
+    protected List<String> getAdditionalAllowedQueueClassPatterns() {
+        if (getEnvironment() == null) {
+            return Collections.emptyList();
+        }
+        String patterns = getEnvironment().getProperty(QUEUE_ALLOWED_CLASSES_PROPERTY);
+        if (StringUtils.isBlank(patterns)) {
+            return Collections.emptyList();
+        }
+        List<String> out = new ArrayList<>();
+        for (String pattern : StringUtils.split(patterns, ',')) {
+            if (StringUtils.isNotBlank(pattern)) {
+                out.add(pattern.trim());
+            }
+        }
+        return out;
     }
 
     protected Lock createLocalLock(String lockName) {

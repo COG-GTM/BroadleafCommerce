@@ -102,6 +102,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             "java.math.BigDecimal",
             "java.math.BigInteger",
             "java.util.Date",
+            "java.sql.Date",
+            "java.sql.Time",
+            "java.sql.Timestamp",
+            //java.time value types (and java.time.Ser, which they serialize through)
+            "java.time.*",
             "java.util.UUID",
             "java.util.ArrayList",
             "java.util.LinkedList",
@@ -773,7 +778,12 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                 }
                             }
 
-                            return out;
+                            if (!out.isEmpty() || timeout == 0L) {
+                                return out;
+                            }
+                            //Every entry was discarded or taken by another reader; look again (or wait) instead of
+                            //returning nothing to a blocking caller.
+                            continue;
                         } else {
                             //Unlock here so that we're not holding the lock while we wait...
                             lock.unlock();
@@ -852,10 +862,52 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                     return null;
                 }
             });
+
+            restrictExistingFolderAcls();
         } catch (InterruptedException e) {
             throw new DistributedLockException("SolrZkClient encountered an error trying to create the persistent path, "
                     + getQueueFolderPath() + " in Zookeeper.", e);
         }
+    }
+
+    /**
+     * {@link ZookeeperUtil#makePath} leaves existing nodes untouched, so queue folders created before restrictive ACLs were
+     * configured would otherwise stay world-writable.  This replaces a world-accessible ACL on the queue's folders with
+     * {@link #getAcls()} when those are restrictive.
+     */
+    protected void restrictExistingFolderAcls() throws InterruptedException {
+        if (isWorldAccessible(getAcls())) {
+            return;
+        }
+        for (final String folder : Arrays.asList(getQueueFolderPath(), getQueueEntryFolder(), getLocksFolder(), getConfigsFolder())) {
+            executeOperation(new GenericOperation<Void>() {
+                @Override
+                public Void execute() throws Exception {
+                    if (isWorldAccessible(getZookeeperClient().getACL(folder, null))) {
+                        LOG.warn("Replacing the world-accessible ACL on the existing Zookeeper queue folder " + folder);
+                        try {
+                            getZookeeperClient().setACL(folder, getAcls(), -1);
+                        } catch (KeeperException.NoAuthException e) {
+                            throw new DistributedQueueException("Restrictive ACLs are configured, but the existing Zookeeper queue folder "
+                                    + folder + " is world-accessible and this client is not allowed to change its ACL.", e);
+                        }
+                    }
+                    return null;
+                }
+            });
+        }
+    }
+
+    protected static boolean isWorldAccessible(List<ACL> acls) {
+        if (acls == null || acls.isEmpty()) {
+            return true;
+        }
+        for (ACL acl : acls) {
+            if (ZooDefs.Ids.ANYONE_ID_UNSAFE.equals(acl.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected synchronized void determineMaxCapacity() {
