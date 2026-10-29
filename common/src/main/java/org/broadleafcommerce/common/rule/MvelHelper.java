@@ -64,6 +64,23 @@ public class MvelHelper {
     private static final Map<String, Serializable> DEFAULT_EXPRESSION_CACHE = new EfficientLRUMap<String, Serializable>(5000);
     private static final Log LOG = LogFactory.getLog(MvelHelper.class);
     private static boolean TEST_MODE = false;
+    private static final Pattern LEGACY_UPPER_CASE_EVAL = Pattern.compile(
+            "(?<![\\w$])MVEL\\s*\\.\\s*eval\\s*\\(\\s*\"toUpperCase\\(\\)\"\\s*,");
+    private static final Pattern UNSAFE_RULE_CONSTRUCT = Pattern.compile(
+            "(?<![\\w$])(new|import|def|function|class|Class|ClassLoader|Runtime|ProcessBuilder|ProcessHandle|System"
+                    + "|Thread|ThreadGroup|Module|ModuleLayer|StackWalker|SecurityManager|Unsafe|MVEL|forName|getClass"
+                    + "|getClassLoader|getRuntime|newInstance|getDeclared\\w*|getMethods?|getConstructors?|setAccessible"
+                    + "|loadClass|defineClass|invoke)(?![\\w$])"
+                    + "|(?<![\\w$.])(?!org\\.apache\\.commons\\.lang3\\.StringUtils\\.)"
+                    + "(org|com|net|io|java|javax|jakarta|sun|jdk)\\.");
+    private static final Pattern STATE_CHANGING_RULE_CONSTRUCT = Pattern.compile(
+            "(?<![=!<>])=(?!=)|<<=|>>=|[-+*/%&|^]=|\\+\\+|--|;");
+    private static final Pattern METHOD_CALL = Pattern.compile("(?<![\\w$])([A-Za-z_$][\\w$]*)\\s*\\(");
+    private static final Pattern ALLOWED_RULE_METHOD = Pattern.compile(
+            "(get|is|has)[A-Z0-9_][\\w$]*|get|size|isEmpty|contains\\w*|startsWith|endsWith|equals\\w*|compareTo\\w*"
+                    + "|intValue|longValue|doubleValue|floatValue|toUpperCase|toLowerCase|toString|trim|length|indexOf"
+                    + "|lastIndexOf|substring|charAt|matches|intersection|convertField|subtractFromCurrentTime|currentTime"
+                    + "|and|or|not|in|if|instanceof|is");
 
     static {
         System.setProperty("mvel2.disable.jit", "true");
@@ -190,9 +207,27 @@ public class MvelHelper {
 
                 String modifiedRule = modifyExpression(rule, ruleParameters, context);
 
-                synchronized (expressionCache) {
+                String violation = findUnsafeConstructInModifiedRule(modifiedRule);
+                if (violation != null) {
+                    LOG.warn("Refusing to evaluate the mvel expression (" + StringUtil.sanitize(rule)
+                            + ") since it uses a construct that is not allowed in rules (" + violation
+                            + "). Returning false for the match expression");
+                    return false;
+                }
+
+                try {
                     exp = MVEL.compileExpression(modifiedRule, context);
-                    expressionCache.put(rule, exp);
+                } catch (Exception e) {
+                    if (!TEST_MODE && LOG.isInfoEnabled()) {
+                        LOG.info("Unable to compile the mvel expression (" + StringUtil.sanitize(rule)
+                                + "). Reporting to the logs and returning false for the match expression", e);
+                    }
+                    return false;
+                }
+                if (expressionCache != null) {
+                    synchronized (expressionCache) {
+                        expressionCache.put(rule, exp);
+                    }
                 }
             }
 
@@ -256,15 +291,75 @@ public class MvelHelper {
      */
     protected static String unescapeUnicode(String input) {
         if (input == null) return null;
-        input = Matcher.quoteReplacement(input);
-        input = Pattern.compile("(?<=.intersection).*?(?=.size)").matcher(input).replaceAll(mr -> mr.group()
-                .replace("\\u0022", "&quot;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\\u0027", "'")
-                .replace("\\u005C", "\\")
-        );
-        return input;
+        return Pattern.compile("(?<=.intersection).*?(?=.size)").matcher(input).replaceAll(mr -> Matcher.quoteReplacement(
+                mr.group()
+                        .replace("\\u0022", "&quot;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("\\u0027", "'")
+                        .replace("\\u005C", "\\")
+        ));
+    }
+
+    /**
+     * Checks a rule for constructs that are never produced by the admin rule builder and that would let a rule escape
+     * its role as a boolean match expression: object construction, imports and function definitions, reflection and
+     * class loading, process, thread and JVM control classes, nested MVEL evaluation, fully qualified class references
+     * other than {@code org.apache.commons.lang3.StringUtils}, state changes (assignments, increments and statement
+     * separators), and calls to methods other than getters and the read-only comparison, string and helper methods
+     * that rules use. String literals are ignored, and the legacy
+     * {@code MVEL.eval("toUpperCase()", ...)} form is still accepted.
+     *
+     * @param rule the rule to check
+     * @return a description of the first refused construct, or null when the rule is allowed
+     */
+    public static String findUnsafeConstruct(String rule) {
+        if (rule == null || rule.isEmpty()) {
+            return null;
+        }
+        return findUnsafeConstructInModifiedRule(modifyExpression(rule, null, null));
+    }
+
+    protected static String findUnsafeConstructInModifiedRule(String rule) {
+        String code = LEGACY_UPPER_CASE_EVAL.matcher(rule).replaceAll("MvelHelper.toUpperCase(");
+        StringBuilder withoutLiterals = new StringBuilder(code.length());
+        int length = code.length();
+        for (int i = 0; i < length; i++) {
+            char c = code.charAt(i);
+            if (c == '"' || c == '\'') {
+                int end = i + 1;
+                while (end < length && code.charAt(end) != c) {
+                    if (code.charAt(end) == '\\') {
+                        end++;
+                    }
+                    end++;
+                }
+                if (end >= length) {
+                    return "unterminated string literal";
+                }
+                withoutLiterals.append(c).append(c);
+                i = end;
+            } else {
+                withoutLiterals.append(c);
+            }
+        }
+        String normalized = withoutLiterals.toString().replaceAll("\\s*\\.\\s*\\??\\s*", ".");
+        Matcher matcher = UNSAFE_RULE_CONSTRUCT.matcher(normalized);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+        String compact = normalized.replaceAll("\\s+", "");
+        matcher = STATE_CHANGING_RULE_CONSTRUCT.matcher(compact);
+        if (matcher.find()) {
+            return matcher.group();
+        }
+        matcher = METHOD_CALL.matcher(normalized);
+        while (matcher.find()) {
+            if (!ALLOWED_RULE_METHOD.matcher(matcher.group(1)).matches()) {
+                return matcher.group();
+            }
+        }
+        return null;
     }
 
     /**
