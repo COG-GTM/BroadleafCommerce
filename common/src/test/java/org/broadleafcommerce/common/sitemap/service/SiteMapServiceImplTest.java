@@ -51,6 +51,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Verifies that {@link SiteMapServiceImpl#getSiteMapFile(String)} only regenerates the sitemap for file names the
@@ -154,6 +155,36 @@ public class SiteMapServiceImplTest {
 
         siteMapService.minIntervalMillis = 0L;
         siteMapService.getSiteMapFile("/sitemap99.xml");
+        assertEquals(2, generator.invocations.get());
+    }
+
+    @Test
+    public void testMissingIndexedFileDoesNotThrottleConfiguredFileName() throws Exception {
+        assertFalse(siteMapService.getSiteMapFile("/sitemap99.xml").exists());
+        assertEquals(1, generator.invocations.get());
+        deleteSiteMapFiles();
+
+        assertTrue(siteMapService.getSiteMapFile("/sitemap.xml").exists());
+        assertEquals(2, generator.invocations.get());
+
+        assertFalse(siteMapService.getSiteMapFile("/sitemap_index.xml").exists());
+        assertEquals(3, generator.invocations.get());
+        assertFalse(siteMapService.getSiteMapFile("/sitemap_index.xml.gz").exists());
+        assertEquals(3, generator.invocations.get());
+    }
+
+    @Test
+    public void testFailedGenerationIsNotThrottled() throws Exception {
+        generator.failuresRemaining.set(1);
+        try {
+            siteMapService.getSiteMapFile("/sitemap.xml");
+            fail("Expected the generator failure to propagate");
+        } catch (RuntimeException e) {
+            assertEquals("simulated generator failure", e.getMessage());
+        }
+        assertEquals(1, generator.invocations.get());
+
+        assertTrue(siteMapService.getSiteMapFile("/sitemap.xml").exists());
         assertEquals(2, generator.invocations.get());
     }
 
@@ -270,12 +301,16 @@ public class SiteMapServiceImplTest {
     protected static class CountingSiteMapGenerator extends CustomUrlSiteMapGenerator {
 
         protected final AtomicInteger invocations = new AtomicInteger();
+        protected final AtomicInteger failuresRemaining = new AtomicInteger();
         protected CountDownLatch entered;
         protected CountDownLatch release;
 
         @Override
         public void addSiteMapEntries(SiteMapGeneratorConfiguration smgc, SiteMapBuilder siteMapBuilder) {
             invocations.incrementAndGet();
+            if (failuresRemaining.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+                throw new RuntimeException("simulated generator failure");
+            }
             if (entered != null) {
                 entered.countDown();
             }

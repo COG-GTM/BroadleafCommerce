@@ -78,7 +78,8 @@ public class SiteMapServiceImpl implements SiteMapService {
     protected final ReentrantLock siteMapGenerationLock = new ReentrantLock();
 
     /**
-     * Time (millis) of the last on-demand generation triggered from {@link #getSiteMapFile(String)}, keyed by site.
+     * Time (millis) of the last on-demand generation triggered from {@link #getSiteMapFile(String)}, keyed by site and
+     * requested file name (all numbered index files share one key).
      */
     protected final Map<String, Long> lastOnDemandGenerationTimes = new ConcurrentHashMap<>();
 
@@ -212,8 +213,8 @@ public class SiteMapServiceImpl implements SiteMapService {
 
     /**
      * Runs a sitemap generation on behalf of a request for {@code fileName}, unless one is already running,
-     * another caller already produced the file, or the last on-demand generation for the current site happened
-     * less than {@link #getOnDemandGenerationMinIntervalInMillis()} ago. Requests never queue up behind a running
+     * another caller already produced the file, or the last on-demand generation for the current site and requested
+     * name happened less than {@link #getOnDemandGenerationMinIntervalInMillis()} ago. Requests never queue up behind a running
      * generation; they get whatever is currently on disk.
      *
      * @param fileName the requested sitemap file name
@@ -237,7 +238,7 @@ public class SiteMapServiceImpl implements SiteMapService {
                 return siteMapFile;
             }
 
-            String generationKey = getSiteMapGenerationKey();
+            String generationKey = getSiteMapGenerationKey(fileName);
             long now = System.currentTimeMillis();
             Long lastGeneration = lastOnDemandGenerationTimes.get(generationKey);
             if (lastGeneration != null && (now - lastGeneration) < getOnDemandGenerationMinIntervalInMillis()) {
@@ -249,7 +250,15 @@ public class SiteMapServiceImpl implements SiteMapService {
             }
             lastOnDemandGenerationTimes.put(generationKey, now);
 
-            generateSiteMap();
+            boolean generated = false;
+            try {
+                generateSiteMap();
+                generated = true;
+            } finally {
+                if (!generated) {
+                    lastOnDemandGenerationTimes.remove(generationKey, now);
+                }
+            }
             return broadleafFileService.getResource(fileName, getSiteMapTimeoutInMillis());
         } finally {
             siteMapGenerationLock.unlock();
@@ -262,9 +271,18 @@ public class SiteMapServiceImpl implements SiteMapService {
      * an optional ".gz" suffix. Leading slashes (as passed through from the request URI) are ignored.
      */
     protected boolean isGeneratedSiteMapFileName(String fileName) {
+        return getGeneratedSiteMapFileKey(fileName) != null;
+    }
+
+    /**
+     * Normalized form of {@code fileName} if it is a name {@link SiteMapBuilder} produces (see
+     * {@link #isGeneratedSiteMapFileName(String)}), otherwise null. Leading slashes and ".gz" are removed, and every
+     * numbered index file maps to the configured index file pattern.
+     */
+    protected String getGeneratedSiteMapFileKey(String fileName) {
         String candidate = stripLeadingSlashes(fileName);
         if (StringUtils.isEmpty(candidate)) {
-            return false;
+            return null;
         }
         if (candidate.endsWith(ENCODING_EXTENSION)) {
             candidate = candidate.substring(0, candidate.length() - ENCODING_EXTENSION.length());
@@ -272,22 +290,22 @@ public class SiteMapServiceImpl implements SiteMapService {
 
         SiteMapConfiguration smc = findActiveSiteMapConfiguration();
         if (smc == null) {
-            return false;
+            return null;
         }
         if (candidate.equals(stripLeadingSlashes(smc.getSiteMapFileName()))
                 || candidate.equals(stripLeadingSlashes(smc.getIndexedSiteMapFileName()))) {
-            return true;
+            return candidate;
         }
 
         String pattern = stripLeadingSlashes(smc.getSiteMapIndexFilePattern());
         int tokenPos = pattern == null ? -1 : pattern.indexOf(INDEX_FILE_TOKEN);
         if (tokenPos < 0) {
-            return false;
+            return null;
         }
         String regex = Pattern.quote(pattern.substring(0, tokenPos))
                 + INDEX_FILE_NUMBER_REGEX
                 + Pattern.quote(pattern.substring(tokenPos + INDEX_FILE_TOKEN.length()));
-        return candidate.matches(regex);
+        return candidate.matches(regex) ? pattern : null;
     }
 
     protected String stripLeadingSlashes(String fileName) {
@@ -298,13 +316,11 @@ public class SiteMapServiceImpl implements SiteMapService {
         return (System.currentTimeMillis() - siteMapFile.lastModified()) > getSiteMapTimeoutInMillis().longValue();
     }
 
-    protected String getSiteMapGenerationKey() {
+    protected String getSiteMapGenerationKey(String fileName) {
         BroadleafRequestContext brc = BroadleafRequestContext.getBroadleafRequestContext();
         Site site = brc == null ? null : brc.getNonPersistentSite();
-        if (site == null || site.getId() == null) {
-            return DEFAULT_GENERATION_KEY;
-        }
-        return String.valueOf(site.getId());
+        String siteKey = site == null || site.getId() == null ? DEFAULT_GENERATION_KEY : String.valueOf(site.getId());
+        return siteKey + ":" + getGeneratedSiteMapFileKey(fileName);
     }
 
     protected SiteMapConfiguration findActiveSiteMapConfiguration() {
