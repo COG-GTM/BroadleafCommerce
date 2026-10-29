@@ -24,12 +24,21 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+/**
+ * Redirects back to the admin login page after a failed login, preserving the {@code successUrl} the user was trying to
+ * reach. The {@code failureUrl} and {@code successUrl} request parameters and the {@code Referer} header are untrusted,
+ * so only targets local to the application are honored; anything else falls back to the configured default.
+ */
 public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthenticationFailureHandler {
+
+    protected static final String SUCCESS_URL_PARAM = "successUrl=";
 
     private String defaultFailureUrl;
 
@@ -50,7 +59,8 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
     ) throws IOException, ServletException {
         String failureUrlParam = StringUtil.cleanseUrlString(request.getParameter("failureUrl"));
         String successUrlParam = StringUtil.cleanseUrlString(request.getParameter("successUrl"));
-        String failureUrl = (failureUrlParam != null) ? failureUrlParam.trim() : null;
+        String failureUrl = validateLocalPath(StringUtils.trimToNull(failureUrlParam), "failureUrl");
+        successUrlParam = validateLocalPath(StringUtils.trimToNull(successUrlParam), "successUrl");
         Boolean sessionTimeout = (Boolean) request.getAttribute("sessionTimeout");
 
         if (StringUtils.isEmpty(failureUrl) && BooleanUtils.isNotTrue(sessionTimeout)) {
@@ -63,23 +73,15 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
 
         if (StringUtils.isEmpty(successUrlParam)) {
             //Grab url the user, was redirected from
-            successUrlParam = request.getHeader("referer");
+            successUrlParam = getSuccessUrlFromReferer(request);
         }
 
         if (failureUrl != null) {
             if (!StringUtils.isEmpty(successUrlParam)) {
-                //Preserve the original successUrl from the referer.  If there is one, it must be the last url segment
-                int successUrlPos = successUrlParam.indexOf("successUrl");
-                if (successUrlPos >= 0) {
-                    successUrlParam = successUrlParam.substring(successUrlPos);
-                } else {
-                    successUrlParam = "successUrl=" + successUrlParam;
-                }
-
                 if (!failureUrl.contains("?")) {
-                    failureUrl += "?" + successUrlParam;
+                    failureUrl += "?" + SUCCESS_URL_PARAM + successUrlParam;
                 } else {
-                    failureUrl += "&" + successUrlParam;
+                    failureUrl += "&" + SUCCESS_URL_PARAM + successUrlParam;
                 }
             }
 
@@ -87,6 +89,80 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
             getRedirectStrategy().sendRedirect(request, response, failureUrl);
         } else {
             super.onAuthenticationFailure(request, response, exception);
+        }
+    }
+
+    /**
+     * Preserves the original successUrl from the referer. If the referer carries a successUrl parameter its value is
+     * used, otherwise the referer itself. The raw (still encoded) header is split on parameter boundaries so encoded
+     * characters in the destination survive; only the decoded value is used for validation. Referers from another host
+     * and successUrl values that are not local to the application are dropped.
+     */
+    protected String getSuccessUrlFromReferer(HttpServletRequest request) {
+        String referer = StringUtils.trimToNull(request.getHeader("referer"));
+        if (referer == null || containsWhitespaceOrControl(referer) || !isSameHostUrl(referer, request)) {
+            return null;
+        }
+
+        int successUrlPos = referer.indexOf(SUCCESS_URL_PARAM);
+        if (successUrlPos < 0) {
+            return referer;
+        }
+
+        String successUrl = referer.substring(successUrlPos + SUCCESS_URL_PARAM.length());
+        int nextParamPos = successUrl.indexOf('&');
+        if (nextParamPos >= 0) {
+            successUrl = successUrl.substring(0, nextParamPos);
+        }
+        String decodedSuccessUrl = StringUtil.cleanseUrlString(successUrl);
+        if (isLocalPath(decodedSuccessUrl) || isSameHostUrl(decodedSuccessUrl, request)) {
+            return successUrl;
+        }
+        return null;
+    }
+
+    protected String validateLocalPath(String url, String paramName) {
+        if (url == null || isLocalPath(url)) {
+            return url;
+        }
+        logger.warn("SECURITY FAILURE Ignoring non-local " + paramName + " on admin login failure: "
+                + StringUtil.sanitize(url));
+        return null;
+    }
+
+    /**
+     * @return true if the url is a path on this server, e.g. {@code /admin/login}. Absolute and protocol-relative urls
+     * ({@code //host}, {@code /\host}) and urls containing backslashes or control characters (which browsers
+     * strip or normalize) are rejected.
+     */
+    protected boolean isLocalPath(String url) {
+        if (StringUtils.isEmpty(url) || url.charAt(0) != '/') {
+            return false;
+        }
+        return !url.startsWith("//") && !url.contains("\\") && !url.contains("://") && !containsWhitespaceOrControl(url);
+    }
+
+    protected boolean containsWhitespaceOrControl(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            if (Character.isISOControl(url.charAt(i)) || Character.isWhitespace(url.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return true if the url is an absolute http(s) url pointing at the host that served this request
+     */
+    protected boolean isSameHostUrl(String url, HttpServletRequest request) {
+        try {
+            URI uri = new URI(url);
+            String scheme = uri.getScheme();
+            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    && uri.getHost() != null
+                    && uri.getHost().equalsIgnoreCase(request.getServerName());
+        } catch (URISyntaxException e) {
+            return false;
         }
     }
 
