@@ -134,6 +134,10 @@ public class CustomerServiceImplResetPasswordUrlTest {
         assertFalse(service.isAllowedResetPasswordUrl("https://shop.example.com.evil.example/reset"));
         assertFalse(service.isAllowedResetPasswordUrl("https://shop.example.com@evil.example/reset"));
         assertFalse(service.isAllowedResetPasswordUrl("//evil.example/reset"));
+        assertFalse(service.isAllowedResetPasswordUrl("///evil.example/reset"));
+        assertFalse(service.isAllowedResetPasswordUrl(" ////evil.example/reset"));
+        assertFalse(service.isAllowedResetPasswordUrl("/\\evil.example/reset"));
+        assertFalse(service.isAllowedResetPasswordUrl("evil.example/reset"));
         assertFalse(service.isAllowedResetPasswordUrl("javascript:alert(1)"));
         assertFalse(service.isAllowedResetPasswordUrl("ftp://shop.example.com/reset"));
         assertFalse(service.isAllowedResetPasswordUrl("https://shop.example.com/a b"));

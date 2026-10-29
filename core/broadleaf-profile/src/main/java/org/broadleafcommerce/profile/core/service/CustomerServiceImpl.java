@@ -411,14 +411,16 @@ public class CustomerServiceImpl implements CustomerService {
      * {@code resetPassword.allowedBaseUrls}.
      */
     protected boolean isAllowedResetPasswordUrl(String resetPasswordUrl) {
+        String url = resetPasswordUrl.trim();
         URI uri;
         try {
-            uri = URI.create(resetPasswordUrl.trim());
+            uri = URI.create(url);
         } catch (IllegalArgumentException e) {
             return false;
         }
         if (uri.getScheme() == null && uri.getRawAuthority() == null) {
-            return true;
+            // browsers treat "//host", "///host" and "/\host" as network paths, so only allow a single leading slash
+            return url.startsWith("/") && !url.startsWith("//") && !url.startsWith("/\\");
         }
         String host = uri.getHost();
         if (host == null || uri.getRawUserInfo() != null
