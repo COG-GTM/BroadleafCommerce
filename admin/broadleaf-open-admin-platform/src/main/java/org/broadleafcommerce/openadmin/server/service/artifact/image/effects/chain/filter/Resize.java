@@ -28,6 +28,8 @@ import java.util.Map;
 
 public class Resize extends BaseFilter {
 
+    public static final int MAX_TARGET_DIMENSION = 4096;
+
     private RenderingHints hints;
     private int targetWidth;
     private int targetHeight;
@@ -146,8 +148,13 @@ public class Resize extends BaseFilter {
             return src;
         }
 
+        if (targetWidth < 1 || targetHeight < 1) {
+            return src;
+        }
+
+        int maxDimension = getMaxTargetDimension();
         BufferedImage temp = getScaledInstance(
-                src, targetWidth, targetHeight, hint, highQuality, maintainAspectRatio, reduceOnly
+                src, targetWidth, targetHeight, hint, highQuality, maintainAspectRatio, reduceOnly, maxDimension
         );
 
         if (dst != null) {
@@ -168,35 +175,45 @@ public class Resize extends BaseFilter {
             Object hint,
             boolean higherQuality,
             boolean maintainAspectRatio,
-            boolean reduceOnly
+            boolean reduceOnly,
+            int maxDimension
     ) {
         BufferedImage ret = (BufferedImage) img;
         int w, h, destW, destH;
 
+        double scaledW;
+        double scaledH;
         if (maintainAspectRatio) {
             int wDiff = Math.abs(img.getWidth() - targetWidth);
             int hDiff = Math.abs(img.getHeight() - targetHeight);
             if (wDiff > hDiff) {
-                destH = targetHeight;
-                destW = Double.valueOf((((double) img.getWidth()) * ((double) destH)) / ((double) img.getHeight())).intValue();
-                if (remainUnderBoundsWhileKeepingAspectRatio && destW > targetWidth) {
-                    int newW = targetWidth;
-                    destH = Double.valueOf((((double) destH) * ((double) newW)) / ((double) destW)).intValue();
-                    destW = newW;
+                scaledH = targetHeight;
+                scaledW = Math.floor((((double) img.getWidth()) * scaledH) / ((double) img.getHeight()));
+                if (remainUnderBoundsWhileKeepingAspectRatio && scaledW > targetWidth) {
+                    scaledH = Math.floor((scaledH * targetWidth) / scaledW);
+                    scaledW = targetWidth;
                 }
             } else {
-                destW = targetWidth;
-                destH = Double.valueOf((((double) img.getHeight()) * ((double) destW)) / ((double) img.getWidth())).intValue();
-                if (remainUnderBoundsWhileKeepingAspectRatio && destH > targetHeight) {
-                    int newH = targetHeight;
-                    destW = Double.valueOf((((double) destW) * ((double) newH)) / ((double) destH)).intValue();
-                    destH = newH;
+                scaledW = targetWidth;
+                scaledH = Math.floor((((double) img.getHeight()) * scaledW) / ((double) img.getWidth()));
+                if (remainUnderBoundsWhileKeepingAspectRatio && scaledH > targetHeight) {
+                    scaledW = Math.floor((scaledW * targetHeight) / scaledH);
+                    scaledH = targetHeight;
                 }
             }
+            if (scaledW > maxDimension || scaledH > maxDimension) {
+                double scale = Math.min(maxDimension / scaledW, maxDimension / scaledH);
+                scaledW = Math.floor(scaledW * scale);
+                scaledH = Math.floor(scaledH * scale);
+            }
         } else {
-            destW = targetWidth;
-            destH = targetHeight;
+            scaledW = Math.min(targetWidth, maxDimension);
+            scaledH = Math.min(targetHeight, maxDimension);
         }
+        destW = (int) scaledW;
+        destH = (int) scaledH;
+        destW = Math.max(1, destW);
+        destH = Math.max(1, destH);
 
         if (higherQuality) {
             // Use multi-step technique: start with original size, then
@@ -207,13 +224,8 @@ public class Resize extends BaseFilter {
         } else {
             // Use one-step technique: scale directly from original
             // size to target size with a single drawImage() call
-            if (!maintainAspectRatio) {
-                w = targetWidth;
-                h = targetHeight;
-            } else {
-                w = destW;
-                h = destH;
-            }
+            w = destW;
+            h = destH;
         }
 
         do {
@@ -257,6 +269,10 @@ public class Resize extends BaseFilter {
         } while (w != destW || h != destH);
 
         return ret;
+    }
+
+    protected int getMaxTargetDimension() {
+        return MAX_TARGET_DIMENSION;
     }
 
 }
