@@ -31,6 +31,7 @@ import com.googlecode.pngtastic.core.PngOptimizer;
 import java.awt.image.BufferedImage;
 import java.awt.image.BufferedImageOp;
 import java.awt.image.ColorConvertOp;
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -69,6 +70,12 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
     @Value("${image.artifact.recompress.formats:png}")
     protected String recompressFormats = "png";
 
+    @Value("${image.artifact.max.source.dimension:12000}")
+    protected int maxSourceDimension = 12000;
+
+    @Value("${image.artifact.max.source.pixels:50000000}")
+    protected long maxSourcePixels = 50_000_000L;
+
     @Override
     public boolean isSupported(InputStream artifactStream, String filename) {
         for (String type : supportedUploadTypes) {
@@ -103,12 +110,9 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
     @Override
     public InputStream convert(InputStream artifactStream, Operation[] operations, String mimeType) throws Exception {
         if (operations != null && operations.length > 0) {
-            ImageInputStream iis = ImageIO.createImageInputStream(artifactStream);
-            Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
-            ImageReader reader = iter.next();
-            String formatName = reader.getFormatName();
-            artifactStream.reset();
-            BufferedImage image = ImageIO.read(ImageIO.createImageInputStream(artifactStream));
+            InputStream imageStream = markSupportingStream(artifactStream);
+            String formatName = readFormatAndValidateSourceSize(imageStream);
+            BufferedImage image = ImageIO.read(imageStream);
 
             //before
             if (formatName.toLowerCase().equals("jpeg") || formatName.toLowerCase().equals("jpg")) {
@@ -140,12 +144,9 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
     }
 
     public InputStream convert(InputStream artifactStream, BufferedImageOp filter) throws Exception {
-        ImageInputStream iis = ImageIO.createImageInputStream(artifactStream);
-        Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
-        ImageReader reader = iter.next();
-        String formatName = reader.getFormatName();
-        artifactStream.reset();
-        BufferedImage image = ImageIO.read(ImageIO.createImageInputStream(artifactStream));
+        InputStream imageStream = markSupportingStream(artifactStream);
+        String formatName = readFormatAndValidateSourceSize(imageStream);
+        BufferedImage image = ImageIO.read(imageStream);
 
         //before
         if (formatName.toLowerCase().equals("jpeg") || formatName.toLowerCase().equals("jpg")) {
@@ -205,6 +206,40 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
         return responseStream;
     }
 
+    protected InputStream markSupportingStream(InputStream artifactStream) {
+        return artifactStream.markSupported() ? artifactStream : new BufferedInputStream(artifactStream);
+    }
+
+    /**
+     * Returns the image format name, rejecting source images whose declared dimensions exceed the configured
+     * limits. Only the image header is read; the stream is reset afterwards so it can be fully decoded.
+     */
+    protected String readFormatAndValidateSourceSize(InputStream imageStream) throws Exception {
+        imageStream.mark(Integer.MAX_VALUE);
+        ImageInputStream iis = ImageIO.createImageInputStream(imageStream);
+        try {
+            Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
+            ImageReader reader = iter.next();
+            try {
+                String formatName = reader.getFormatName();
+                reader.setInput(iis, true, true);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width > maxSourceDimension || height > maxSourceDimension
+                        || (long) width * height > maxSourcePixels) {
+                    throw new IllegalArgumentException("Source image " + width + "x" + height
+                            + " exceeds the configured image manipulation limits");
+                }
+                return formatName;
+            } finally {
+                reader.dispose();
+            }
+        } finally {
+            iis.close();
+            imageStream.reset();
+        }
+    }
+
     protected InputStream compressPNG(InputStream artifactStream) throws Exception {
         PngImage pngImage = new PngImage(artifactStream);
         PngOptimizer optimizer = new PngOptimizer();
@@ -259,6 +294,22 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
 
     public void setSupportedUploadTypes(String[] supportedUploadTypes) {
         this.supportedUploadTypes = supportedUploadTypes;
+    }
+
+    public int getMaxSourceDimension() {
+        return maxSourceDimension;
+    }
+
+    public void setMaxSourceDimension(int maxSourceDimension) {
+        this.maxSourceDimension = maxSourceDimension;
+    }
+
+    public long getMaxSourcePixels() {
+        return maxSourcePixels;
+    }
+
+    public void setMaxSourcePixels(long maxSourcePixels) {
+        this.maxSourcePixels = maxSourcePixels;
     }
 
     public float getCompressionQuality() {
