@@ -18,6 +18,8 @@
 package org.broadleafcommerce.common.service;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
@@ -35,6 +37,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jakarta.annotation.Resource;
@@ -59,6 +62,7 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
     protected static final String TRANSACTION_MANAGER_KEY = "transactionManager";
     private final Map<String, EntityManager> ENTITY_MANAGER_CACHE = new ConcurrentHashMap<>();
     private final Map<String, PlatformTransactionManager> TRANSACTION_MANAGER_CACHE = new ConcurrentHashMap<>();
+    private final Set<String> ENTITY_TYPE_NAMES = ConcurrentHashMap.newKeySet();
     @Resource(name = "blEntityConfiguration")
     protected EntityConfiguration entityConfiguration;
     @Resource(name = "blTargetModeMaps")
@@ -127,19 +131,41 @@ public class PersistenceServiceImpl implements PersistenceService, SmartLifecycl
             String managerCacheKey = buildManagerCacheKey(targetMode, mappedClass);
             ENTITY_MANAGER_CACHE.put(managerCacheKey, em);
             TRANSACTION_MANAGER_CACHE.put(managerCacheKey, txManager);
+            registerEntityTypeNames(mappedClass);
+        }
+    }
+
+    protected void registerEntityTypeNames(Class<?> mappedClass) {
+        ENTITY_TYPE_NAMES.add(mappedClass.getName());
+        for (Class<?> superclass : ClassUtils.getAllSuperclasses(mappedClass)) {
+            if (superclass != Object.class) {
+                ENTITY_TYPE_NAMES.add(superclass.getName());
+            }
+        }
+        for (Class<?> interfaze : ClassUtils.getAllInterfaces(mappedClass)) {
+            ENTITY_TYPE_NAMES.add(interfaze.getName());
         }
     }
 
     @Override
     public boolean validateEntityClassName(String entityClassName) {
-        String cacheKey = buildManagerCacheKey(TargetModeType.SANDBOX.getType(), entityClassName);
-        boolean isValid = ENTITY_MANAGER_CACHE.containsKey(cacheKey);
+        // check the known entity type names first, since building the cache key may load the class by name
+        boolean isValid = validateEntityTypeName(entityClassName)
+                && ENTITY_MANAGER_CACHE.containsKey(buildManagerCacheKey(TargetModeType.SANDBOX.getType(), entityClassName));
 
         if (!isValid) {
             LOG.warn("The system detected an entity class name submitted that is not present in the registered entities known to the system.");
         }
 
         return isValid;
+    }
+
+    @Override
+    public boolean validateEntityTypeName(String entityTypeName) {
+        if (StringUtils.isBlank(entityTypeName)) {
+            return false;
+        }
+        return ENTITY_TYPE_NAMES.contains(entityTypeName);
     }
 
     @Override
