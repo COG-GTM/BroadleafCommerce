@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.cms.web.processor;
 
+import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.cms.file.service.StaticAssetService;
 import org.broadleafcommerce.common.file.service.StaticAssetPathService;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
@@ -27,6 +28,7 @@ import org.broadleafcommerce.presentation.model.BroadleafAttributeModifier;
 import org.broadleafcommerce.presentation.model.BroadleafTemplateContext;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -43,6 +45,9 @@ import jakarta.servlet.http.HttpServletRequest;
 @Component("blUrlRewriteProcessor")
 @ConditionalOnTemplating
 public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProcessor {
+
+    private static final String SAFE_QUERY_PUNCTUATION = "-._~=&";
+    private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
 
     @Resource(name = "blStaticAssetPathService")
     protected StaticAssetPathService staticAssetPathService;
@@ -82,9 +87,11 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
         String extension = getFileExtension(assetPath);
         if (isImageTag(tagName) && isAdminRequest() && !isImageExtension(extension)) {
             String defaultFileTypeImagePath = getDefaultFileTypeImagePath(extension);
-            String queryString = getQueryString(assetPath);
+            String queryString = sanitizeQueryString(getQueryString(assetPath));
 
-            assetPath = parsePath(defaultFileTypeImagePath + queryString, context);
+            // Only the constant placeholder path is evaluated. The query string comes from the already-evaluated
+            // (and possibly user-supplied) asset path, so it must never be fed back into the expression parser.
+            assetPath = parsePath(defaultFileTypeImagePath, context) + queryString;
         }
 
         // We are forcing an evaluation of @{} from Thymeleaf above which will automatically add a contextPath,
@@ -108,9 +115,23 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
     }
 
     protected Boolean isImageExtension(String extension) {
-        String imageExtensions = BLCSystemProperty.resolveSystemProperty("admin.image.file.extensions");
+        if (StringUtils.isBlank(extension)) {
+            return false;
+        }
+        String imageExtensions = getImageExtensions();
+        if (imageExtensions == null) {
+            return false;
+        }
+        for (String imageExtension : imageExtensions.split(",")) {
+            if (extension.equalsIgnoreCase(imageExtension.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-        return imageExtensions.contains(extension);
+    protected String getImageExtensions() {
+        return BLCSystemProperty.resolveSystemProperty("admin.image.file.extensions");
     }
 
     protected String parsePath(String attributeValue, BroadleafTemplateContext context) {
@@ -122,17 +143,25 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
     }
 
     protected String getFileExtension(String assetPath) {
-        String extension;
-
-        int extensionStartIndex = assetPath.lastIndexOf(".") + 1;
-        int queryStartIndex = assetPath.lastIndexOf("?");
-        if (queryStartIndex > 0) {
-            extension = assetPath.substring(extensionStartIndex, queryStartIndex);
-        } else {
-            extension = assetPath.substring(extensionStartIndex);
+        if (assetPath == null) {
+            return "";
+        }
+        String path = assetPath;
+        int queryStartIndex = getQueryStartIndex(path);
+        if (queryStartIndex >= 0) {
+            path = path.substring(0, queryStartIndex);
+        }
+        int fragmentStartIndex = path.indexOf('#');
+        if (fragmentStartIndex >= 0) {
+            path = path.substring(0, fragmentStartIndex);
         }
 
-        return extension.toLowerCase();
+        int extensionStartIndex = path.lastIndexOf('.');
+        if (extensionStartIndex < 0 || extensionStartIndex < path.lastIndexOf('/')) {
+            return "";
+        }
+
+        return path.substring(extensionStartIndex + 1).toLowerCase();
     }
 
     protected String getDefaultFileTypeImagePath(String extension) {
@@ -163,9 +192,50 @@ public class UrlRewriteProcessor extends AbstractBroadleafAttributeModifierProce
     }
 
     protected String getQueryString(String assetPath) {
-        int queryStartIndex = assetPath.lastIndexOf("?");
+        if (assetPath == null) {
+            return "";
+        }
+        int queryStartIndex = getQueryStartIndex(assetPath);
 
         return (queryStartIndex > 0) ? assetPath.substring(queryStartIndex) : "";
+    }
+
+    protected int getQueryStartIndex(String assetPath) {
+        return assetPath.indexOf('?');
+    }
+
+    /**
+     * Percent-encodes every character of the given query string (including its leading '?') that is not a URL
+     * unreserved character or a query delimiter, so it can be safely appended to an already-evaluated URL as data.
+     */
+    protected String sanitizeQueryString(String queryString) {
+        if (StringUtils.isEmpty(queryString)) {
+            return "";
+        }
+        String query = queryString.startsWith("?") ? queryString.substring(1) : queryString;
+        int fragmentStartIndex = query.indexOf('#');
+        if (fragmentStartIndex >= 0) {
+            query = query.substring(0, fragmentStartIndex);
+        }
+        if (query.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder sanitized = new StringBuilder(query.length() + 1).append('?');
+        for (byte b : query.getBytes(StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xFF);
+            if (isSafeQueryCharacter(c)) {
+                sanitized.append(c);
+            } else {
+                sanitized.append('%').append(HEX_DIGITS[(b >> 4) & 0x0F]).append(HEX_DIGITS[b & 0x0F]);
+            }
+        }
+        return sanitized.toString();
+    }
+
+    protected boolean isSafeQueryCharacter(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || SAFE_QUERY_PUNCTUATION.indexOf(c) >= 0;
     }
 
 }
