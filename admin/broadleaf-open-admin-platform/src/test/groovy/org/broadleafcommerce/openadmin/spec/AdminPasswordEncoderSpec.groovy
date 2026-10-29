@@ -18,8 +18,14 @@
 package org.broadleafcommerce.openadmin.spec
 
 import org.broadleafcommerce.common.util.PropertyDrivenBeanFactory
+import org.broadleafcommerce.openadmin.server.security.dao.AdminUserDao
+import org.broadleafcommerce.openadmin.server.security.domain.AdminUser
+import org.broadleafcommerce.openadmin.server.security.domain.AdminUserImpl
+import org.broadleafcommerce.openadmin.server.security.service.AdminSecurityServiceImpl
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
+
+import javax.cache.Cache
 
 import spock.lang.Specification
 
@@ -78,5 +84,35 @@ class AdminPasswordEncoderSpec extends Specification {
         expect:
         seeded != 'admin'
         defaultAdminEncoder().matches('admin', seeded)
+    }
+
+    def "saveAdminUser stores supplied and generated passwords hashed"() {
+        given:
+        PasswordEncoder encoder = defaultAdminEncoder()
+        AdminUserDao dao = Mock()
+        AdminSecurityServiceImpl service = new AdminSecurityServiceImpl()
+        service.passwordEncoderBean = encoder
+        service.adminUserDao = dao
+        service.cache = Mock(Cache)
+        List<String> persisted = []
+        dao.saveAdminUser(_ as AdminUser) >> { AdminUser u -> persisted << u.password; u }
+
+        when: "a password is supplied"
+        AdminUser supplied = new AdminUserImpl()
+        supplied.unencodedPassword = 's3cret-Admin!'
+        service.saveAdminUser(supplied)
+
+        then:
+        persisted.every { it != 's3cret-Admin!' }
+        encoder.matches('s3cret-Admin!', supplied.password)
+
+        when: "no password is supplied, so one is generated"
+        persisted.clear()
+        AdminUser generated = new AdminUserImpl()
+        service.saveAdminUser(generated)
+
+        then:
+        generated.password.startsWith('\$2a\$')
+        persisted.every { it.startsWith('\$2a\$') }
     }
 }
