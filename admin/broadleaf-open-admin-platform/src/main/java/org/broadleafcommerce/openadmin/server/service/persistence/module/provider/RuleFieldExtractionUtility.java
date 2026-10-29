@@ -17,6 +17,9 @@
  */
 package org.broadleafcommerce.openadmin.server.service.persistence.module.provider;
 
+import org.broadleafcommerce.common.rule.MvelHelper;
+import org.broadleafcommerce.common.rule.MvelRuleValidator;
+import org.broadleafcommerce.common.rule.UnsafeMvelRuleException;
 import org.broadleafcommerce.openadmin.dto.Entity;
 import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.server.service.persistence.validation.RuleFieldValidator;
@@ -35,6 +38,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -47,6 +53,10 @@ import jakarta.annotation.Resource;
  */
 @Component("blRuleFieldExtractionUtility")
 public class RuleFieldExtractionUtility {
+
+    protected static final Collection<String> ADDITIONAL_RULE_CONTEXT_IMPORTS =
+            Collections.unmodifiableList(Arrays.asList("OfferType", "FulfillmentType"));
+
 
     @Resource(name = "blRuleBuilderFieldServiceFactory")
     protected RuleBuilderFieldServiceFactory ruleBuilderFieldServiceFactory;
@@ -100,9 +110,88 @@ public class RuleFieldExtractionUtility {
         if (dw != null && dw.getData().size() == 1) {
             DataDTO dto = dw.getData().get(0);
             mvel = convertDTOToMvelString(translator, entityKey, dto, fieldService);
+            validateMvel(mvel);
         }
 
         return mvel;
+    }
+
+    /**
+     * Converts the {@link DataDTO} of a quantity based rule into the MVEL expression that is persisted for it and
+     * validates that expression.
+     *
+     * @throws MVELTranslationException when the rule cannot be translated or is not allowed
+     */
+    public String convertQuantityRuleDTOToMvelString(
+            DataDTOToMVELTranslator translator,
+            String entityKey,
+            DataDTO dto,
+            String fieldService
+    ) throws MVELTranslationException {
+        String mvel = convertDTOToMvelString(translator, entityKey, dto, fieldService);
+        if (mvel != null) {
+            mvel = unescapeQuotes(mvel);
+            validateMvel(mvel);
+        }
+        return mvel;
+    }
+
+    /**
+     * Quantity based rules have historically been stored with escaped quotes ({@code \"}) unescaped. That is only
+     * done when it does not change the structure of the expression, so a value can never break out of its string
+     * literal.
+     */
+    protected String unescapeQuotes(String mvel) {
+        String unescaped = mvel.replace("\\\"", "\"");
+        if (unescaped.equals(mvel)) {
+            return mvel;
+        }
+        String originalSkeleton;
+        try {
+            originalSkeleton = MvelRuleValidator.codeSkeleton(mvel);
+        } catch (UnsafeMvelRuleException e) {
+            return unescaped;
+        }
+        try {
+            if (originalSkeleton.equals(MvelRuleValidator.codeSkeleton(unescaped))) {
+                return unescaped;
+            }
+        } catch (UnsafeMvelRuleException e) {
+            // fall through and keep the escaped version
+        }
+        return mvel;
+    }
+
+    /**
+     * Rejects raw MVEL posted alongside the rule builder data. Raw MVEL is only ever displayed (read-only) for rules
+     * the rule builder cannot represent and must never be persisted from client input.
+     */
+    public void rejectRawMvel(DataWrapper dw) throws MVELTranslationException {
+        if (dw != null && dw.getRawMvel() != null && !dw.getRawMvel().trim().isEmpty()) {
+            throw new MVELTranslationException(MVELTranslationException.UNSAFE_RULE,
+                    "Raw MVEL rules are not accepted, use the rule builder instead");
+        }
+    }
+
+    /**
+     * Validates that the given MVEL stays within the restricted rule language enforced by {@link MvelHelper} at
+     * evaluation time.
+     *
+     * @throws MVELTranslationException when the rule is not allowed
+     */
+    public void validateMvel(String mvel) throws MVELTranslationException {
+        try {
+            MvelHelper.validateRule(mvel, getAdditionalRuleContextImports());
+        } catch (UnsafeMvelRuleException e) {
+            throw new MVELTranslationException(MVELTranslationException.UNSAFE_RULE, e.getMessage());
+        }
+    }
+
+    /**
+     * Context imports, besides the defaults added by {@link MvelHelper}, that rules may reference.
+     */
+    protected Collection<String> getAdditionalRuleContextImports() {
+        return ADDITIONAL_RULE_CONTEXT_IMPORTS;
     }
 
     public String convertDTOToMvelString(

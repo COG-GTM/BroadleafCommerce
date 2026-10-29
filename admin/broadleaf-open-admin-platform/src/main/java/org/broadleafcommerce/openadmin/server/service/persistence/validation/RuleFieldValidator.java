@@ -122,9 +122,12 @@ public class RuleFieldValidator implements PopulateValueRequestValidator {
                                             || sandBoxHelper.isRelatedToParentCatalogIds(quantityBasedRule, dto.getPk())) {
                                         foundIdToUpdate = true;
                                         try {
-                                            String mvel = ruleFieldExtractionUtility.convertDTOToMvelString(
+                                            String mvel = ruleFieldExtractionUtility.convertQuantityRuleDTOToMvelString(
                                                     translator, entityKey, dto, fieldService
                                             );
+                                            if (StringUtils.isEmpty(mvel)) {
+                                                ruleFieldExtractionUtility.rejectRawMvel(dw);
+                                            }
                                         } catch (MVELTranslationException e) {
                                             return new PropertyValidationResult(false, getMvelParsingErrorMesage(dw, e));
                                         }
@@ -136,7 +139,12 @@ public class RuleFieldValidator implements PopulateValueRequestValidator {
                             } else {
                                 // This is a new rule, just validate that it parses successfully
                                 try {
-                                    ruleFieldExtractionUtility.convertDTOToMvelString(translator, entityKey, dto, fieldService);
+                                    String mvel = ruleFieldExtractionUtility.convertQuantityRuleDTOToMvelString(
+                                            translator, entityKey, dto, fieldService
+                                    );
+                                    if (StringUtils.isEmpty(mvel)) {
+                                        ruleFieldExtractionUtility.rejectRawMvel(dw);
+                                    }
                                 } catch (MVELTranslationException e) {
                                     return new PropertyValidationResult(false, getMvelParsingErrorMesage(dw, e));
                                 }

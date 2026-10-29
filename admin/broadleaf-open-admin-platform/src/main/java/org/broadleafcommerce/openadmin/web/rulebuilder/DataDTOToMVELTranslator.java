@@ -25,10 +25,12 @@ import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.ExpressionDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService;
 
+import java.math.BigDecimal;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Utility class to convert a DataDTO/ExpressionDTO into an MVEL string
@@ -583,6 +585,56 @@ public class DataDTOToMVELTranslator {
         return response.toString();
     }
 
+    protected static final Pattern FIELD_REFERENCE = Pattern.compile(
+            "[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*|\\['[A-Za-z0-9_\\- ]*'\\])*");
+
+    protected static final Pattern STRING_LITERAL = Pattern.compile("\\s*\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"\\s*");
+
+    protected static final Pattern NUMERIC_LITERAL = Pattern.compile("\\s*-?[0-9]+(\\.[0-9]+)?\\s*");
+
+    /**
+     * Escapes a raw value so that it can be placed between double quotes as a single MVEL string literal.
+     */
+    protected String escapeStringLiteral(String value) {
+        StringBuilder sb = new StringBuilder(value.length() + 8);
+        for (char c : value.toCharArray()) {
+            switch (c) {
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                default:
+                    sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Values emitted without surrounding quotes (null checks, between, size and collection operators) must be a
+     * single literal: {@code null}, a number or an already quoted string literal.
+     */
+    protected String requireLiteral(String fieldName, String value) throws MVELTranslationException {
+        if ("null".equals(value.trim()) || NUMERIC_LITERAL.matcher(value).matches()
+                || STRING_LITERAL.matcher(value).matches()) {
+            return value;
+        }
+        throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                "Cannot format value for the field (" + fieldName + "). The value (" + value
+                        + ") is not a valid literal");
+    }
+
     protected String formatValue(
             String fieldName,
             String entityKey,
@@ -595,6 +647,12 @@ public class DataDTOToMVELTranslator {
     ) throws MVELTranslationException {
         StringBuilder response = new StringBuilder();
         if (isFieldComparison) {
+            if (value == null || value.length == 0 || value[0] == null
+                    || !FIELD_REFERENCE.matcher(value[0].toString()).matches()) {
+                throw new MVELTranslationException(MVELTranslationException.SPECIFIED_FIELD_NOT_FOUND,
+                        "Cannot compare the field (" + fieldName + ") to (" + (value == null || value.length == 0
+                                ? null : value[0]) + ") since it is not a valid field name");
+            }
             switch (type) {
                 case MONEY:
                     response.append(entityKey);
@@ -630,11 +688,16 @@ public class DataDTOToMVELTranslator {
 
                 switch (type) {
                     case BOOLEAN:
-                        response.append(value[j]);
+                        if (!"true".equalsIgnoreCase(parsableVal.trim()) && !"false".equalsIgnoreCase(parsableVal.trim())) {
+                            throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                                    "Cannot format value for the field (" + fieldName + ") based on field type. "
+                                            + "The type of field is Boolean, and you entered: (" + parsableVal + ")");
+                        }
+                        response.append(Boolean.parseBoolean(parsableVal.trim()));
                         break;
                     case DECIMAL:
                         try {
-                            Double.parseDouble(parsableVal);
+                            parsableVal = new BigDecimal(parsableVal.trim()).toPlainString();
                         } catch (Exception e) {
                             throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_DECIMAL_VALUE,
                                     "Cannot format value for the field ("
@@ -649,11 +712,11 @@ public class DataDTOToMVELTranslator {
                             if (ignoreCase) {
                                 response.append("MvelHelper.toUpperCase(");
                             }
-                            if (!ignoreQuotes) {
+                            if (ignoreQuotes) {
+                                response.append(requireLiteral(fieldName, String.valueOf(value[j])));
+                            } else {
                                 response.append("\"");
-                            }
-                            response.append(value[j]);
-                            if (!ignoreQuotes) {
+                                response.append(escapeStringLiteral(parsableVal));
                                 response.append("\"");
                             }
                             if (ignoreCase) {
@@ -661,19 +724,18 @@ public class DataDTOToMVELTranslator {
                             }
                         } else {
                             try {
-                                Integer.parseInt(parsableVal);
+                                response.append(Integer.parseInt(parsableVal));
                             } catch (Exception e) {
                                 throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_INTEGER_VALUE,
                                         "Cannot format value for the field (" +
                                                 fieldName + ") based on field type. The type of field is Integer, " +
                                                 "and you entered: (" + value[j] + ")");
                             }
-                            response.append(value[j]);
                         }
                         break;
                     case INTEGER:
                         try {
-                            Integer.parseInt(parsableVal);
+                            parsableVal = String.valueOf(Integer.parseInt(parsableVal));
                         } catch (Exception e) {
                             throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_INTEGER_VALUE,
                                     "Cannot format value for the field (" +
@@ -684,7 +746,7 @@ public class DataDTOToMVELTranslator {
                         break;
                     case MONEY:
                         try {
-                            Double.parseDouble(parsableVal);
+                            parsableVal = new BigDecimal(parsableVal.trim()).toPlainString();
                         } catch (Exception e) {
                             throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_DECIMAL_VALUE,
                                     "Cannot format value for the field (" +
@@ -733,6 +795,15 @@ public class DataDTOToMVELTranslator {
                             stringVersionState = String.format("%" + openQuoteIndex + "s", "\"")
                                     + substring.replace("\"", "\\\"")
                                     + String.format("%-" + paddingRightLength + "s", "\"");
+                            if (!STRING_LITERAL.matcher(stringVersionState).matches()) {
+                                throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                                        "Cannot format value for the field (" + fieldName + "). The value ("
+                                                + value[j] + ") is not a valid string");
+                            }
+                        } else if (ignoreQuotes) {
+                            stringVersionState = requireLiteral(fieldName, stringVersionState);
+                        } else {
+                            stringVersionState = escapeStringLiteral(stringVersionState);
                         }
                         if (ignoreCase) {
                             response.append("MvelHelper.toUpperCase(");
