@@ -60,6 +60,8 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 
 import java.net.URLDecoder;
 import java.util.ArrayList;
@@ -88,6 +90,14 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
     public static final String DEFAULT_CONTAINER_VIEW = "modules/defaultContainer";
     public static final String MODAL_CONTAINER_VIEW = "modules/modalContainer";
     protected static final Log LOG = LogFactory.getLog(AdminAbstractController.class);
+
+    /**
+     * {@link EntityForm} properties that are populated by server code only and must never be bound from request
+     * parameters. Dynamic form infos carry the security ceiling used for nested persistence requests.
+     */
+    protected static final String[] ENTITY_FORM_DISALLOWED_FIELDS = new String[]{
+            "dynamicForms*", "dynamicFormInfos*", "sectionCrumbsImpl*", "attributes*"
+    };
 
     // ***********************
     // RESOURCE DECLARATIONS *
@@ -395,6 +405,11 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         }
     }
 
+    @InitBinder("entityForm")
+    public void initEntityFormBinder(WebDataBinder binder) {
+        binder.setDisallowedFields(ENTITY_FORM_DISALLOWED_FIELDS);
+    }
+
     /**
      * This method will scan the entityForm for all dynamic form fields and pull them out
      * as appropriate.
@@ -421,6 +436,10 @@ public abstract class AdminAbstractController extends BroadleafAbstractControlle
         for (Entry<String, Field> entry : dynamicFields.entrySet()) {
             String[] fieldName = entry.getKey().split("\\" + DynamicEntityFormInfo.FIELD_SEPARATOR);
             DynamicEntityFormInfo info = entityForm.getDynamicFormInfo(fieldName[0]);
+            if (info == null || fieldName.length < 2) {
+                LOG.warn("Ignoring dynamic form field for a dynamic form that was not registered by the server");
+                continue;
+            }
 
             EntityForm dynamicForm = entityForm.getDynamicForm(fieldName[0]);
             if (dynamicForm == null) {

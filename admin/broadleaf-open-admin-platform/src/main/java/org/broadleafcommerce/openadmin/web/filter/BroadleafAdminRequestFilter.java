@@ -145,7 +145,27 @@ public class BroadleafAdminRequestFilter extends AbstractBroadleafAdminRequestFi
         params.put("ceilingEntity", ceilingEntity);
         params.put("ceilingEntityFullyQualifiedClassname", ceilingEntityFullyQualifiedClassname);
         params.put("__originalType", originalType);
+        boolean validateEntityType = !"/translations".equals(request.getServletPath());
+        for (Map.Entry<String, String[]> param : request.getParameterMap().entrySet()) {
+            if (param.getValue() != null && isNestedClassNameParam(param.getKey(), validateEntityType)) {
+                for (int i = 0; i < param.getValue().length; i++) {
+                    params.put(param.getKey() + "[" + i + "]", param.getValue()[i]);
+                }
+            }
+        }
         return validationService.validateClassNameParams(params, "blPU");
+    }
+
+    /**
+     * Parameters such as {@code dynamicForms[x].ceilingEntityClassname} or
+     * {@code dynamicFormInfos[x].securityCeilingClassName} also carry entity class names and must be whitelisted.
+     */
+    protected boolean isNestedClassNameParam(String paramName, boolean includeEntityType) {
+        String lowerName = paramName.toLowerCase();
+        return lowerName.endsWith("ceilingentityclassname")
+                || lowerName.endsWith("ceilingclassname")
+                || lowerName.endsWith("ceilingentityfullyqualifiedclassname")
+                || (includeEntityType && lowerName.endsWith(".entitytype"));
     }
 
     /**
