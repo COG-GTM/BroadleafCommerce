@@ -17,7 +17,6 @@
  */
 package org.broadleafcommerce.core.order.service.workflow.update.options;
 
-import org.broadleafcommerce.core.order.domain.DiscreteOrderItem;
 import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.core.order.service.OrderItemService;
 import org.broadleafcommerce.core.order.service.call.OrderItemRequestDTO;
@@ -55,14 +54,11 @@ public class ValidateUpdateProductOptionsRequestActivity extends BaseActivity<Pr
             throw new IllegalArgumentException("Order is required when updating items in the order");
         }
 
-        // Throw an exception if the user is trying to update an order item that is part of a bundle
-        OrderItem orderItem = orderItemService.readOrderItemById(orderItemRequestDTO.getOrderItemId());
-        if (orderItem != null && orderItem instanceof DiscreteOrderItem) {
-            DiscreteOrderItem doi = (DiscreteOrderItem) orderItem;
-            if (doi.getBundleOrderItem() != null) {
-                //then its ok , since we are just updating the product options
-            }
-        }
+        // Throw an exception if the order item is not part of the order being updated
+        OrderItem orderItem = ProductOptionsOrderItemResolver.findOrderItemInOrder(
+                request.getOrder(), orderItemRequestDTO.getOrderItemId()
+        );
+        request.setOrderItem(orderItem);
 
         return context;
     }
