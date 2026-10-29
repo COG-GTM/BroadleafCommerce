@@ -52,6 +52,11 @@ public class BroadleafAuthenticationFailureHandlerTest {
                 "/\t/evil.com",
                 "/login\u3000x",
                 "/login\u0000",
+                "/%2F%2Fevil.com",
+                "/%2f3232235777",
+                "/%5Cevil.com",
+                "/%252F%252Fevil.com",
+                "/%09/evil.com",
                 "",
                 null
         };
@@ -62,7 +67,8 @@ public class BroadleafAuthenticationFailureHandlerTest {
 
     @Test
     public void acceptsLocalPaths() {
-        String[] local = {"/", "/login?error=true", "/account/orders", "/checkout.htm", "/search?q=a%2Fb#top"};
+        String[] local = {"/", "/login?error=true", "/account/orders", "/checkout.htm", "/search?q=a%2Fb#top",
+                "/search?q=red|blue", "/search?filter[color]=red", "/search?q=100%"};
         for (String url : local) {
             assertEquals(url, handler.validateUrlParam(url));
         }

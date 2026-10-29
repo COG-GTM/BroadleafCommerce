@@ -23,8 +23,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -58,6 +57,8 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
      *     </pre>
      * </p>
      */
+    private static final int MAX_DECODE_PASSES = 3;
+
     private final Map<String, String> failureUrlMap = new HashMap<>();
     private String defaultFailureUrl;
 
@@ -112,17 +113,44 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
     }
 
     /**
-     * Returns the url only if it is a path local to this application: it must start with a single {@code /}
-     * followed by something other than {@code /} or {@code \\}, and must carry no scheme or authority.
-     * Anything else (absolute urls, protocol-relative urls such as {@code //host}, backslashes,
-     * control or whitespace characters) returns null.
+     * Returns the url only if it is a path local to this application, otherwise null. See {@link #isLocalPath(String)}.
      */
     public String validateUrlParam(final String url) {
         return isLocalPath(url) ? url : null;
     }
 
+    /**
+     * A local path starts with a single {@code /} followed by something other than {@code /} or {@code \\}, so it
+     * can carry neither a scheme nor an authority. Backslashes, whitespace and control characters are rejected because
+     * browsers normalize or strip them. The check is repeated on up to {@value #MAX_DECODE_PASSES} further
+     * URL-decodings so an encoded value such as {@code /%2F%2Fhost} cannot become protocol-relative if a later
+     * consumer decodes it again.
+     */
     protected boolean isLocalPath(final String url) {
-        if (url == null || url.isEmpty() || url.charAt(0) != '/') {
+        if (url == null) {
+            return false;
+        }
+        String candidate = url;
+        for (int pass = 0; pass <= MAX_DECODE_PASSES; pass++) {
+            if (!isLocalPathSyntax(candidate)) {
+                return false;
+            }
+            final String decoded;
+            try {
+                decoded = URLDecoder.decode(candidate, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                break;
+            }
+            if (decoded.equals(candidate)) {
+                break;
+            }
+            candidate = decoded;
+        }
+        return true;
+    }
+
+    private static boolean isLocalPathSyntax(final String url) {
+        if (url.isEmpty() || url.charAt(0) != '/') {
             return false;
         }
         if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
@@ -134,15 +162,7 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
                 return false;
             }
         }
-        try {
-            final URI uri = new URI(url);
-            return uri.getScheme() == null
-                    && uri.getRawAuthority() == null
-                    && uri.getRawPath() != null
-                    && uri.getRawPath().startsWith("/");
-        } catch (URISyntaxException e) {
-            return false;
-        }
+        return true;
     }
 
     public void setExceptionMappings(final Map<String, String> failureUrlMap) {
