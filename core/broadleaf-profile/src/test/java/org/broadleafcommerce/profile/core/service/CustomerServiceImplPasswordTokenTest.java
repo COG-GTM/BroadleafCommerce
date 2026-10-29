@@ -20,13 +20,13 @@ package org.broadleafcommerce.profile.core.service;
 import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.time.SystemTime;
 import org.broadleafcommerce.profile.core.dao.CustomerForgotPasswordSecurityTokenDao;
+import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerForgotPasswordSecurityToken;
 import org.broadleafcommerce.profile.core.domain.CustomerForgotPasswordSecurityTokenImpl;
+import org.broadleafcommerce.profile.core.domain.CustomerImpl;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.NoOpPasswordEncoder;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -48,58 +48,66 @@ public class CustomerServiceImplPasswordTokenTest extends TestCase {
         service.passwordEncoderBean = new BCryptPasswordEncoder();
     }
 
-    public void testEncodedTokenIsNotStoredInPlaintext() {
-        String encoded = service.encodePassword(RAW_TOKEN);
+    public void testPasswordIsEncodedWithBCrypt() {
+        String encoded = service.encodePassword("S3cret-Pass!");
 
-        assertFalse(RAW_TOKEN.equals(encoded));
         assertTrue(encoded.startsWith("$2a$"));
-        assertTrue(service.isPasswordValid(RAW_TOKEN, encoded));
+        assertTrue(service.isPasswordValid("S3cret-Pass!", encoded));
     }
 
-    public void testSaltedTokenIsResolvedWithoutCustomer() {
+    public void testResetTokenIsNotStoredInPlaintext() {
+        String encoded = service.encodeResetToken(RAW_TOKEN);
+
+        assertFalse(encoded.contains(RAW_TOKEN));
+        assertEquals(64, encoded.length());
+        assertEquals(encoded, service.encodeResetToken(RAW_TOKEN));
+    }
+
+    public void testTokenIsResolvedWithoutCustomer() {
         CustomerForgotPasswordSecurityToken stored = storeToken(RAW_TOKEN, 1L, minutesAgo(5));
         storeToken("othertoken0123456789", 2L, minutesAgo(1));
 
-        GenericResponse response = service.checkPasswordResetToken(RAW_TOKEN, null);
+        GenericResponse response = new GenericResponse();
+        CustomerForgotPasswordSecurityToken found = service.checkPasswordResetToken(RAW_TOKEN, null, response);
 
         assertFalse(response.getErrorCodesList().toString(), response.getHasErrors());
-        assertSame(stored, service.checkPasswordResetToken(RAW_TOKEN, null, new GenericResponse()));
+        assertSame(stored, found);
     }
 
-    public void testWrongTokenIsRejectedWithoutCustomer() {
+    public void testTokenIsResolvedWithoutCustomerRegardlessOfPendingTokenVolume() {
+        CustomerForgotPasswordSecurityToken stored = storeToken(RAW_TOKEN, 1L, minutesAgo(20));
+        for (int i = 0; i < 250; i++) {
+            storeToken(String.format("pending%013d", i), 100L + i, minutesAgo(1));
+        }
+
+        GenericResponse response = new GenericResponse();
+
+        assertSame(stored, service.checkPasswordResetToken(RAW_TOKEN, null, response));
+        assertFalse(response.getHasErrors());
+    }
+
+    public void testTokenIsResolvedForOwningCustomerOnly() {
         storeToken(RAW_TOKEN, 1L, minutesAgo(5));
 
-        GenericResponse response = service.checkPasswordResetToken("wrongtoken0123456789", null);
-
-        assertTrue(response.getErrorCodesList().contains("invalidToken"));
+        assertFalse(service.checkPasswordResetToken(RAW_TOKEN, customer(1L)).getHasErrors());
+        assertTrue(service.checkPasswordResetToken(RAW_TOKEN, customer(2L)).getErrorCodesList().contains("invalidToken"));
     }
 
-    public void testStoredHashIsNotAcceptedAsToken() {
+    public void testWrongTokenIsRejected() {
+        storeToken(RAW_TOKEN, 1L, minutesAgo(5));
+
+        assertTrue(service.checkPasswordResetToken("wrongtoken0123456789", null).getErrorCodesList().contains("invalidToken"));
+        assertTrue(service.checkPasswordResetToken("wrongtoken0123456789", customer(1L)).getErrorCodesList().contains("invalidToken"));
+    }
+
+    public void testStoredDigestIsNotAcceptedAsToken() {
         CustomerForgotPasswordSecurityToken stored = storeToken(RAW_TOKEN, 1L, minutesAgo(5));
 
-        GenericResponse response = service.checkPasswordResetToken(stored.getToken(), null);
-
-        assertTrue(response.getErrorCodesList().contains("invalidToken"));
+        assertTrue(service.checkPasswordResetToken(stored.getToken(), null).getErrorCodesList().contains("invalidToken"));
+        assertTrue(service.checkPasswordResetToken(stored.getToken(), customer(1L)).getErrorCodesList().contains("invalidToken"));
     }
 
     public void testExpiredTokenIsRejectedWithoutCustomer() {
-        storeToken(RAW_TOKEN, 1L, minutesAgo(service.getTokenExpiredMinutes() + 60));
-
-        GenericResponse response = service.checkPasswordResetToken(RAW_TOKEN, null);
-
-        assertTrue(response.getHasErrors());
-    }
-
-    public void testUsedTokenIsRejectedWithoutCustomer() {
-        storeToken(RAW_TOKEN, 1L, minutesAgo(5)).setTokenUsedFlag(true);
-
-        GenericResponse response = service.checkPasswordResetToken(RAW_TOKEN, null);
-
-        assertTrue(response.getHasErrors());
-    }
-
-    public void testDeterministicEncoderStillUsesPrimaryKeyLookup() {
-        service.passwordEncoderBean = NoOpPasswordEncoder.getInstance();
         storeToken(RAW_TOKEN, 1L, minutesAgo(service.getTokenExpiredMinutes() + 60));
 
         GenericResponse response = service.checkPasswordResetToken(RAW_TOKEN, null);
@@ -108,23 +116,27 @@ public class CustomerServiceImplPasswordTokenTest extends TestCase {
         assertEquals("tokenExpired", response.getErrorCodesList().get(0));
     }
 
-    public void testCandidateLookupIsBounded() {
-        service.setMaxPasswordResetTokenCandidates(1);
-        storeToken(RAW_TOKEN, 1L, minutesAgo(5));
-        storeToken("newertoken0123456789", 2L, minutesAgo(1));
+    public void testUsedTokenIsRejectedWithoutCustomer() {
+        storeToken(RAW_TOKEN, 1L, minutesAgo(5)).setTokenUsedFlag(true);
 
         GenericResponse response = service.checkPasswordResetToken(RAW_TOKEN, null);
 
-        assertTrue(response.getErrorCodesList().contains("invalidToken"));
-        assertEquals(1, tokenDao.lastMaxResults);
+        assertEquals(1, response.getErrorCodesList().size());
+        assertEquals("tokenUsed", response.getErrorCodesList().get(0));
     }
 
     private CustomerForgotPasswordSecurityToken storeToken(String rawToken, Long customerId, Date createDate) {
         CustomerForgotPasswordSecurityToken token = new CustomerForgotPasswordSecurityTokenImpl();
-        token.setToken(service.encodePassword(rawToken));
+        token.setToken(service.encodeResetToken(rawToken));
         token.setCustomerId(customerId);
         token.setCreateDate(createDate);
         return tokenDao.saveToken(token);
+    }
+
+    private Customer customer(Long id) {
+        Customer customer = new CustomerImpl();
+        customer.setId(id);
+        return customer;
     }
 
     private Date minutesAgo(int minutes) {
@@ -134,7 +146,6 @@ public class CustomerServiceImplPasswordTokenTest extends TestCase {
     private static class InMemoryTokenDao implements CustomerForgotPasswordSecurityTokenDao {
 
         private final List<CustomerForgotPasswordSecurityToken> tokens = new ArrayList<>();
-        private int lastMaxResults = -1;
 
         @Override
         public CustomerForgotPasswordSecurityToken readToken(String token) {
@@ -145,16 +156,6 @@ public class CustomerServiceImplPasswordTokenTest extends TestCase {
         public List<CustomerForgotPasswordSecurityToken> readUnusedTokensByCustomerId(Long customerId) {
             return tokens.stream()
                     .filter(t -> !t.isTokenUsedFlag() && t.getCustomerId().equals(customerId))
-                    .collect(Collectors.toList());
-        }
-
-        @Override
-        public List<CustomerForgotPasswordSecurityToken> readUnusedTokensCreatedAfter(Date createdAfter, int maxResults) {
-            lastMaxResults = maxResults;
-            return tokens.stream()
-                    .filter(t -> !t.isTokenUsedFlag() && !t.getCreateDate().before(createdAfter))
-                    .sorted(Comparator.comparing(CustomerForgotPasswordSecurityToken::getCreateDate).reversed())
-                    .limit(maxResults)
                     .collect(Collectors.toList());
         }
 

@@ -53,9 +53,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -85,7 +89,6 @@ public class CustomerServiceImpl implements CustomerService {
     protected RoleDao roleDao;
     protected int tokenExpiredMinutes = 30;
     protected int passwordTokenLength = 20;
-    protected int maxPasswordResetTokenCandidates = 100;
     protected List<PasswordUpdatedHandler> passwordResetHandlers = new ArrayList<>();
     protected List<PasswordUpdatedHandler> passwordChangedHandlers = new ArrayList<>();
 
@@ -376,7 +379,7 @@ public class CustomerServiceImpl implements CustomerService {
 
             CustomerForgotPasswordSecurityToken fpst = new CustomerForgotPasswordSecurityTokenImpl();
             fpst.setCustomerId(customer.getId());
-            fpst.setToken(encodePassword(token));
+            fpst.setToken(encodeResetToken(token));
             fpst.setCreateDate(SystemTime.asDate());
             customerForgotPasswordSecurityTokenDao.saveToken(fpst);
 
@@ -416,12 +419,12 @@ public class CustomerServiceImpl implements CustomerService {
         CustomerForgotPasswordSecurityToken fpst = null;
         if (!response.getHasErrors()) {
             if (customer == null) {
-                fpst = findTokenWithoutCustomer(rawToken);
+                fpst = customerForgotPasswordSecurityTokenDao.readToken(encodeResetToken(rawToken));
             } else {
                 List<CustomerForgotPasswordSecurityToken> fpstoks = customerForgotPasswordSecurityTokenDao
                         .readUnusedTokensByCustomerId(customer.getId());
                 for (CustomerForgotPasswordSecurityToken fpstok : fpstoks) {
-                    if (isPasswordValid(rawToken, fpstok.getToken())) {
+                    if (isResetTokenValid(rawToken, fpstok.getToken())) {
                         fpst = fpstok;
                         break;
                     }
@@ -439,24 +442,24 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     /**
-     * Tokens are stored through {@link #encodePassword(String)}, so with a salted encoder (e.g. the default BCrypt
-     * password.site.encoder) the stored value cannot be looked up by re-encoding the raw token. A deterministic encoder
-     * still resolves through the primary-key lookup; otherwise the raw token is matched against recent unused tokens.
+     * Reset tokens are random, high-entropy secrets, so they are stored as an unsalted SHA-256 digest rather than through
+     * the (salted) password encoder. This keeps them out of the database in plaintext while still allowing a direct
+     * primary-key lookup when the owning customer is not known.
      */
-    protected CustomerForgotPasswordSecurityToken findTokenWithoutCustomer(String rawToken) {
-        CustomerForgotPasswordSecurityToken fpst = customerForgotPasswordSecurityTokenDao.readToken(encodePassword(rawToken));
-        if (fpst != null && isPasswordValid(rawToken, fpst.getToken())) {
-            return fpst;
+    protected String encodeResetToken(String rawToken) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
-        Date createdAfter = new Date(SystemTime.asMillis() - (tokenExpiredMinutes + 1) * 60000L);
-        List<CustomerForgotPasswordSecurityToken> candidates = customerForgotPasswordSecurityTokenDao
-                .readUnusedTokensCreatedAfter(createdAfter, maxPasswordResetTokenCandidates);
-        for (CustomerForgotPasswordSecurityToken candidate : candidates) {
-            if (isPasswordValid(rawToken, candidate.getToken())) {
-                return candidate;
-            }
-        }
-        return null;
+    }
+
+    protected boolean isResetTokenValid(String rawToken, String encodedToken) {
+        return encodedToken != null && MessageDigest.isEqual(
+                encodeResetToken(rawToken).getBytes(StandardCharsets.UTF_8),
+                encodedToken.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     @Override
@@ -532,14 +535,6 @@ public class CustomerServiceImpl implements CustomerService {
 
     public void setTokenExpiredMinutes(int tokenExpiredMinutes) {
         this.tokenExpiredMinutes = tokenExpiredMinutes;
-    }
-
-    public int getMaxPasswordResetTokenCandidates() {
-        return maxPasswordResetTokenCandidates;
-    }
-
-    public void setMaxPasswordResetTokenCandidates(int maxPasswordResetTokenCandidates) {
-        this.maxPasswordResetTokenCandidates = maxPasswordResetTokenCandidates;
     }
 
     public int getPasswordTokenLength() {
