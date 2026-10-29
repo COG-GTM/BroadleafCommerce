@@ -18,6 +18,7 @@
 package org.broadleafcommerce.admin.server.service.handler;
 
 import org.apache.commons.collections4.CollectionUtils;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.extension.ExtensionResultStatusType;
 import org.broadleafcommerce.common.persistence.Status;
@@ -96,18 +97,39 @@ public class IndexFieldCustomPersistenceHandler extends CustomPersistenceHandler
             PersistencePerspective persistencePerspective = persistencePackage.getPersistencePerspective();
             Map<String, FieldMetadata> adminProperties = helper.getSimpleMergedProperties(IndexField.class.getName(), persistencePerspective);
             Object primaryKey = helper.getPrimaryKey(entity, adminProperties);
-            Serializable instance = dynamicEntityDao.retrieve(Class.forName(entity.getType()[0]), primaryKey);
+            Serializable instance = dynamicEntityDao.retrieve(resolveRemoveType(persistencePackage), primaryKey);
             if (instance instanceof Status) {
                 ((Status) instance).setArchived('Y');
                 dynamicEntityDao.merge(instance);
                 return;
             }
 
+        } catch (SecurityServiceException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new ServiceException("Unable to perform remove for entity: " + entity.getType()[0], ex);
 
         }
         super.remove(persistencePackage, dynamicEntityDao, helper);
+    }
+
+    /**
+     * Resolves the requested entity type, rejecting any type outside the IndexField / IndexFieldType hierarchy of the
+     * package's ceiling entity, since security was only checked against that ceiling.
+     */
+    protected Class<?> resolveRemoveType(PersistencePackage persistencePackage) throws ClassNotFoundException, SecurityServiceException {
+        String ceilingClassname = persistencePackage.getCeilingEntityFullyQualifiedClassname();
+        Class<?> allowedType = IndexFieldTypeImpl.class.getName().equalsIgnoreCase(ceilingClassname)
+                ? IndexFieldType.class
+                : IndexField.class;
+        String requestedType = persistencePackage.getEntity().getType()[0];
+        Class<?> requestedClass = Class.forName(requestedType);
+        if (!allowedType.isAssignableFrom(requestedClass)) {
+            throw new SecurityServiceException(String.format(
+                    "Entity type [%s] cannot be removed through the [%s] section", requestedType, ceilingClassname
+            ));
+        }
+        return requestedClass;
     }
 
     @Override

@@ -521,6 +521,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypeAgainstCeiling(persistencePackage);
         //check to see if there is a custom handler registered
         //execute the root PersistencePackage
         Entity response;
@@ -750,6 +751,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypeAgainstCeiling(persistencePackage);
         //check to see if there is a custom handler registered
         //execute the root PersistencePackage
         Entity response;
@@ -905,6 +907,7 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
                 break;
             }
         }
+        validateEntityTypeAgainstCeiling(persistencePackage);
         //check to see if there is a custom handler registered
         for (CustomPersistenceHandler handler : getCustomPersistenceHandlers()) {
             if (handler.canHandleRemove(persistencePackage)) {
@@ -926,6 +929,41 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
         myModule.remove(persistencePackage);
 
         return executePostRemoveHandlers(persistencePackage, new PersistenceResponse());
+    }
+
+    /**
+     * Ensures the entity type submitted with an add, update or remove request belongs to the polymorphic hierarchy of
+     * the package's ceiling entity. Security checks are evaluated against the ceiling entity, so allowing an unrelated
+     * type would let a caller operate on entities they hold no permission for. Sub-packages are validated as well, as
+     * they are persisted without a separate security check.
+     */
+    protected void validateEntityTypeAgainstCeiling(PersistencePackage persistencePackage) throws ServiceException {
+        if (!MapUtils.isEmpty(persistencePackage.getSubPackages())) {
+            for (PersistencePackage subPackage : persistencePackage.getSubPackages().values()) {
+                validateEntityTypeAgainstCeiling(subPackage);
+            }
+        }
+        Entity entity = persistencePackage.getEntity();
+        String ceilingClassname = persistencePackage.getCeilingEntityFullyQualifiedClassname();
+        if (entity == null || ArrayUtils.isEmpty(entity.getType()) || StringUtils.isBlank(entity.getType()[0])
+                || StringUtils.isBlank(ceilingClassname)) {
+            return;
+        }
+        String entityClassname = entity.getType()[0];
+        Class<?> ceilingClass;
+        Class<?> entityClass;
+        try {
+            ceilingClass = Class.forName(ceilingClassname);
+            entityClass = Class.forName(entityClassname);
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        if (!ceilingClass.isAssignableFrom(entityClass)) {
+            throw new SecurityServiceException(String.format(
+                    "Entity type [%s] is not compatible with the ceiling entity [%s]",
+                    entityClassname, ceilingClassname
+            ));
+        }
     }
 
     protected PersistenceResponse executePostRemoveHandlers(
