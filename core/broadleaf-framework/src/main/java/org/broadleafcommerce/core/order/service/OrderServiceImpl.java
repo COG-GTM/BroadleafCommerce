@@ -832,7 +832,7 @@ public class OrderServiceImpl implements OrderService {
         preValidateCartOperation(findOrderById(orderId));
         try {
             OrderItem oi = orderItemService.readOrderItemById(orderItemId);
-            if (oi == null) {
+            if (oi == null || !isOrderItemInOrder(oi, findOrderByIdOrByOrderItemId(orderId, orderItemId))) {
                 throw new WorkflowException(new ItemNotFoundException());
             }
             List<Long> childrenToRemove = new ArrayList<Long>();
@@ -889,13 +889,39 @@ public class OrderServiceImpl implements OrderService {
         return context.getSeedData().getOrder();
     }
 
+    /**
+     * Resolves the order a remove operation applies to. The item's own named order (wishlist) is only used when it is
+     * the requested order or belongs to the same customer as the requested order; otherwise the requested order is
+     * returned, so a client supplied item id cannot redirect the operation to another customer's named order.
+     */
     protected Order findOrderByIdOrByOrderItemId(final Long orderId, final Long orderItemId) {
+        final Order requestedOrder = findOrderById(orderId);
         final OrderItem orderItem = orderItemService.readOrderItemById(orderItemId);
+        final Order itemOrder = orderItem == null ? null : orderItem.getOrder();
         final String namedType = OrderStatus.NAMED.getType();
-        if (orderItem != null && orderItem.getOrder() != null && namedType.equals(orderItem.getOrder().getStatus().getType())) {
-            return orderItem.getOrder();
+        if (itemOrder != null && itemOrder.getStatus() != null && namedType.equals(itemOrder.getStatus().getType())
+                && isSameOrderOrSameCustomer(requestedOrder, itemOrder)) {
+            return itemOrder;
         }
-        return findOrderById(orderId);
+        return requestedOrder;
+    }
+
+    protected boolean isSameOrderOrSameCustomer(Order requestedOrder, Order itemOrder) {
+        if (requestedOrder == null || itemOrder == null) {
+            return false;
+        }
+        if (requestedOrder.getId() != null && requestedOrder.getId().equals(itemOrder.getId())) {
+            return true;
+        }
+        Customer requestedCustomer = requestedOrder.getCustomer();
+        Customer itemCustomer = itemOrder.getCustomer();
+        return requestedCustomer != null && itemCustomer != null && requestedCustomer.getId() != null
+                && requestedCustomer.getId().equals(itemCustomer.getId());
+    }
+
+    protected boolean isOrderItemInOrder(OrderItem orderItem, Order order) {
+        return order != null && orderItem.getOrder() != null && order.getId() != null
+                && order.getId().equals(orderItem.getOrder().getId());
     }
 
     @Override
