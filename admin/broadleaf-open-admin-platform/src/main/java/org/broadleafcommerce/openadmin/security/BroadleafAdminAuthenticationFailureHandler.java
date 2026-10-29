@@ -25,8 +25,10 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,6 +43,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthenticationFailureHandler {
 
     private static final String SUCCESS_URL_PARAM = "successUrl";
+    private static final Pattern ABSOLUTE_HTTP_URL = Pattern.compile("(?i)https?://([^/?#]*)([/?#].*)?");
 
     private String defaultFailureUrl;
 
@@ -125,7 +128,7 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
     }
 
     /**
-     * The successUrl must be a local path or an absolute URL on the requesting host, both as given (the referer is
+     * The successUrl must be a local path or an absolute URL on the requesting host after one decode (the referer is
      * not decoded) and once any remaining URL encoding is removed.
      */
     protected boolean isSafeSuccessUrl(String url, HttpServletRequest request) {
@@ -133,25 +136,44 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         if (decoded == null) {
             return false;
         }
-        String singleDecoded = StringUtil.decodeUrl(url);
-        return (isLocalPath(singleDecoded) || isSameHostUrl(singleDecoded, request))
-                && (isLocalPath(decoded) || isSameHostUrl(decoded, request));
+        String singleDecoded = decodeLayer(url);
+        if (singleDecoded == null) {
+            singleDecoded = url;
+        }
+        return isLocalOrSameHost(singleDecoded, request)
+                && isLocalOrSameHost(decoded, request);
     }
 
+    private boolean isLocalOrSameHost(String url, HttpServletRequest request) {
+        return isLocalPath(url) || isSameHostUrl(url, request);
+    }
+
+    /**
+     * Removes up to three layers of URL encoding. A layer that is not valid percent-encoding (e.g. a literal
+     * {@code %} left after decoding {@code %25}) ends decoding; more than three layers is rejected with {@code null}.
+     */
     private String fullyDecode(String url) {
         if (url == null) {
             return null;
         }
-        try {
-            String decoded = url;
-            for (int i = 0; i < 3; i++) {
-                String next = StringUtil.decodeUrl(decoded);
-                if (next.equals(decoded)) {
-                    return decoded;
-                }
-                decoded = next;
+        String decoded = url;
+        for (int i = 0; i <= 3; i++) {
+            String next = decodeLayer(decoded);
+            if (next == null || next.equals(decoded)) {
+                return decoded;
             }
-            return decoded.equals(StringUtil.decodeUrl(decoded)) ? decoded : null;
+            decoded = next;
+        }
+        return null;
+    }
+
+    /**
+     * Decodes one layer of percent-encoding, keeping {@code +} literal, or returns {@code null} when the value is not
+     * valid percent-encoding.
+     */
+    private String decodeLayer(String url) {
+        try {
+            return URLDecoder.decode(url.replace("+", "%2B"), StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -178,15 +200,24 @@ public class BroadleafAdminAuthenticationFailureHandler extends SimpleUrlAuthent
         if (StringUtils.isEmpty(url) || !hasNoUnsafeCharacters(url)) {
             return false;
         }
-        try {
-            URI uri = new URI(url);
-            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && uri.getRawUserInfo() == null
-                    && uri.getHost() != null
-                    && uri.getHost().equalsIgnoreCase(request.getServerName());
-        } catch (URISyntaxException e) {
+        Matcher matcher = ABSOLUTE_HTTP_URL.matcher(url);
+        if (!matcher.matches()) {
             return false;
         }
+        String authority = matcher.group(1);
+        if (authority.contains("@")) {
+            return false;
+        }
+        int portSeparator = authority.lastIndexOf(':');
+        String host = authority;
+        if (portSeparator >= 0 && !authority.endsWith("]")) {
+            String port = authority.substring(portSeparator + 1);
+            if (!port.chars().allMatch(Character::isDigit)) {
+                return false;
+            }
+            host = authority.substring(0, portSeparator);
+        }
+        return !host.isEmpty() && host.equalsIgnoreCase(request.getServerName());
     }
 
     private boolean hasNoUnsafeCharacters(String url) {

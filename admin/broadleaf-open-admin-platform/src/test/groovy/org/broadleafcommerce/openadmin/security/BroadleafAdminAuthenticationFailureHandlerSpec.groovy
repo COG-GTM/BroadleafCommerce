@@ -83,7 +83,8 @@ class BroadleafAdminAuthenticationFailureHandlerSpec extends Specification {
                 "https://evil.example/",
                 "//evil.example/",
                 "https://admin.acme.com@evil.example/",
-                "/\\evil.example"
+                "/\\evil.example",
+                "%252F%252Fevil.example"
         ]
     }
 
@@ -91,6 +92,10 @@ class BroadleafAdminAuthenticationFailureHandlerSpec extends Specification {
         expect:
         redirectFor([:], "https://evil.example/phish") == "/admin/login?error=true"
         redirectFor([:], "https://evil.example/x?successUrl=https://evil.example/") == "/admin/login?error=true"
+        redirectFor([:], "https://evil.example/?d=50%25") == "/admin/login?error=true"
+        redirectFor([:], "https://admin.acme.com.evil.example/") == "/admin/login?error=true"
+        redirectFor([:], "https://admin.acme.com:x@evil.example/") == "/admin/login?error=true"
+        redirectFor([:], "https://evil.example#@admin.acme.com") == "/admin/login?error=true"
     }
 
     def "local and same-host success urls are preserved"() {
@@ -100,6 +105,16 @@ class BroadleafAdminAuthenticationFailureHandlerSpec extends Specification {
                 "/admin/login?error=true&successUrl=%2Fadmin%2Fproduct"
         redirectFor([:], "https://admin.acme.com/admin/order") ==
                 "/admin/login?error=true&successUrl=https://admin.acme.com/admin/order"
+    }
+
+    def "literal percent and plus signs in success urls are preserved"() {
+        expect:
+        redirectFor([:], "https://admin.acme.com/admin/orders?discount=50%25") ==
+                "/admin/login?error=true&successUrl=https://admin.acme.com/admin/orders?discount=50%25"
+        redirectFor([:], "https://admin.acme.com/admin/search?q=a+b") ==
+                "/admin/login?error=true&successUrl=https://admin.acme.com/admin/search?q=a+b"
+        redirectFor([failureUrl: "/login", successUrl: "/admin/orders?d=50%2525"]) ==
+                "/admin/login?successUrl=/admin/orders?d=50%25"
     }
 
 }
