@@ -35,7 +35,8 @@ import java.util.regex.Pattern;
  * Every rule is therefore validated before it is compiled:
  * <ul>
  *     <li>a type may only be referenced if it is an explicitly allowed type or a context import;</li>
- *     <li>reflective, class loading, process, and mutating members (getClass, forName, exec, setters, ...) are denied;</li>
+ *     <li>reflective, class loading, process, and mutating members (getClass, forName, exec, setters, collection
+ *     mutators, ...) are denied;</li>
  *     <li>statements, blocks, assignments, object creation, imports and function definitions are denied.</li>
  * </ul>
  * String literals are not inspected, so rule data that merely mentions a blocked name is unaffected.
@@ -66,7 +67,12 @@ public class MvelRuleSandbox {
             "getResource", "getResourceAsStream", "getProperty", "getProperties", "getenv", "getInteger", "getLong",
             "getBoolean", "doPrivileged", "wait", "notify", "notifyAll", "readObject", "writeObject",
             "compileExpression", "executeExpression", "eval", "getBean", "getApplicationContext",
-            "getServletContext", "getSession"
+            "getServletContext", "getSession",
+            "add", "addAll", "addFirst", "addLast", "remove", "removeAll", "removeIf", "removeFirst", "removeLast",
+            "retainAll", "clear", "put", "putAll", "putIfAbsent", "replace", "replaceAll", "compute",
+            "computeIfAbsent", "computeIfPresent", "merge", "set", "sort", "push", "pop", "poll", "pollFirst",
+            "pollLast", "offer", "offerFirst", "offerLast", "iterator", "listIterator", "delete", "save", "persist",
+            "update", "flush", "close"
     )));
 
     /**
@@ -211,6 +217,8 @@ public class MvelRuleSandbox {
             } else if ("=!<>".indexOf(c) >= 0 && i + 1 < length && rule.charAt(i + 1) == '=') {
                 tokens.add(new Token(TokenType.PUNCTUATION, rule.substring(i, i + 2)));
                 i += 2;
+            } else if ((c == '+' || c == '-') && i + 1 < length && rule.charAt(i + 1) == c) {
+                throw new MvelRuleViolationException("Rules may not use increment or decrement operators");
             } else if (c == '=') {
                 throw new MvelRuleViolationException("Rules may not contain assignments");
             } else if (Character.isISOControl(c) || c > 127) {

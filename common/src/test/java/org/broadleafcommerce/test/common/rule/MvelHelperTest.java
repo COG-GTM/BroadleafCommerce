@@ -34,6 +34,8 @@ import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -185,6 +187,35 @@ public class MvelHelperTest extends TestCase {
         assertTrue(MvelHelper.evaluateRule(
                 "([MVEL.eval(\"toUpperCase()\",\"US\")] contains MVEL.eval(\"toUpperCase()\", locale.localeCode))",
                 parameters));
+    }
+
+    public void testLegacyRewriteIgnoresStringLiterals() {
+        Locale testLocale = new LocaleImpl();
+        testLocale.setLocaleCode("MVEL.eval(\"toUpperCase()\",x)");
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("locale", testLocale);
+
+        assertTrue(MvelHelper.evaluateRule("locale.localeCode == 'MVEL.eval(\"toUpperCase()\",x)'", parameters));
+    }
+
+    public void testLegacyDateRule() throws Exception {
+        String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(0));
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("time", new Date());
+
+        assertTrue(MvelHelper.evaluateRule(
+                "time > java.text.DateFormat.getDateTimeInstance(3,3).parse(\"" + date + "\")", parameters));
+    }
+
+    public void testRuleCannotMutateParameters() {
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("vip", "true");
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("attributes", attributes);
+
+        assertFalse(MvelHelper.evaluateRule("attributes.remove('vip') != null", parameters));
+        assertFalse(MvelHelper.evaluateRule("attributes.clear() == null", parameters));
+        assertEquals("true", attributes.get("vip"));
     }
 
     public void testRuleBuilderGeneratedRules() {
