@@ -19,7 +19,6 @@ package org.broadleafcommerce.openadmin.web.compatibility;
 
 
 import org.broadleafcommerce.openadmin.server.service.JSCompatibilityHelper;
-import org.springframework.security.web.firewall.FirewalledRequest;
 import org.springframework.security.web.savedrequest.Enumerator;
 
 import java.util.ArrayList;
@@ -30,49 +29,15 @@ import java.util.List;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 
 /**
  * @author Jeff Fischer
  */
-public class JSCompatibilityRequestWrapper extends FirewalledRequest {
+public class JSCompatibilityRequestWrapper extends HttpServletRequestWrapper {
 
     public JSCompatibilityRequestWrapper(HttpServletRequest request) {
         super(request);
-    }
-
-    @Override
-    public void reset() {
-        //do nothing
-    }
-
-    @Override
-    public String getContextPath() {
-        return JSCompatibilityHelper.unencode(super.getContextPath());
-    }
-
-    @Override
-    public String getPathTranslated() {
-        return JSCompatibilityHelper.unencode(super.getPathTranslated());
-    }
-
-    @Override
-    public String getQueryString() {
-        return JSCompatibilityHelper.unencode(super.getQueryString());
-    }
-
-    @Override
-    public String getRequestURI() {
-        return JSCompatibilityHelper.unencode(super.getRequestURI());
-    }
-
-    @Override
-    public StringBuffer getRequestURL() {
-        return new StringBuffer(JSCompatibilityHelper.unencode(super.getRequestURL().toString()));
-    }
-
-    @Override
-    public String getServletPath() {
-        return JSCompatibilityHelper.unencode(super.getServletPath());
     }
 
     @Override

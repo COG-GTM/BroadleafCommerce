@@ -17,8 +17,12 @@
  */
 package org.broadleafcommerce.cms.web;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.regex.Pattern;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -26,12 +30,21 @@ import jakarta.servlet.http.HttpServletRequest;
 @RequestMapping(PreviewTemplateController.REQUEST_MAPPING_PREFIX + "**")
 public class PreviewTemplateController {
     public static final String REQUEST_MAPPING_PREFIX = "/preview/";
+    private static final Pattern SAFE_TEMPLATE_PATH =
+            Pattern.compile("(/[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)+");
     private final String templatePathPrefix = "templates";
 
     @RequestMapping
     public String displayPreview(HttpServletRequest httpServletRequest) {
         String requestURIPrefix = httpServletRequest.getContextPath() + REQUEST_MAPPING_PREFIX;
-        String templatePath = httpServletRequest.getRequestURI().substring(requestURIPrefix.length() - 1);
+        String requestURI = httpServletRequest.getRequestURI();
+        if (requestURI == null || !requestURI.startsWith(requestURIPrefix)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        String templatePath = requestURI.substring(requestURIPrefix.length() - 1);
+        if (!SAFE_TEMPLATE_PATH.matcher(templatePath).matches() || templatePath.contains("__")) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         return templatePathPrefix + templatePath;
     }
 
