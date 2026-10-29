@@ -119,6 +119,9 @@ public class SolrSearchServiceImpl implements SearchService, DisposableBean {
     @Value("${solr.search.method:POST}")
     protected METHOD solrSearchMethod;
 
+    @Value("${" + SolrRequestHandlerPolicy.ALLOWED_REQUEST_HANDLERS_PROPERTY + ":}")
+    protected String allowedRequestHandlers;
+
     /**
      * @return whether or not to enable debug query info for the SolrQuery
      */
@@ -222,7 +225,7 @@ public class SolrSearchServiceImpl implements SearchService, DisposableBean {
                 .setQuery(searchCriteria.getQuery())
                 .setRows(searchCriteria.getPageSize())
                 .setStart((start) * searchCriteria.getPageSize())
-                .setRequestHandler(searchCriteria.getRequestHandler());
+                .setRequestHandler(getRequestHandler(searchCriteria));
 
         solrQuery.setFields(shs.getIndexableIdFieldName());
         if (filterQueries != null) {
@@ -732,6 +735,22 @@ public class SolrSearchServiceImpl implements SearchService, DisposableBean {
      */
     protected METHOD getSolrQueryMethod() {
         return solrSearchMethod;
+    }
+
+    /**
+     * Only request handlers allowlisted in {@code solr.search.allowedRequestHandlers} are honored; anything else
+     * returns null so that SolrJ uses its default handler.
+     *
+     * @see SolrRequestHandlerPolicy
+     */
+    protected String getRequestHandler(SearchCriteria searchCriteria) {
+        String requested = searchCriteria.getRequestHandler();
+        String handler = SolrRequestHandlerPolicy.resolve(requested, allowedRequestHandlers);
+        if (requested != null && handler == null && LOG.isWarnEnabled()) {
+            LOG.warn("Ignoring Solr request handler that is not allowlisted in "
+                    + SolrRequestHandlerPolicy.ALLOWED_REQUEST_HANDLERS_PROPERTY);
+        }
+        return handler;
     }
 
     @Override

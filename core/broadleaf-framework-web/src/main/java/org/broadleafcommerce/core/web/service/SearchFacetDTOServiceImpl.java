@@ -25,6 +25,7 @@ import org.broadleafcommerce.core.catalog.domain.Category;
 import org.broadleafcommerce.core.search.domain.SearchCriteria;
 import org.broadleafcommerce.core.search.domain.SearchFacetDTO;
 import org.broadleafcommerce.core.search.domain.SearchFacetResultDTO;
+import org.broadleafcommerce.core.search.service.solr.SolrRequestHandlerPolicy;
 import org.broadleafcommerce.core.web.catalog.CategoryHandlerMapping;
 import org.springframework.stereotype.Service;
 
@@ -49,6 +50,16 @@ public class SearchFacetDTOServiceImpl implements SearchFacetDTOService {
 
     protected int getMaxPageSize() {
         return BLCSystemProperty.resolveIntSystemProperty("web.maxPageSize");
+    }
+
+    /**
+     * @return comma-separated Solr request handlers that the {@code qt} request parameter may select
+     * @see SolrRequestHandlerPolicy
+     */
+    protected String getAllowedRequestHandlers() {
+        return BLCSystemProperty.resolveSystemProperty(
+                SolrRequestHandlerPolicy.ALLOWED_REQUEST_HANDLERS_PROPERTY, ""
+        );
     }
 
     @Override
@@ -80,11 +91,9 @@ public class SearchFacetDTOServiceImpl implements SearchFacetDTOService {
                 }
                 searchCriteria.setQuery(query);
             } else if (Objects.equals(key, SearchCriteria.REQUEST_HANDLER)) {
-                String requestHandler = entry.getValue()[0];
-                if (!requestHandler.startsWith("/")) {
-                    requestHandler = "/" + requestHandler;
-                }
-                searchCriteria.setRequestHandler(requestHandler);
+                searchCriteria.setRequestHandler(SolrRequestHandlerPolicy.resolve(
+                        entry.getValue()[0], getAllowedRequestHandlers()
+                ));
             } else {
                 facets.put(key, entry.getValue());
             }
