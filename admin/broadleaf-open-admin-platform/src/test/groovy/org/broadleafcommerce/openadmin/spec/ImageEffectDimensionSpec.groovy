@@ -88,15 +88,21 @@ class ImageEffectDimensionSpec extends Specification {
         thrown(ImageDimensionException)
     }
 
-    def "an aspect ratio calculation cannot be used to bypass the limit"() {
+    @Unroll
+    def "an aspect ratio calculation cannot produce a #sourceWidth x #sourceHeight -> #width x #height image above the limit"() {
         given:
-        source = new BufferedImage(1, 4096, BufferedImage.TYPE_INT_RGB)
+        source = new BufferedImage(sourceWidth, sourceHeight, BufferedImage.TYPE_INT_RGB)
 
         when:
-        render(["resize-width-amount": "4096", "resize-height-amount": "1", "resize-maintain-aspect-ratio": "true"])
+        render(["resize-width-amount": width, "resize-height-amount": height, "resize-maintain-aspect-ratio": "true"])
 
         then:
         thrown(ImageDimensionException)
+
+        where:
+        sourceWidth | sourceHeight | width  | height
+        1           | 4096         | "4096" | "1"
+        4096        | 1            | "1"    | "2"
     }
 
     def "the limit is configurable"() {

@@ -124,17 +124,6 @@ public abstract class BaseFilter implements BufferedImageOp, OperationBuilder {
         }
     }
 
-    /**
-     * Rejects a computed output size that is not positive or whose pixel count exceeds that of a
-     * {@link #getMaxDimension()} x {@link #getMaxDimension()} image.
-     */
-    protected void validatePixelCount(int width, int height) {
-        if (width <= 0 || height <= 0 || (long) width * height > (long) maxDimension * maxDimension) {
-            throw new ImageDimensionException("Resulting image dimensions " + width + "x" + height
-                    + " exceed the maximum of " + maxDimension + "x" + maxDimension + " pixels");
-        }
-    }
-
     public String getImageFormat() {
         return imageFormat;
     }

@@ -199,7 +199,7 @@ public class Resize extends BaseFilter {
             destW = targetWidth;
             destH = targetHeight;
         }
-        validatePixelCount(destW, destH);
+        validateDimensions(destW, destH);
 
         if (higherQuality) {
             // Use multi-step technique: start with original size, then
