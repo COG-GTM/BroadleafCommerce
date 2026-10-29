@@ -17,12 +17,18 @@
  */
 package org.broadleafcommerce.profile.web.controller;
 
+import org.broadleafcommerce.profile.core.domain.ChallengeQuestion;
+import org.broadleafcommerce.profile.core.domain.ChallengeQuestionImpl;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerImpl;
+import org.broadleafcommerce.profile.core.service.ChallengeQuestionService;
 import org.broadleafcommerce.profile.web.core.form.RegisterCustomerForm;
 import org.junit.Test;
 import org.springframework.beans.MutablePropertyValues;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.bind.WebDataBinder;
+
+import java.lang.reflect.Proxy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -75,5 +81,42 @@ public class RegisterCustomerControllerBindingTest {
         binder.bind(params);
 
         assertEquals("Alice", other.getFirstName());
+    }
+
+    @Test
+    public void legacyRegistrationStillBindsChallengeQuestionAndAnswer() {
+        ChallengeQuestionService challengeQuestionService = (ChallengeQuestionService) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {ChallengeQuestionService.class},
+                (proxy, method, args) -> {
+                    if ("readChallengeQuestionById".equals(method.getName())) {
+                        ChallengeQuestion question = new ChallengeQuestionImpl();
+                        question.setId((Long) args[0]);
+                        return question;
+                    }
+                    if (method.getDeclaringClass() == Object.class) {
+                        return "toString".equals(method.getName()) ? "stub" : method.invoke(this, args);
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                }
+        );
+        RegisterCustomerController controller = new RegisterCustomerController();
+        ReflectionTestUtils.setField(controller, "challengeQuestionService", challengeQuestionService);
+
+        RegisterCustomerForm form = new RegisterCustomerForm();
+        form.setCustomer(new CustomerImpl());
+        WebDataBinder binder = new WebDataBinder(form, "registerCustomerForm");
+        controller.initBinder(binder);
+        controller.initRegisterCustomerFormBinder(binder);
+
+        MutablePropertyValues params = new MutablePropertyValues();
+        params.add("customer.challengeQuestion", "7");
+        params.add("customer.unencodedChallengeAnswer", "blue");
+        params.add("customer.id", "1042");
+        binder.bind(params);
+
+        assertEquals(Long.valueOf(7L), form.getCustomer().getChallengeQuestion().getId());
+        assertEquals("blue", form.getCustomer().getUnencodedChallengeAnswer());
+        assertNull(form.getCustomer().getId());
     }
 }
