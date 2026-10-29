@@ -133,7 +133,7 @@ public class RestApiCustomerStateFilterTest {
 
     @Test
     public void authenticatedCustomerCannotActAsAnotherCustomer() throws Exception {
-        authenticate("mallory", "ROLE_USER");
+        authenticateCustomer(MALLORY_ID, "mallory");
         request.addHeader(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
 
         filter.doFilter(request, response, chain);
@@ -144,7 +144,7 @@ public class RestApiCustomerStateFilterTest {
 
     @Test
     public void authenticatedCustomerMayPassOwnCustomerId() throws Exception {
-        authenticate("alice", "ROLE_USER");
+        authenticateCustomer(ALICE_ID, "alice");
         request.addHeader(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
 
         filter.doFilter(request, response, chain);
@@ -165,6 +165,28 @@ public class RestApiCustomerStateFilterTest {
 
         assertSame(request, chain.getRequest());
         assertEquals(ALICE_ID, CustomerState.getCustomer().getId());
+    }
+
+    @Test
+    public void nonCustomerTokenSharingShopperUsernameIsNotThatShopper() throws Exception {
+        authenticate("alice", "ROLE_ADMIN");
+
+        filter.doFilter(request, response, chain);
+
+        assertSame(request, chain.getRequest());
+        assertNull(CustomerState.getCustomer().getId());
+        assertTrue(CustomerState.getCustomer().isAnonymous());
+    }
+
+    @Test
+    public void nonCustomerTokenSharingShopperUsernameCannotPassThatShoppersId() throws Exception {
+        authenticate("alice", "ROLE_ADMIN");
+        request.addHeader(RestApiCustomerStateFilter.CUSTOMER_ID_ATTRIBUTE, String.valueOf(ALICE_ID));
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(403, response.getStatus());
+        assertNull(chain.getRequest());
     }
 
     @Test
@@ -216,6 +238,13 @@ public class RestApiCustomerStateFilterTest {
 
         assertSame(request, chain.getRequest());
         assertNull(CustomerState.getCustomer().getId());
+    }
+
+    private void authenticateCustomer(Long id, String username) {
+        CustomerUserDetails principal = new CustomerUserDetails(id, username, "x",
+                AuthorityUtils.createAuthorityList("ROLE_USER"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
     }
 
     private void authenticate(String username, String... authorities) {

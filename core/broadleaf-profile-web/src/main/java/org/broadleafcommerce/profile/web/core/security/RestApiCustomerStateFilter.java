@@ -174,10 +174,12 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
     }
 
     /**
-     * Resolves the customer that the authenticated caller is. Subclasses can extend to resolve other types of
-     * {@link Authentication} (e.g. OAuth tokens whose principal is not a customer username).
+     * Resolves the customer that the authenticated caller is. Only principals that carry a customer id
+     * ({@link CustomerUserDetails} or {@link Customer}) are trusted; a bare username is never matched against customer
+     * accounts, since other authentication types (admin users, OAuth clients) may share a shopper's username.
+     * Subclasses can extend this to resolve other types of {@link Authentication}, e.g. OAuth tokens with a customer claim.
      *
-     * @return the authenticated customer, or null for anonymous / unauthenticated callers
+     * @return the authenticated customer, or null for anonymous / unauthenticated / non-customer callers
      */
     protected Customer resolveAuthenticatedCustomer(Authentication authentication) {
         if (!isAuthenticated(authentication)) {
@@ -190,8 +192,7 @@ public class RestApiCustomerStateFilter extends OncePerRequestFilter implements 
         if (principal instanceof Customer && ((Customer) principal).getId() != null) {
             return customerService.readCustomerById(((Customer) principal).getId());
         }
-        String username = authentication.getName();
-        return username == null ? null : customerService.readCustomerByUsername(username);
+        return null;
     }
 
     /**
