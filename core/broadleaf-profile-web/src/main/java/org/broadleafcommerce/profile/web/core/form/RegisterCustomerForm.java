@@ -28,6 +28,33 @@ public class RegisterCustomerForm implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Customer properties that must never be bound from a registration request. A bound {@code customer.id} would
+     * make the registration merge over the existing customer row with that id.
+     */
+    public static final String[] DISALLOWED_BINDING_FIELDS = {
+            "customer.id",
+            "customer.password",
+            "customer.unencodedPassword",
+            "customer.passwordChangeRequired",
+            "customer.registered",
+            "customer.deactivated",
+            "customer.anonymous",
+            "customer.cookied",
+            "customer.loggedIn",
+            "customer.externalId",
+            "customer.taxExemptionCode",
+            "customer.auditable*",
+            "customer.customerAttributes*",
+            "customer.customerAddresses*",
+            "customer.customerPhones*",
+            "customer.customerPayments*",
+            "customer.customerLocale*",
+            "customer.challengeQuestion.*",
+            "customer.preview*",
+            "oAuth2UserRequest*"
+    };
+
     protected Customer customer;
     protected String password;
     protected String passwordConfirm;

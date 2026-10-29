@@ -103,11 +103,24 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             Model model,
             RedirectAttributes redirectAttributes
     ) throws PricingException {
+        discardForeignCustomerId(registerCustomerForm);
+
         if (isUseEmailForLogin()) {
             Customer customer = registerCustomerForm.getCustomer();
             customer.setUsername(customer.getEmailAddress());
         }
         registerCustomerValidator.validate(registerCustomerForm, errors, isUseEmailForLogin());
+
+        // Resolve the OAuth client before anything is persisted so a plain form post without an OAuth
+        // context cannot register (and commit) a customer.
+        OAuth2AuthorizedClient authorizedClient = null;
+        if (!errors.hasErrors()) {
+            authorizedClient = loadAuthorizedClient(registerCustomerForm);
+            if (authorizedClient == null) {
+                errors.reject("oauth.registration.invalid");
+            }
+        }
+
         if (!errors.hasErrors()) {
             Customer newCustomer = customerService.registerCustomer(
                     registerCustomerForm.getCustomer(),
@@ -116,17 +129,8 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
             );
             assert (newCustomer != null);
 
-            assert (authorizedClientService != null);
-            OAuth2AuthorizedClient authorizedClient = authorizedClientService.loadAuthorizedClient(
-                    registerCustomerForm.getProviderId(),
-                    registerCustomerForm.getOAuth2UserRequest().getClientRegistration().getRegistrationId()
-            );
-            authorizedClientService.saveAuthorizedClient(
-                    authorizedClient,
-                    (Authentication) registerCustomerForm.getOAuth2UserRequest()
-            );
-
-            loginService.loginCustomer(registerCustomerForm.getCustomer());
+            Authentication customerAuthentication = loginService.loginCustomer(registerCustomerForm.getCustomer());
+            authorizedClientService.saveAuthorizedClient(authorizedClient, customerAuthentication);
 
             Order cart = CartState.getCart();
             if (cart != null && !(cart instanceof NullOrderImpl) && cart.getEmailAddress() == null) {
@@ -141,6 +145,22 @@ public class BroadleafOauthRegisterController extends BroadleafRegisterControlle
         } else {
             return getRegisterView();
         }
+    }
+
+    /**
+     * Loads the authorized client of the OAuth user that is currently authenticated, so registration can only proceed
+     * for an identity that actually completed the OAuth login.
+     */
+    protected OAuth2AuthorizedClient loadAuthorizedClient(RegisterCustomerForm registerCustomerForm) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authorizedClientService == null || !(authentication instanceof OAuth2AuthenticationToken)) {
+            return null;
+        }
+        OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
+        return authorizedClientService.loadAuthorizedClient(
+                oauthToken.getAuthorizedClientRegistrationId(),
+                oauthToken.getName()
+        );
     }
 
 }
