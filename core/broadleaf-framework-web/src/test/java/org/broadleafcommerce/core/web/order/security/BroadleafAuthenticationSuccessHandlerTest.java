@@ -29,7 +29,8 @@ public class BroadleafAuthenticationSuccessHandlerTest {
 
     @Test
     public void protocolRelativeSuccessUrlRedirectsToDefaultTarget() throws Exception {
-        for (String successUrl : new String[] {"//evil.example/login", "/\\evil.example", "/%2fevil.example"}) {
+        for (String successUrl : new String[] {"//evil.example/login", "/\\evil.example", "/%2fevil.example",
+                "/%2e%2e//evil.example"}) {
             assertEquals(successUrl, "/", redirectAfterLogin(successUrl));
         }
     }
@@ -42,6 +43,11 @@ public class BroadleafAuthenticationSuccessHandlerTest {
     @Test
     public void localSuccessUrlIsHonored() throws Exception {
         assertEquals("/account", redirectAfterLogin("/account"));
+    }
+
+    @Test
+    public void searchSuccessUrlWithDecodedSpaceIsHonored() throws Exception {
+        assertEquals("/search?q=red shoes", redirectAfterLogin("/search?q=red shoes"));
     }
 
     private String redirectAfterLogin(String successUrl) throws Exception {

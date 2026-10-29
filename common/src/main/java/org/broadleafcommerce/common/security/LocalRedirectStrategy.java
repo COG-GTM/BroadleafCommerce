@@ -136,20 +136,29 @@ public class LocalRedirectStrategy implements RedirectStrategy {
 
     /**
      * Whether the url is a path on the current server: a single leading {@code /} followed by a path, with no
-     * scheme, authority ({@code //host}), backslash or whitespace/control characters. The path portion is also
-     * checked after percent-decoding. Browsers treat {@code //host}, {@code /\host} and {@code /<tab>/host} as
-     * links to {@code host}, so such values must never be used as a local redirect target.
+     * scheme, authority ({@code //host}), backslash, dot segment or whitespace/control characters. The path portion
+     * is also checked after percent-decoding, so encoded delimiters such as {@code %2f}, {@code %5c} or
+     * {@code %2e%2e} cannot hide an authority. Browsers treat {@code //host}, {@code /\host} and
+     * {@code /<tab>/host} as links to {@code host}, so such values must never be used as a local redirect target.
+     * The query and fragment may contain spaces (servlet parameters arrive decoded) but no control characters.
      *
      * @param url the url to check
      * @return true if the url is safe to use as a local redirect target
      */
     public static boolean isLocalPath(String url) {
-        if (url == null || !hasLocalPathSyntax(url, false)) {
+        if (url == null) {
             return false;
         }
         int queryOrFragment = StringUtils.indexOfAny(url, "?#");
         String path = queryOrFragment < 0 ? url : url.substring(0, queryOrFragment);
+        String queryAndFragment = queryOrFragment < 0 ? "" : url.substring(queryOrFragment);
+        if (!hasLocalPathSyntax(path, false) || containsControlCharacter(queryAndFragment)) {
+            return false;
+        }
         for (int i = 0; i < MAX_DECODE_PASSES; i++) {
+            if (hasDotSegment(path)) {
+                return false;
+            }
             String decoded;
             try {
                 decoded = URLDecoder.decode(path.replace("+", "%2B"), StandardCharsets.UTF_8);
@@ -182,6 +191,24 @@ public class LocalRedirectStrategy implements RedirectStrategy {
             }
         }
         return true;
+    }
+
+    private static boolean containsControlCharacter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasDotSegment(String path) {
+        for (String segment : StringUtils.splitPreserveAllTokens(path, "/?#;")) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

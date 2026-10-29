@@ -46,6 +46,13 @@ public class LocalRedirectStrategyTest {
             "/%09/evil.example",
             "/account\\..\\\\evil.example",
             "/%zz",
+            "/%2e%2e//evil.example",
+            "/%2E%2E/%2f/evil.example",
+            "/./%2fevil.example",
+            "/..//evil.example",
+            "/account/%252e%252e//evil.example",
+            "/search?q=a\r\nSet-Cookie:x=1",
+            "/search q?x=1",
             "evil.example",
             "https://evil.example",
             "javascript:alert(1)",
@@ -59,6 +66,9 @@ public class LocalRedirectStrategyTest {
         assertTrue(LocalRedirectStrategy.isLocalPath("/account/orders?page=2#top"));
         assertTrue(LocalRedirectStrategy.isLocalPath("/search?q=red%20shoes&redirect=//x"));
         assertTrue(LocalRedirectStrategy.isLocalPath("/my%20page"));
+        assertTrue(LocalRedirectStrategy.isLocalPath("/search?q=red shoes"));
+        assertTrue(LocalRedirectStrategy.isLocalPath("/search?q=red shoes#results"));
+        assertTrue(LocalRedirectStrategy.isLocalPath("/products/v1.2/item..name"));
     }
 
     @Test

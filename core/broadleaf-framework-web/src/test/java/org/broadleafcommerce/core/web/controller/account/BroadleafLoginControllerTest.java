@@ -37,8 +37,16 @@ public class BroadleafLoginControllerTest {
     }
 
     @Test
+    public void searchSuccessUrlWithDecodedSpaceIsAddedToModel() {
+        ExtendedModelMap model = login("/search?q=red shoes");
+
+        assertEquals("/search?q=red shoes", model.get("successUrl"));
+    }
+
+    @Test
     public void protocolRelativeSuccessUrlIsDropped() {
-        String[] unsafe = {"//evil.example/login", "/\\evil.example", "/%2fevil.example", "https://evil.example"};
+        String[] unsafe = {"//evil.example/login", "/\\evil.example", "/%2fevil.example", "/%2e%2e//evil.example",
+                "https://evil.example"};
         for (String successUrl : unsafe) {
             ExtendedModelMap model = login(successUrl);
 
