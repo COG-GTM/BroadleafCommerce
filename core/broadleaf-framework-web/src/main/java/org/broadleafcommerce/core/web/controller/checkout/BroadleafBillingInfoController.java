@@ -28,6 +28,7 @@ import org.broadleafcommerce.core.web.checkout.model.BillingInfoForm;
 import org.broadleafcommerce.core.web.order.CartState;
 import org.broadleafcommerce.profile.core.domain.Address;
 import org.broadleafcommerce.profile.core.domain.CustomerPayment;
+import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 
@@ -68,13 +69,11 @@ public class BroadleafBillingInfoController extends AbstractCheckoutController {
 
         Boolean useCustomerPayment = billingForm.getUseCustomerPayment();
         if (useCustomerPayment && billingForm.getCustomerPaymentId() != null) {
-            customerPayment = customerPaymentService.readCustomerPaymentById(billingForm.getCustomerPaymentId());
+            customerPayment = readOwnedCustomerPayment(CustomerState.getCustomer(), billingForm.getCustomerPaymentId());
 
-            if (customerPayment != null) {
-                Address address = customerPayment.getBillingAddress();
-                if (address != null) {
-                    billingForm.setAddress(addressService.copyAddress(address));
-                }
+            Address address = customerPayment.getBillingAddress();
+            if (address != null) {
+                billingForm.setAddress(addressService.copyAddress(address));
             }
         }
 
