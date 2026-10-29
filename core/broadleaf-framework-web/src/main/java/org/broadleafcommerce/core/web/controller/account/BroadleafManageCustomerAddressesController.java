@@ -132,8 +132,14 @@ public class BroadleafManageCustomerAddressesController extends AbstractCustomer
 
         validateCustomerOwnedData(customerAddress);
 
-        // Copy the submitted values onto the owned address instead of swapping in the request-bound entity
-        customerAddress.setAddress(addressService.copyAddress(customerAddress.getAddress(), form.getAddress()));
+        // Save the edit as a fresh row: the request-bound id is ignored and orders sharing the old row keep it intact
+        Address previous = customerAddress.getAddress();
+        Address updated = addressService.copyAddress(form.getAddress());
+        if (previous != null) {
+            updated.setDefault(previous.isDefault());
+            updated.setActive(previous.isActive());
+        }
+        customerAddress.setAddress(addressService.saveAddress(updated));
         customerAddress.setAddressName(form.getAddressName());
         customerAddressService.saveCustomerAddress(customerAddress);
 

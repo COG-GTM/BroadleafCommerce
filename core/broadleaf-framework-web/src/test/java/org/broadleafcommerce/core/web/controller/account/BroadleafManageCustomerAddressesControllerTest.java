@@ -30,6 +30,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import org.broadleafcommerce.core.web.controller.account.validator.CustomerAddressValidator;
 import org.broadleafcommerce.profile.core.domain.Address;
@@ -100,22 +101,25 @@ public class BroadleafManageCustomerAddressesControllerTest {
     }
 
     @Test
-    public void updateCopiesValuesOntoOwnedAddress() throws Exception {
+    public void updateSavesFreshCopyAndLeavesSharedRowsUntouched() throws Exception {
         Address owned = new AddressImpl();
         owned.setId(OWNED_ADDRESS_ID);
         owned.setAddressLine1("1 Home St");
+        owned.setDefault(true);
         CustomerAddress customerAddress = new CustomerAddressImpl();
         customerAddress.setId(5L);
         customerAddress.setAddress(owned);
 
         CustomerAddressForm form = formTargeting(VICTIM_ADDRESS_ID, "2 New St");
         Address bound = form.getAddress();
+        Address copy = new AddressImpl();
+        copy.setAddressLine1("2 New St");
+        Address persisted = new AddressImpl();
 
         expect(customerAddressService.readCustomerAddressById(5L)).andReturn(customerAddress);
-        expect(addressService.copyAddress(same(owned), same(bound))).andAnswer(() -> {
-            owned.setAddressLine1(bound.getAddressLine1());
-            return owned;
-        });
+        expect(addressService.copyAddress(same(bound))).andReturn(copy);
+        Capture<Address> saved = EasyMock.newCapture();
+        expect(addressService.saveAddress(capture(saved))).andReturn(persisted);
         expect(customerAddressService.saveCustomerAddress(same(customerAddress))).andReturn(customerAddress);
         replay(addressService, customerAddressService, validator, request);
 
@@ -123,9 +127,11 @@ public class BroadleafManageCustomerAddressesControllerTest {
                 new RedirectAttributesModelMap());
 
         verify(addressService, customerAddressService);
-        assertSame(owned, customerAddress.getAddress());
-        assertEquals(OWNED_ADDRESS_ID, customerAddress.getAddress().getId());
-        assertEquals("2 New St", customerAddress.getAddress().getAddressLine1());
+        assertSame(copy, saved.getValue());
+        assertNull(saved.getValue().getId());
+        assertTrue(saved.getValue().isDefault());
+        assertSame(persisted, customerAddress.getAddress());
+        assertEquals("1 Home St", owned.getAddressLine1());
         assertEquals("Home", customerAddress.getAddressName());
     }
 
