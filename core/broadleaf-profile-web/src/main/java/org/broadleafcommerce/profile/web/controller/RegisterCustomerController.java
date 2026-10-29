@@ -50,6 +50,19 @@ import jakarta.servlet.http.HttpServletResponse;
  */
 public class RegisterCustomerController {
 
+    protected static final String[] ALLOWED_REGISTRATION_FIELDS = {
+            "customer.username",
+            "customer.emailAddress",
+            "customer.firstName",
+            "customer.lastName",
+            "customer.receiveEmail",
+            "customer.challengeQuestion",
+            "customer.unencodedChallengeAnswer",
+            "password",
+            "passwordConfirm",
+            "redirectUrl"
+    };
+
     // URLs For success and failure
     protected String displayRegistrationFormView = "/account/registration/registerCustomer";
     protected String registrationErrorView = displayRegistrationFormView;
@@ -79,6 +92,10 @@ public class RegisterCustomerController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+        if (registerCustomerForm.getCustomer() == null || registerCustomerForm.getCustomer().getId() != null) {
+            errors.reject("customer.invalid");
+            return new ModelAndView(getRegistrationErrorView());
+        }
         registerCustomerValidator.validate(registerCustomerForm, errors);
         if (!errors.hasErrors()) {
             customerService.registerCustomer(
@@ -146,6 +163,7 @@ public class RegisterCustomerController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
+        binder.setAllowedFields(ALLOWED_REGISTRATION_FIELDS);
         binder.registerCustomEditor(ChallengeQuestion.class, new CustomChallengeQuestionEditor(challengeQuestionService));
     }
 
