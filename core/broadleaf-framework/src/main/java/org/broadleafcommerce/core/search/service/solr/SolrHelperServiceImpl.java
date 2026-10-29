@@ -815,12 +815,21 @@ public class SolrHelperServiceImpl implements SolrHelperService {
     @Override
     public void attachSortClause(SolrQuery query, SearchCriteria searchCriteria, String defaultSort) {
         String sortQuery = searchCriteria.getSortQuery();
-        boolean sortFromRequest = true;
         if (StringUtils.isBlank(sortQuery)) {
-            sortQuery = defaultSort;
-            sortFromRequest = false;
+            attachSortFields(query, defaultSort, false);
+        } else if (!attachSortFields(query, sortQuery, true)) {
+            // none of the requested sorts were usable, so fall back to the application default (e.g. category order)
+            attachSortFields(query, defaultSort, false);
         }
+    }
 
+    /**
+     * Attaches the sorts described by {@code sortQuery} to the query.
+     *
+     * @return whether at least one sort was attached (or handled by an extension handler)
+     */
+    protected boolean attachSortFields(SolrQuery query, String sortQuery, boolean sortFromRequest) {
+        boolean sortAttached = false;
         if (StringUtils.isNotBlank(sortQuery)) {
             String[] sortFields = sortQuery.split(",");
             List<String> sortableFieldTypes = getSortableFieldTypes();
@@ -836,6 +845,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
 
                 if (!ExtensionResultStatusType.NOT_HANDLED.equals(result)) {
                     // if an index field was not found, or the extension handler handled attaching the sort field, move to the next field
+                    sortAttached = true;
                     continue;
                 }
 
@@ -889,6 +899,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                     for (SortClause sortClause : sortClauses) {
                         query.addSort(sortClause);
                     }
+                    sortAttached = true;
                 }
 
                 // At the end here, it's possible that the field that was passed in to sort by was not managed in the
@@ -898,6 +909,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                 if (!requestedSortFieldAdded) {
                     if (isAllowedUnmanagedSortField(requestedSortFieldName, sortFromRequest)) {
                         query.addSort(new SortClause(requestedSortFieldName, order));
+                        sortAttached = true;
                     } else {
                         LOG.warn(String.format("Ignoring unrecognized Solr sort field: %s",
                                 StringUtil.sanitize(requestedSortFieldName)));
@@ -905,6 +917,7 @@ public class SolrHelperServiceImpl implements SolrHelperService {
                 }
             }
         }
+        return sortAttached;
     }
 
     protected ORDER getSortOrder(String[] sortFieldsSegments, String sortQuery) {

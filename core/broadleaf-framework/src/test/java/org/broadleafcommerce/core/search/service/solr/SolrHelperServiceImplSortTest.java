@@ -144,4 +144,18 @@ public class SolrHelperServiceImplSortTest {
     public void defaultSortMustStillBeAPlainFieldName() {
         assertTrue(sort(null, "sum(1) asc").getSorts().isEmpty());
     }
+
+    @Test
+    public void defaultSortIsUsedWhenNoRequestedSortIsUsable() {
+        assertEquals(Collections.singletonList(new SortClause("category_2002_sort", ORDER.asc)),
+                sort("unknown asc", "category_2002_sort asc").getSorts());
+        assertEquals(Collections.singletonList(new SortClause("category_2002_sort", ORDER.asc)),
+                sort("sum(1,1) asc", "category_2002_sort asc").getSorts());
+    }
+
+    @Test
+    public void defaultSortIsNotAddedWhenARequestedSortIsUsable() {
+        assertEquals(Collections.singletonList(new SortClause("price_p", ORDER.desc)),
+                sort("price desc,sum(1,1) asc", "category_2002_sort asc").getSorts());
+    }
 }
