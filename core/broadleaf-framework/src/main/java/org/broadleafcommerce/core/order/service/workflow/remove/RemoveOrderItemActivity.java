@@ -67,9 +67,22 @@ public class RemoveOrderItemActivity extends BaseActivity<ProcessContext<CartOpe
         for (OrderItem oi : request.getOrder().getOrderItems()) {
             orderItemIdsInOrder.add(oi.getId());
         }
+        List<OrderItem> foreignItems = new ArrayList<>();
         for (OrderItem itemToDelete : itemsToDelete) {
             if (itemToDelete == orderItem || orderItemIdsInOrder.contains(itemToDelete.getId())) {
                 request.getOisToDelete().add(itemToDelete);
+            } else {
+                foreignItems.add(itemToDelete);
+            }
+        }
+
+        // detach foreign items from a parent that is about to be deleted so the parent reference does not block deletion
+        for (OrderItem foreignItem : foreignItems) {
+            OrderItem parent = foreignItem.getParentOrderItem();
+            if (parent != null && request.getOisToDelete().contains(parent)) {
+                parent.getChildOrderItems().remove(foreignItem);
+                foreignItem.setParentOrderItem(null);
+                orderItemService.saveOrderItem(foreignItem);
             }
         }
 
