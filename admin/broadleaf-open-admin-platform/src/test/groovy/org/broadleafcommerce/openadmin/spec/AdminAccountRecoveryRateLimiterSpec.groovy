@@ -31,11 +31,13 @@ class AdminAccountRecoveryRateLimiterSpec extends Specification {
         limiter.windowSeconds = 900
     }
 
-    def "identifier limit is case and whitespace insensitive"() {
+    def "identifiers that differ only by case or whitespace have separate allowances"() {
         expect:
         limiter.tryAcquire("resetPassword", "10.0.0.1", "admin")
-        limiter.tryAcquire("resetPassword", "10.0.0.2", " Admin ")
-        !limiter.tryAcquire("resetPassword", "10.0.0.3", "ADMIN")
+        limiter.tryAcquire("resetPassword", "10.0.0.2", "admin")
+        !limiter.tryAcquire("resetPassword", "10.0.0.3", "admin")
+        limiter.tryAcquire("resetPassword", "10.0.0.4", "Admin")
+        limiter.tryAcquire("resetPassword", "10.0.0.5", " admin ")
     }
 
     def "client limit applies across identifiers"() {
@@ -83,18 +85,21 @@ class AdminAccountRecoveryRateLimiterSpec extends Specification {
         limiter.tryAcquire("resetPassword", "10.0.0.3", "alice")
     }
 
-    def "tracked keys are capped and new keys are rejected once the cap is reached"() {
+    def "tracked keys are capped and new callers are allowed untracked once the cap is reached"() {
         given:
         limiter.maxTrackedKeys = 4
 
         expect:
         limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
         limiter.tryAcquire("resetPassword", "10.0.0.2", "b")
-        !limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
+        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
+        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
+        limiter.tryAcquire("resetPassword", "10.0.0.3", "c")
         limiter.attempts.size() == 4
 
-        and: "callers that are already tracked keep working"
+        and: "callers that are already tracked are still limited"
         limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
+        !limiter.tryAcquire("resetPassword", "10.0.0.1", "a")
     }
 
     def "expired keys are pruned to make room once the cap is reached"() {

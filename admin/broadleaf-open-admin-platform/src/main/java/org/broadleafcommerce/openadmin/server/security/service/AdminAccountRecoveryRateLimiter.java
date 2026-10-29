@@ -18,6 +18,8 @@
 package org.broadleafcommerce.openadmin.server.security.service;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.time.SystemTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -25,7 +27,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,12 +36,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * Callers must treat a rejected request exactly like an accepted one from the user's point of view so the
  * limiter itself does not become an account enumeration oracle.
  * <p>
- * At most {@link #maxTrackedKeys} keys are tracked. When that cap is reached and no expired keys can be
- * pruned, requests that would need a new key are rejected so that a flood of unique identifiers or
- * addresses cannot exhaust the heap.
+ * Identifiers are compared exactly as submitted, matching the exact-match account lookups, so distinct
+ * logins never share an allowance.
+ * <p>
+ * At most {@link #maxTrackedKeys} keys are tracked so that a flood of unique identifiers or addresses cannot
+ * exhaust the heap. When that cap is reached and no expired keys can be pruned, requests that would need a
+ * new key are allowed without being tracked, so the flood cannot lock legitimate users out of recovery.
  */
 @Component("blAdminAccountRecoveryRateLimiter")
 public class AdminAccountRecoveryRateLimiter {
+
+    private static final Log LOG = LogFactory.getLog(AdminAccountRecoveryRateLimiter.class);
 
     protected final Map<String, Deque<Long>> attempts = new ConcurrentHashMap<>();
 
@@ -48,6 +54,8 @@ public class AdminAccountRecoveryRateLimiter {
      * Earliest time at which a prune can free a key; avoids rescanning a full map on every request.
      */
     protected volatile long nextPruneAt = 0L;
+
+    protected boolean capReachedLogged = false;
 
     @Value("${admin.account.recovery.rateLimit.maxPerClient:10}")
     protected int maxAttemptsPerClient = 10;
@@ -91,7 +99,7 @@ public class AdminAccountRecoveryRateLimiter {
         if (timestamps == null) {
             timestamps = trackNewKey(key);
             if (timestamps == null) {
-                return false;
+                return true;
             }
         }
         synchronized (timestamps) {
@@ -108,12 +116,17 @@ public class AdminAccountRecoveryRateLimiter {
      * Keys are only added here and only removed in {@link #pruneIfNeeded}, both under this instance's lock, so
      * the capacity check is exact even under concurrent requests.
      *
-     * @return the timestamps for the key, or null if the cap has been reached
+     * @return the timestamps for the key, or null if the cap has been reached and the key is not tracked
      */
     protected synchronized Deque<Long> trackNewKey(String key) {
         Deque<Long> timestamps = attempts.get(key);
         if (timestamps == null) {
             if (attempts.size() >= maxTrackedKeys) {
+                if (!capReachedLogged) {
+                    capReachedLogged = true;
+                    LOG.warn("Admin account recovery rate limiter is tracking " + attempts.size()
+                            + " keys (the configured maximum); new callers are not rate limited until entries expire");
+                }
                 return null;
             }
             timestamps = new ArrayDeque<>();
@@ -140,6 +153,9 @@ public class AdminAccountRecoveryRateLimiter {
             }
         }
         nextPruneAt = oldestRemaining == Long.MAX_VALUE ? 0L : oldestRemaining + windowSeconds * 1000L;
+        if (attempts.size() < maxTrackedKeys) {
+            capReachedLogged = false;
+        }
     }
 
     protected void evictOlderThan(Deque<Long> timestamps, long windowStart) {
@@ -149,7 +165,7 @@ public class AdminAccountRecoveryRateLimiter {
     }
 
     protected String normalize(String identifier) {
-        return StringUtils.trimToEmpty(identifier).toLowerCase(Locale.ROOT);
+        return StringUtils.defaultString(identifier);
     }
 
     public void setMaxAttemptsPerClient(int maxAttemptsPerClient) {
