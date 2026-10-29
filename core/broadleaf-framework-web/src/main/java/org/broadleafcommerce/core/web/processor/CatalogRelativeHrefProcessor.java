@@ -17,6 +17,7 @@
  */
 package org.broadleafcommerce.core.web.processor;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.core.catalog.domain.Category;
@@ -29,7 +30,12 @@ import org.broadleafcommerce.presentation.model.BroadleafAttributeModifier;
 import org.broadleafcommerce.presentation.model.BroadleafTemplateContext;
 import org.springframework.stereotype.Component;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.annotation.Resource;
@@ -76,7 +82,7 @@ public class CatalogRelativeHrefProcessor extends AbstractBroadleafAttributeModi
     ) {
         Object result = context.parseExpression(attributeValue);
         HttpServletRequest request = BroadleafRequestContext.getBroadleafRequestContext().getRequest();
-        String currentUrl = ProcessorUtils.getUrl(request.getRequestURI(), request.getParameterMap());
+        String currentUrl = ProcessorUtils.getUrl(request.getRequestURI(), getQueryParameters(request.getQueryString()));
 
         if (result instanceof Product) {
             return catalogURLService.buildRelativeProductURL(currentUrl, (Product) result);
@@ -84,6 +90,34 @@ public class CatalogRelativeHrefProcessor extends AbstractBroadleafAttributeModi
             return catalogURLService.buildRelativeCategoryURL(currentUrl, (Category) result);
         }
         return "";
+    }
+
+    /**
+     * Decodes only the URL query string (not POST form fields) so it can be safely re-encoded.
+     * Pairs that cannot be decoded are dropped.
+     */
+    protected Map<String, String[]> getQueryParameters(String queryString) {
+        Map<String, List<String>> values = new LinkedHashMap<>();
+        if (StringUtils.isNotEmpty(queryString)) {
+            for (String pair : queryString.split("&")) {
+                if (pair.isEmpty()) {
+                    continue;
+                }
+                int idx = pair.indexOf('=');
+                try {
+                    String key = URLDecoder.decode(idx < 0 ? pair : pair.substring(0, idx), StandardCharsets.UTF_8);
+                    String value = idx < 0 ? "" : URLDecoder.decode(pair.substring(idx + 1), StandardCharsets.UTF_8);
+                    if (!key.isEmpty()) {
+                        values.computeIfAbsent(key, k -> new ArrayList<>()).add(value);
+                    }
+                } catch (IllegalArgumentException e) {
+                    // malformed percent-escape
+                }
+            }
+        }
+        Map<String, String[]> parameters = new LinkedHashMap<>();
+        values.forEach((key, list) -> parameters.put(key, list.toArray(new String[0])));
+        return parameters;
     }
 
     @Override
