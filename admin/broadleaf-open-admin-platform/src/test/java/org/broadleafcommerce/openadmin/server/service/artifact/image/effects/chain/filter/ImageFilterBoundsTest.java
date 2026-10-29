@@ -128,6 +128,26 @@ public class ImageFilterBoundsTest {
         assertEquals(3, hq.getHeight());
     }
 
+    @Test(timeout = 10000)
+    public void resizeKeepsAspectRatioWhenIntermediateSizeOverflowsInt() {
+        BufferedImage src = image(2, 1);
+
+        BufferedImage resized = new SmallResize(Integer.MAX_VALUE, 2000000000, false, true).filter(src, null);
+
+        assertEquals(64, resized.getWidth());
+        assertEquals(32, resized.getHeight());
+    }
+
+    @Test
+    public void resizeKeepsAspectRatioWithinLimit() {
+        BufferedImage src = image(30, 20);
+
+        BufferedImage resized = new SmallResize(15, 60, false, true).filter(src, null);
+
+        assertEquals(15, resized.getWidth());
+        assertEquals(10, resized.getHeight());
+    }
+
     @Test
     public void resizeWithinLimitIsUnchanged() {
         BufferedImage src = image(20, 10);
@@ -139,12 +159,12 @@ public class ImageFilterBoundsTest {
     }
 
     @Test(timeout = 10000)
-    public void resizeReduceOnlyNeverEnlarges() {
+    public void resizeReduceOnlyIsCappedAtMaxDimension() {
         BufferedImage src = image(30, 20);
 
         BufferedImage resized = new Resize(40000, 10, false, false, true, false, null).filter(src, null);
 
-        assertEquals(30, resized.getWidth());
+        assertEquals(Resize.MAX_TARGET_DIMENSION, resized.getWidth());
         assertEquals(10, resized.getHeight());
     }
 

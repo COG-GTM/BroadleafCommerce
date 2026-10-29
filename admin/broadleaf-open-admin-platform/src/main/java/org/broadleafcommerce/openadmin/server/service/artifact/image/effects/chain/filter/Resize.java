@@ -152,15 +152,9 @@ public class Resize extends BaseFilter {
             return src;
         }
 
-        int maxWidth = getMaxTargetDimension();
-        int maxHeight = getMaxTargetDimension();
-        if (reduceOnly) {
-            maxWidth = Math.min(maxWidth, src.getWidth());
-            maxHeight = Math.min(maxHeight, src.getHeight());
-        }
-
+        int maxDimension = getMaxTargetDimension();
         BufferedImage temp = getScaledInstance(
-                src, targetWidth, targetHeight, hint, highQuality, maintainAspectRatio, reduceOnly, maxWidth, maxHeight
+                src, targetWidth, targetHeight, hint, highQuality, maintainAspectRatio, reduceOnly, maxDimension
         );
 
         if (dst != null) {
@@ -182,45 +176,42 @@ public class Resize extends BaseFilter {
             boolean higherQuality,
             boolean maintainAspectRatio,
             boolean reduceOnly,
-            int maxWidth,
-            int maxHeight
+            int maxDimension
     ) {
         BufferedImage ret = (BufferedImage) img;
         int w, h, destW, destH;
 
+        double scaledW;
+        double scaledH;
         if (maintainAspectRatio) {
             int wDiff = Math.abs(img.getWidth() - targetWidth);
             int hDiff = Math.abs(img.getHeight() - targetHeight);
             if (wDiff > hDiff) {
-                destH = targetHeight;
-                destW = Double.valueOf((((double) img.getWidth()) * ((double) destH)) / ((double) img.getHeight())).intValue();
-                if (remainUnderBoundsWhileKeepingAspectRatio && destW > targetWidth) {
-                    int newW = targetWidth;
-                    destH = Double.valueOf((((double) destH) * ((double) newW)) / ((double) destW)).intValue();
-                    destW = newW;
+                scaledH = targetHeight;
+                scaledW = Math.floor((((double) img.getWidth()) * scaledH) / ((double) img.getHeight()));
+                if (remainUnderBoundsWhileKeepingAspectRatio && scaledW > targetWidth) {
+                    scaledH = Math.floor((scaledH * targetWidth) / scaledW);
+                    scaledW = targetWidth;
                 }
             } else {
-                destW = targetWidth;
-                destH = Double.valueOf((((double) img.getHeight()) * ((double) destW)) / ((double) img.getWidth())).intValue();
-                if (remainUnderBoundsWhileKeepingAspectRatio && destH > targetHeight) {
-                    int newH = targetHeight;
-                    destW = Double.valueOf((((double) destW) * ((double) newH)) / ((double) destH)).intValue();
-                    destH = newH;
+                scaledW = targetWidth;
+                scaledH = Math.floor((((double) img.getHeight()) * scaledW) / ((double) img.getWidth()));
+                if (remainUnderBoundsWhileKeepingAspectRatio && scaledH > targetHeight) {
+                    scaledW = Math.floor((scaledW * targetHeight) / scaledH);
+                    scaledH = targetHeight;
                 }
             }
+            if (scaledW > maxDimension || scaledH > maxDimension) {
+                double scale = Math.min(maxDimension / scaledW, maxDimension / scaledH);
+                scaledW = Math.floor(scaledW * scale);
+                scaledH = Math.floor(scaledH * scale);
+            }
         } else {
-            destW = targetWidth;
-            destH = targetHeight;
+            scaledW = Math.min(targetWidth, maxDimension);
+            scaledH = Math.min(targetHeight, maxDimension);
         }
-
-        if (!maintainAspectRatio) {
-            destW = Math.min(destW, maxWidth);
-            destH = Math.min(destH, maxHeight);
-        } else if (destW > maxWidth || destH > maxHeight) {
-            double scale = Math.min(((double) maxWidth) / destW, ((double) maxHeight) / destH);
-            destW = (int) (destW * scale);
-            destH = (int) (destH * scale);
-        }
+        destW = (int) scaledW;
+        destH = (int) scaledH;
         destW = Math.max(1, destW);
         destH = Math.max(1, destH);
 
