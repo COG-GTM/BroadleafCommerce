@@ -19,6 +19,7 @@ package org.broadleafcommerce.profile.web.controller;
 
 import org.apache.commons.validator.GenericValidator;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPhone;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.service.CustomerPhoneService;
@@ -31,6 +32,8 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.ValidationUtils;
+import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -50,6 +53,18 @@ public class CustomerPhoneController {
 
     private static final String prefix = "myAccount/phone/customerPhones";
     private static final String redirect = "redirect:/myaccount/phone/viewPhone.htm";
+
+    /**
+     * The only {@link PhoneNameForm} properties that may be bound from the request. Ids are deliberately excluded so
+     * a request can never point the form at another customer's rows.
+     */
+    protected static final String[] ALLOWED_PHONE_NAME_FORM_FIELDS = {
+            "phoneName",
+            "phone.phoneNumber",
+            "phone.countryCode",
+            "phone.extension",
+            "phone.default"
+    };
 
     @Resource(name = "blCustomerPhoneService")
     private CustomerPhoneService customerPhoneService;
@@ -76,22 +91,30 @@ public class CustomerPhoneController {
     private String viewPhoneSuccessView = prefix;
 
     /**
-     * Completely deletes the customerPhone with the given customerPhoneId from the database.
+     * Completely deletes the customerPhone with the given customerPhoneId from the database. The customerPhone must
+     * belong to the customer on the current request.
      *
      * @param customerPhoneId
      * @param request
      * @return
+     * @throws SecurityException if the customerPhone does not belong to the current customer
      */
     @RequestMapping(value = "deletePhone", method = {
             RequestMethod.GET, RequestMethod.POST}
     )
     public String deletePhone(@RequestParam(required = true)
                               Long customerPhoneId, HttpServletRequest request) {
-        customerPhoneService.deleteCustomerPhoneById(customerPhoneId);
+        CustomerPhone customerPhone = readCustomerPhoneOwnedByCurrentCustomer(customerPhoneId, request);
+        customerPhoneService.deleteCustomerPhoneById(customerPhone.getId());
 
         request.setAttribute("phone.deletedPhone", "true");
 
         return deletePhoneSuccessView + customerPhoneId;
+    }
+
+    @InitBinder("phoneNameForm")
+    public void initPhoneNameFormBinder(WebDataBinder binder) {
+        binder.setAllowedFields(ALLOWED_PHONE_NAME_FORM_FIELDS);
     }
 
     /**
@@ -112,11 +135,12 @@ public class CustomerPhoneController {
     }
 
     /**
-     * Sets the passed in customerPhoneId as the default phone for the user.
+     * Sets the passed in customerPhoneId as the default phone for the current customer.
      *
      * @param customerPhoneId
      * @param request
      * @return
+     * @throws SecurityException if the customerPhone does not belong to the current customer
      */
     @RequestMapping(value = "makePhoneDefault", method = {
             RequestMethod.GET, RequestMethod.POST}
@@ -125,7 +149,7 @@ public class CustomerPhoneController {
             @RequestParam(required = true) Long customerPhoneId,
             HttpServletRequest request
     ) {
-        CustomerPhone customerPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
+        CustomerPhone customerPhone = readCustomerPhoneOwnedByCurrentCustomer(customerPhoneId, request);
         customerPhoneService.makeCustomerPhoneDefault(customerPhone.getId(), customerPhone.getCustomer().getId());
 
         request.setAttribute("phone.madePhoneDefault", "true");
@@ -134,15 +158,16 @@ public class CustomerPhoneController {
     }
 
     /**
-     * Creates a new phone if no customerPhoneId & phoneId are passed in; otherwise, it creates a new customerPhone object otherwise.  If they are passed in,
-     * it is assumed that there is an update.
+     * Creates a new phone if no customerPhoneId is passed in. Otherwise the existing customerPhone (and its phone) are
+     * updated with the submitted values, provided they belong to the current customer.
      *
      * @param phoneNameForm
      * @param errors
      * @param request
-     * @param customerPhoneId DOCUMENT ME!
-     * @param phoneId         DOCUMENT ME!
+     * @param customerPhoneId the customerPhone to update; must belong to the current customer
+     * @param phoneId         optional; when supplied it must be the phone of the customerPhone being updated
      * @return
+     * @throws SecurityException if the customerPhone or phone does not belong to the current customer
      */
     @RequestMapping(value = "savePhone", method = {
             RequestMethod.GET, RequestMethod.POST}
@@ -158,9 +183,16 @@ public class CustomerPhoneController {
             ValidationUtils.rejectIfEmptyOrWhitespace(errors, "phoneName", "phoneName.required");
         }
 
-        if (phoneId != null) {
-            phoneNameForm.getPhone().setId(phoneId);
+        CustomerPhone existingCustomerPhone = null;
+        if (customerPhoneId != null && customerPhoneId > 0) {
+            existingCustomerPhone = readCustomerPhoneOwnedByCurrentCustomer(customerPhoneId, request);
+            Phone existingPhone = existingCustomerPhone.getPhone();
+            if (phoneId != null && (existingPhone == null || !phoneId.equals(existingPhone.getId()))) {
+                throw new SecurityException("The requested phone does not belong to the current customer");
+            }
         }
+
+        phoneNameForm.getPhone().setId(null);
 
         phoneFormatter.formatPhoneNumber(phoneNameForm.getPhone());
         errors.pushNestedPath("phone");
@@ -175,13 +207,19 @@ public class CustomerPhoneController {
             customerPhone.setPhoneName(phoneNameForm.getPhoneName());
             customerPhone.setPhone(phoneNameForm.getPhone());
 
-            if ((customerPhoneId != null) && (customerPhoneId > 0)) {
-                customerPhone.setId(customerPhoneId);
+            if (existingCustomerPhone != null) {
+                customerPhone.setId(existingCustomerPhone.getId());
+                if (existingCustomerPhone.getPhone() != null) {
+                    phoneNameForm.getPhone().setId(existingCustomerPhone.getPhone().getId());
+                }
             }
 
             customerPhoneValidator.validate(customerPhone, errors);
 
             if (!errors.hasErrors()) {
+                if (existingCustomerPhone != null) {
+                    customerPhone = copyFormOntoCustomerPhone(phoneNameForm, existingCustomerPhone);
+                }
                 customerPhone = customerPhoneService.saveCustomerPhone(customerPhone);
                 request.setAttribute("customerPhoneId", customerPhone.getId());
                 request.setAttribute("phoneId", customerPhone.getPhone().getId());
@@ -191,6 +229,51 @@ public class CustomerPhoneController {
         } else {
             return savePhoneErrorView;
         }
+    }
+
+    /**
+     * Reads the customerPhone with the given id, but only if it belongs to the customer on the current request.
+     * Unknown ids and ids owned by other customers are rejected the same way.
+     *
+     * @param customerPhoneId
+     * @param request
+     * @return the customerPhone owned by the current customer
+     * @throws SecurityException if the customerPhone does not exist or belongs to another customer
+     */
+    protected CustomerPhone readCustomerPhoneOwnedByCurrentCustomer(Long customerPhoneId, HttpServletRequest request) {
+        Customer currentCustomer = customerState.getCustomer(request);
+        CustomerPhone customerPhone = customerPhoneId == null
+                ? null
+                : customerPhoneService.readCustomerPhoneById(customerPhoneId);
+
+        if (!isOwnedBy(customerPhone, currentCustomer)) {
+            throw new SecurityException("The requested phone does not belong to the current customer");
+        }
+
+        return customerPhone;
+    }
+
+    protected boolean isOwnedBy(CustomerPhone customerPhone, Customer customer) {
+        return customer != null
+                && customer.getId() != null
+                && customerPhone != null
+                && customerPhone.getCustomer() != null
+                && customer.getId().equals(customerPhone.getCustomer().getId());
+    }
+
+    protected CustomerPhone copyFormOntoCustomerPhone(PhoneNameForm phoneNameForm, CustomerPhone customerPhone) {
+        Phone submitted = phoneNameForm.getPhone();
+        Phone phone = customerPhone.getPhone();
+        if (phone == null) {
+            customerPhone.setPhone(submitted);
+        } else {
+            phone.setPhoneNumber(submitted.getPhoneNumber());
+            phone.setCountryCode(submitted.getCountryCode());
+            phone.setExtension(submitted.getExtension());
+            phone.setDefault(submitted.isDefault());
+        }
+        customerPhone.setPhoneName(phoneNameForm.getPhoneName());
+        return customerPhone;
     }
 
     public void setCustomerPhoneService(CustomerPhoneService customerPhoneService) {
@@ -263,13 +346,10 @@ public class CustomerPhoneController {
         if (customerPhoneId == null) {
             return viewPhoneSuccessView;
         } else {
-            Long currCustomerId = customerState.getCustomer(request).getId();
             CustomerPhone cPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
 
             if (cPhone != null) {
-                // TODO: verify this is the current customers phone
-                //? - do we really need this since we read the phone with the currCustomerId?
-                if (!cPhone.getCustomer().getId().equals(currCustomerId)) {
+                if (!isOwnedBy(cPhone, customerState.getCustomer(request))) {
                     return viewPhoneErrorView;
                 }
 
