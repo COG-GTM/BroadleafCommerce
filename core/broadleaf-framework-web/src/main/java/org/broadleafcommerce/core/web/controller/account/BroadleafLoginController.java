@@ -19,6 +19,7 @@ package org.broadleafcommerce.core.web.controller.account;
 
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.ServiceException;
+import org.broadleafcommerce.common.security.LocalRedirectStrategy;
 import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
@@ -71,8 +72,9 @@ public class BroadleafLoginController extends BroadleafAbstractController {
      * @return the return view
      */
     public String login(HttpServletRequest request, HttpServletResponse response, Model model) {
-        if (StringUtils.isNotBlank(request.getParameter("successUrl"))) {
-            model.addAttribute("successUrl", request.getParameter("successUrl"));
+        String successUrl = request.getParameter("successUrl");
+        if (StringUtils.isNotBlank(successUrl) && LocalRedirectStrategy.isLocalPath(successUrl)) {
+            model.addAttribute("successUrl", successUrl);
         }
         return getLoginView();
     }
