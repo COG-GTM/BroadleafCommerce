@@ -23,6 +23,10 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -92,10 +96,11 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
 
         if (failureUrl != null) {
             if (StringUtils.isNotEmpty(successUrlParam)) {
+                String encodedSuccessUrl = URLEncoder.encode(successUrlParam, StandardCharsets.UTF_8);
                 if (!failureUrl.contains("?")) {
-                    failureUrl += "?successUrl=" + successUrlParam;
+                    failureUrl += "?successUrl=" + encodedSuccessUrl;
                 } else {
-                    failureUrl += "&successUrl=" + successUrlParam;
+                    failureUrl += "&successUrl=" + encodedSuccessUrl;
                 }
             }
 
@@ -106,14 +111,38 @@ public class BroadleafAuthenticationFailureHandler extends SimpleUrlAuthenticati
         }
     }
 
+    /**
+     * Returns the url only if it is a path local to this application: it must start with a single {@code /}
+     * followed by something other than {@code /} or {@code \\}, and must carry no scheme or authority.
+     * Anything else (absolute urls, protocol-relative urls such as {@code //host}, backslashes,
+     * control or whitespace characters) returns null.
+     */
     public String validateUrlParam(final String url) {
-        if (url != null) {
-            if (url.contains("http") || url.contains("www") || url.contains(".")) {
-                return null;
+        return isLocalPath(url) ? url : null;
+    }
+
+    protected boolean isLocalPath(final String url) {
+        if (url == null || url.isEmpty() || url.charAt(0) != '/') {
+            return false;
+        }
+        if (url.length() > 1 && (url.charAt(1) == '/' || url.charAt(1) == '\\')) {
+            return false;
+        }
+        for (int i = 0; i < url.length(); i++) {
+            final char c = url.charAt(i);
+            if (c == '\\' || Character.isISOControl(c) || Character.isWhitespace(c) || Character.isSpaceChar(c)) {
+                return false;
             }
         }
-
-        return url;
+        try {
+            final URI uri = new URI(url);
+            return uri.getScheme() == null
+                    && uri.getRawAuthority() == null
+                    && uri.getRawPath() != null
+                    && uri.getRawPath().startsWith("/");
+        } catch (URISyntaxException e) {
+            return false;
+        }
     }
 
     public void setExceptionMappings(final Map<String, String> failureUrlMap) {
