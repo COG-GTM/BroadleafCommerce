@@ -19,6 +19,7 @@ package org.broadleafcommerce.core.web.controller.account;
 
 import org.apache.commons.lang3.StringUtils;
 import org.broadleafcommerce.common.exception.ServiceException;
+import org.broadleafcommerce.common.util.UrlUtil;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
 import org.broadleafcommerce.core.order.domain.NullOrderImpl;
 import org.broadleafcommerce.core.order.domain.Order;
@@ -117,7 +118,7 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
             }
 
             String redirectUrl = registerCustomerForm.getRedirectUrl();
-            if (StringUtils.isNotBlank(redirectUrl) && redirectUrl.contains(":")) {
+            if (!UrlUtil.isLocalRedirectPath(redirectUrl)) {
                 redirectUrl = null;
             }
             return StringUtils.isBlank(redirectUrl) ? getRegisterSuccessView() : "redirect:" + redirectUrl;
