@@ -137,7 +137,7 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
 
         Customer customer = CustomerState.getCustomer();
         if (!customer.isAnonymous() && shippingForm.isSaveAsDefault()) {
-            Address address = addressService.saveAddress(shippingForm.getAddress());
+            Address address = addressService.saveAddress(addressService.copyAddress(shippingForm.getAddress()));
             CustomerAddress customerAddress = customerAddressService.create();
             customerAddress.setAddress(address);
             customerAddress.setAddressName(shippingForm.getAddressName());
@@ -148,7 +148,7 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
 
         FulfillmentGroup shippableFulfillmentGroup = fulfillmentGroupService.getFirstShippableFulfillmentGroup(cart);
         if (shippableFulfillmentGroup != null) {
-            shippableFulfillmentGroup.setAddress(shippingForm.getAddress());
+            shippableFulfillmentGroup.setAddress(addressService.copyAddress(shippingForm.getAddress()));
             if (shippingForm.getPersonalMessage() != null && shippingForm.getPersonalMessage().getMessage() != null) {
                 shippableFulfillmentGroup.setPersonalMessage(shippingForm.getPersonalMessage());
             }
@@ -291,7 +291,7 @@ public class BroadleafShippingInfoController extends AbstractCheckoutController 
 
         CustomerAddress customerAddress = customerAddressService.create();
         customerAddress.setAddressName(addressForm.getAddressName());
-        customerAddress.setAddress(addressForm.getAddress());
+        customerAddress.setAddress(addressService.copyAddress(addressForm.getAddress()));
         customerAddress.setCustomer(CustomerState.getCustomer());
         customerAddressService.saveCustomerAddress(customerAddress);
 

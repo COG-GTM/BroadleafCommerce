@@ -103,7 +103,7 @@ public class BroadleafBillingInfoController extends AbstractCheckoutController {
         for (OrderPayment p : cart.getPayments()) {
             if (p.getType().isCreditCardType() && p.isActive()) {
                 if (p.getBillingAddress() == null) {
-                    p.setBillingAddress(billingForm.getAddress());
+                    p.setBillingAddress(addressService.copyAddress(billingForm.getAddress()));
                 } else {
                     Address updatedAddress = addressService.copyAddress(p.getBillingAddress(), billingForm.getAddress());
                     p.setBillingAddress(updatedAddress);
@@ -120,7 +120,7 @@ public class BroadleafBillingInfoController extends AbstractCheckoutController {
             OrderPayment tempOrderPayment = orderPaymentService.create();
             tempOrderPayment.setType(PaymentType.CREDIT_CARD);
             tempOrderPayment.setPaymentGatewayType(PaymentGatewayType.TEMPORARY);
-            tempOrderPayment.setBillingAddress(billingForm.getAddress());
+            tempOrderPayment.setBillingAddress(addressService.copyAddress(billingForm.getAddress()));
             tempOrderPayment.setOrder(cart);
             cart.getPayments().add(tempOrderPayment);
         }
