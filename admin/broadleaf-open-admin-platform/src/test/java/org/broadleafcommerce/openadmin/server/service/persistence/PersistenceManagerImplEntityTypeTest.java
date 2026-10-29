@@ -32,7 +32,9 @@ import org.junit.Test;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -91,6 +93,21 @@ public class PersistenceManagerImplEntityTypeTest {
     public void addRejectsEntityTypeOutsideCeilingHierarchy() throws Exception {
         try {
             persistenceManager.add(pkg(AdminUserImpl.class.getName(), AdminRoleImpl.class.getName()));
+            fail("Expected SecurityServiceException");
+        } catch (SecurityServiceException expected) {
+            // expected
+        }
+        assertTrue(invocations.toString(), invocations.isEmpty());
+    }
+
+    @Test
+    public void updateRejectsSubPackageEntityTypeOutsideCeilingHierarchy() throws Exception {
+        PersistencePackage root = pkg(AdminUser.class.getName(), AdminUserImpl.class.getName());
+        Map<String, PersistencePackage> subPackages = new HashMap<>();
+        subPackages.put("dynamicForm", pkg(AdminRole.class.getName(), AdminUserImpl.class.getName()));
+        root.setSubPackages(subPackages);
+        try {
+            persistenceManager.update(root);
             fail("Expected SecurityServiceException");
         } catch (SecurityServiceException expected) {
             // expected

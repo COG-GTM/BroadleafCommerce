@@ -934,9 +934,15 @@ public class PersistenceManagerImpl implements InspectHelper, PersistenceManager
     /**
      * Ensures the entity type submitted with an add, update or remove request belongs to the polymorphic hierarchy of
      * the package's ceiling entity. Security checks are evaluated against the ceiling entity, so allowing an unrelated
-     * type would let a caller operate on entities they hold no permission for.
+     * type would let a caller operate on entities they hold no permission for. Sub-packages are validated as well, as
+     * they are persisted without a separate security check.
      */
     protected void validateEntityTypeAgainstCeiling(PersistencePackage persistencePackage) throws ServiceException {
+        if (!MapUtils.isEmpty(persistencePackage.getSubPackages())) {
+            for (PersistencePackage subPackage : persistencePackage.getSubPackages().values()) {
+                validateEntityTypeAgainstCeiling(subPackage);
+            }
+        }
         Entity entity = persistencePackage.getEntity();
         String ceilingClassname = persistencePackage.getCeilingEntityFullyQualifiedClassname();
         if (entity == null || ArrayUtils.isEmpty(entity.getType()) || StringUtils.isBlank(entity.getType()[0])
