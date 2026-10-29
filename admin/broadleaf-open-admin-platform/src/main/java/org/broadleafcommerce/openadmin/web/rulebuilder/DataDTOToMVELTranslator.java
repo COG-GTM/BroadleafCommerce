@@ -25,6 +25,7 @@ import org.broadleafcommerce.openadmin.web.rulebuilder.dto.DataDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.dto.ExpressionDTO;
 import org.broadleafcommerce.openadmin.web.rulebuilder.service.RuleBuilderFieldService;
 
+import java.math.BigDecimal;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
@@ -340,15 +341,16 @@ public class DataDTOToMVELTranslator {
             }
             case WITHIN_DAYS: {
 
+                int days;
                 try {
-                    Integer.parseInt(value[0] + "");
+                    days = Integer.parseInt(value[0] + "");
                 } catch (Exception e) {
                     throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_INTEGER_VALUE, "Cannot format value for the field (" +
                             field + ") based on field type. The type of field is Integer, " +
                             "and you entered: (" + value[0] + ")");
                 }
                 sb.append("(");
-                buildExpression(sb, entityKey, field, new Object[]{"MvelHelper.subtractFromCurrentTime(" + value[0] + ")"}, type, SupportedFieldType.WITHIN_DAYS, GREATER_THAN_OPERATOR,
+                buildExpression(sb, entityKey, field, new Object[]{"MvelHelper.subtractFromCurrentTime(" + days + ")"}, type, SupportedFieldType.WITHIN_DAYS, GREATER_THAN_OPERATOR,
                         false, false, false, false, true);
                 sb.append("&&");
                 buildExpression(sb, entityKey, field, new Object[]{"MvelHelper.currentTime()"}, type, SupportedFieldType.WITHIN_DAYS, LESS_THAN_OPERATOR,
@@ -649,7 +651,7 @@ public class DataDTOToMVELTranslator {
                         break;
                     case DECIMAL:
                         try {
-                            Double.parseDouble(parsableVal);
+                            new BigDecimal(parsableVal);
                         } catch (Exception e) {
                             throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_DECIMAL_VALUE,
                                     "Cannot format value for the field ("
@@ -664,13 +666,7 @@ public class DataDTOToMVELTranslator {
                             if (ignoreCase) {
                                 response.append("MvelHelper.toUpperCase(");
                             }
-                            if (!ignoreQuotes) {
-                                response.append("\"");
-                            }
-                            response.append(value[j]);
-                            if (!ignoreQuotes) {
-                                response.append("\"");
-                            }
+                            response.append(toStringLiteral(fieldName, String.valueOf(value[j]), ignoreQuotes));
                             if (ignoreCase) {
                                 response.append(")");
                             }
@@ -683,7 +679,7 @@ public class DataDTOToMVELTranslator {
                                                 fieldName + ") based on field type. The type of field is Integer, " +
                                                 "and you entered: (" + value[j] + ")");
                             }
-                            response.append(value[j]);
+                            response.append(Integer.parseInt(parsableVal));
                         }
                         break;
                     case INTEGER:
@@ -695,11 +691,11 @@ public class DataDTOToMVELTranslator {
                                             fieldName + ") based on field type. The type of field is Integer, " +
                                             "and you entered: (" + parsableVal + ")");
                         }
-                        response.append(parsableVal);
+                        response.append(Integer.parseInt(parsableVal));
                         break;
                     case MONEY:
                         try {
-                            Double.parseDouble(parsableVal);
+                            new BigDecimal(parsableVal);
                         } catch (Exception e) {
                             throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_DECIMAL_VALUE,
                                     "Cannot format value for the field (" +
@@ -731,34 +727,10 @@ public class DataDTOToMVELTranslator {
                         }
                         break;
                     default:
-                        String stringVersionState = String.valueOf(value[j]);
-                        String stringVersionStateTrimmed = String.valueOf(value[j]).trim();
-                        boolean alreadyHasQuotesTrimmed = stringVersionStateTrimmed.startsWith("\"")
-                                && stringVersionStateTrimmed.endsWith("\"");
-                        boolean alreadyHasQuotes = stringVersionState.startsWith("\"")
-                                && stringVersionStateTrimmed.endsWith("\"");
-
-                        if (alreadyHasQuotes || alreadyHasQuotesTrimmed) {
-                            int openQuoteIndex = stringVersionState.indexOf("\"") + 1;
-                            int closeQuoteIndex = stringVersionState.lastIndexOf("\"");
-                            String substring = stringVersionState.substring(openQuoteIndex, closeQuoteIndex);
-                            int paddingRightLength = stringVersionState.length() - closeQuoteIndex;
-                            //don't forget to pad left and/or right according to original string, this will make string exactly the same
-                            //probably trimming is ok business logic, but padding will make unit tests happy and green :)
-                            stringVersionState = String.format("%" + openQuoteIndex + "s", "\"")
-                                    + substring.replace("\"", "\\\"")
-                                    + String.format("%-" + paddingRightLength + "s", "\"");
-                        }
                         if (ignoreCase) {
                             response.append("MvelHelper.toUpperCase(");
                         }
-                        if (!ignoreQuotes && !alreadyHasQuotes) {
-                            response.append("\"");
-                        }
-                        response.append(stringVersionState);
-                        if (!ignoreQuotes && !alreadyHasQuotes) {
-                            response.append("\"");
-                        }
+                        response.append(toStringLiteral(fieldName, String.valueOf(value[j]), ignoreQuotes));
                         if (ignoreCase) {
                             response.append(")");
                         }
@@ -770,6 +742,94 @@ public class DataDTOToMVELTranslator {
             }
         }
         return response.toString();
+    }
+
+    /**
+     * Renders a rule builder value as a single, safely escaped MVEL string literal. A value that is already wrapped in
+     * double quotes (as produced for projections by {@link #extractBasicValues(Object)}) is unescaped first, so the
+     * result never depends on the escaping the caller applied. Whitespace around a quoted value is kept outside the
+     * literal.
+     *
+     * @param inCollection whether the literal is an element of a collection projection. Double quotes are then
+     *                     written as {@code \u0022}, which {@code MvelHelper} matches against HTML encoded values.
+     */
+    protected String toStringLiteral(String fieldName, String value, boolean inCollection)
+            throws MVELTranslationException {
+        String trimmed = value.trim();
+        String leading = "";
+        String trailing = "";
+        String content = value;
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            int start = value.indexOf(trimmed);
+            leading = value.substring(0, start);
+            trailing = value.substring(start + trimmed.length());
+            content = unescapeStringLiteral(trimmed.substring(1, trimmed.length() - 1));
+        }
+        StringBuilder sb = new StringBuilder(content.length() + 2);
+        sb.append(leading).append('"');
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            switch (c) {
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '"':
+                    sb.append(inCollection ? "\\u0022" : "\\\"");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                default:
+                    if (Character.isISOControl(c)) {
+                        throw new MVELTranslationException(MVELTranslationException.INCOMPATIBLE_RULE,
+                                "Cannot format value for the field (" + fieldName + "). The value contains an "
+                                        + "unsupported control character");
+                    }
+                    sb.append(c);
+            }
+        }
+        sb.append('"').append(trailing);
+        return sb.toString();
+    }
+
+    /**
+     * Reverses the escapes that may appear inside an already quoted value: {@code \\}, {@code \"}, {@code \'} and
+     * {@code \}{@code uXXXX}. Any other backslash is kept as a literal character.
+     */
+    protected String unescapeStringLiteral(String content) {
+        if (content.indexOf('\\') < 0) {
+            return content;
+        }
+        StringBuilder sb = new StringBuilder(content.length());
+        int i = 0;
+        while (i < content.length()) {
+            char c = content.charAt(i);
+            if (c == '\\' && i + 1 < content.length()) {
+                char next = content.charAt(i + 1);
+                if (next == '\\' || next == '"' || next == '\'') {
+                    sb.append(next);
+                    i += 2;
+                    continue;
+                }
+                if (next == 'u' && i + 6 <= content.length()) {
+                    String hex = content.substring(i + 2, i + 6);
+                    if (hex.matches("[0-9A-Fa-f]{4}")) {
+                        sb.append((char) Integer.parseInt(hex, 16));
+                        i += 6;
+                        continue;
+                    }
+                }
+            }
+            sb.append(c);
+            i++;
+        }
+        return sb.toString();
     }
 
 }

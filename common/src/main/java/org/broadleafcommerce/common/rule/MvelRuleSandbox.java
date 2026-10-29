@@ -112,7 +112,7 @@ public class MvelRuleSandbox {
                 throw new MvelRuleViolationException("Rules may not use the '" + token.text + "' construct");
             }
             if (isMemberAccess(tokens, i)) {
-                if (BLOCKED_MEMBERS.contains(token.text) || SETTER.matcher(token.text).matches()) {
+                if (isBlockedMember(token.text)) {
                     throw new MvelRuleViolationException("Rules may not call '" + token.text + "'");
                 }
             } else {
@@ -169,6 +169,29 @@ public class MvelRuleSandbox {
         if (segments.size() > 1 && PACKAGE_ROOTS.contains(segments.get(0))) {
             throw new MvelRuleViolationException("Rules may not reference '" + typeName + "'");
         }
+    }
+
+    /**
+     * Rule builder generated properties whose getter name is also a blocked member (e.g. {@code request.properties},
+     * whose {@code getProperties()} is blocked to keep {@code System.getProperties()} out of reach).
+     */
+    protected static final Set<String> PROPERTY_ACCESS_ALLOWED = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "properties", "property"
+    )));
+
+    /**
+     * MVEL resolves property style access ({@code x.classLoader}) to the matching getter, so a member is also blocked
+     * when its getter or boolean accessor is.
+     */
+    protected static boolean isBlockedMember(String member) {
+        if (BLOCKED_MEMBERS.contains(member) || SETTER.matcher(member).matches()) {
+            return true;
+        }
+        if (PROPERTY_ACCESS_ALLOWED.contains(member)) {
+            return false;
+        }
+        String capitalized = Character.toUpperCase(member.charAt(0)) + member.substring(1);
+        return BLOCKED_MEMBERS.contains("get" + capitalized) || BLOCKED_MEMBERS.contains("is" + capitalized);
     }
 
     protected static boolean isMemberAccess(List<Token> tokens, int index) {

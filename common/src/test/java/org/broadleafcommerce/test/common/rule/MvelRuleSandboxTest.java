@@ -102,4 +102,18 @@ public class MvelRuleSandboxTest extends TestCase {
         assertTrue(MvelRuleSandbox.isValid("  ", null));
     }
 
+    public void testPropertyStyleAccessToBlockedGettersIsRejected() {
+        String[] rules = {
+                "MvelHelper.classLoader != null",
+                "customer.runtime != null",
+                "order.session != null",
+                "MvelHelper.declaredMethods.length > 0",
+                "request.applicationContext != null"
+        };
+        for (String rule : rules) {
+            assertFalse(rule, MvelRuleSandbox.isValid(rule, null));
+        }
+        assertTrue(MvelRuleSandbox.isValid("customer.loggedIn == true && order.subTotal.amount > 10", null));
+    }
+
 }

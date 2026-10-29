@@ -341,4 +341,56 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         }
     }
 
+    public void testBooleanValueCannotCarryExpression() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("loggedIn");
+        expressionDTO.setOperator(BLCOperator.EQUALS.name());
+        expressionDTO.setValue("true");
+        assertEquals("?customer.?loggedIn==true", translator.createMVEL("customer", expressionDTO, customerFieldService));
+
+        expressionDTO.setValue("true || java.lang.Runtime.getRuntime().exec(\"touch /tmp/mvel-poc\") != null");
+        try {
+            translator.createMVEL("customer", expressionDTO, customerFieldService);
+            fail("Expected the boolean value to be rejected");
+        } catch (MVELTranslationException e) {
+            assertEquals(MVELTranslationException.INCOMPATIBLE_RULE, e.getCode());
+        }
+    }
+
+    public void testStringValueCannotBreakOutOfLiteral() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("emailAddress");
+        expressionDTO.setOperator(BLCOperator.EQUALS.name());
+
+        expressionDTO.setValue("x\" || java.lang.Runtime.getRuntime().exec(\"id\") != null || \"");
+        assertEquals("?customer.?emailAddress==\"x\\\" || java.lang.Runtime.getRuntime().exec(\\\"id\\\") != null || \\\"\"",
+                translator.createMVEL("customer", expressionDTO, customerFieldService));
+
+        expressionDTO.setValue("\"x\\\" || java.lang.Runtime.getRuntime().exec('id') != null || \\\"\"");
+        assertEquals("?customer.?emailAddress==\"x\\\" || java.lang.Runtime.getRuntime().exec('id') != null || \\\"\"",
+                translator.createMVEL("customer", expressionDTO, customerFieldService));
+
+        expressionDTO.setValue("a\\\" + Runtime + \"");
+        assertEquals("?customer.?emailAddress==\"a\\\\\\\" + Runtime + \\\"\"",
+                translator.createMVEL("customer", expressionDTO, customerFieldService));
+    }
+
+    public void testCollectionValueCannotBreakOutOfLiteral() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("category.name");
+        expressionDTO.setOperator(BLCOperator.COLLECTION_IN.name());
+
+        expressionDTO.setValue("[abc]) || java.lang.Runtime.getRuntime().exec('id') != null || ([x]");
+        String translated = translator.createMVEL("discreteOrderItem", expressionDTO, orderItemFieldService);
+        assertEquals("CollectionUtils.intersection(?discreteOrderItem.?category.?name,"
+                + "[\"abc]) || java.lang.Runtime.getRuntime().exec('id') != null || ([x\"]).size()>0", translated);
+
+        expressionDTO.setValue("[\"abc\\\") || java.lang.Runtime.getRuntime().exec('id') != null || (\\\"\"]");
+        translated = translator.createMVEL("discreteOrderItem", expressionDTO, orderItemFieldService);
+        assertEquals(translated, 2, translated.length() - translated.replace("\"", "").length());
+    }
+
 }
