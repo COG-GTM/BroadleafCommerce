@@ -21,6 +21,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.broadleafcommerce.common.money.Money;
 import org.broadleafcommerce.common.util.BLCSystemProperty;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.order.domain.DiscreteOrderItem;
@@ -31,6 +32,7 @@ import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.core.order.domain.OrderItemAttribute;
 import org.broadleafcommerce.core.order.domain.SkuAccessor;
 import org.broadleafcommerce.core.order.service.OrderService;
+import org.broadleafcommerce.core.web.util.JavaScriptStringUtils;
 import org.broadleafcommerce.presentation.condition.ConditionalOnTemplating;
 import org.broadleafcommerce.presentation.dialect.AbstractBroadleafTagReplacementProcessor;
 import org.broadleafcommerce.presentation.model.BroadleafTemplateContext;
@@ -137,13 +139,13 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
                 sb.append("gtag('set', 'allow_google_signals', true);");
             }
             if (StringUtils.isNotEmpty(googleAnalytics4PropertyId)) {
-                sb.append("gtag('config', '" + googleAnalytics4PropertyId + "');");
+                sb.append("gtag('config', " + js(googleAnalytics4PropertyId) + ");");
             }
             if (StringUtils.isNotEmpty(googleAnalytics4WebPropertyId)) {
-                sb.append("gtag('config', '" + googleAnalytics4WebPropertyId + "');");
+                sb.append("gtag('config', " + js(googleAnalytics4WebPropertyId) + ");");
             }
             if (StringUtils.isNotEmpty(tagId)) {
-                sb.append("gtag('config', '" + tagId + "');");
+                sb.append("gtag('config', " + js(tagId) + ");");
             }
 
             String orderNumberExpression = tagAttributes.get("ordernumber");
@@ -189,18 +191,18 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
      */
     protected String getTransactionJs(Order order) {
         StringBuilder sb = new StringBuilder();
-        sb.append("gtag('event', purchase',{");
+        sb.append("gtag('event', 'purchase',{");
 
-        sb.append("transaction_id: '" + order.getOrderNumber() + "'");
+        sb.append("transaction_id: " + js(order.getOrderNumber()));
         if (StringUtils.isNotBlank(getAffiliation())) {
-            sb.append(",affiliation: '" + getAffiliation() + "'");
+            sb.append(",affiliation: " + js(getAffiliation()));
         }
-        sb.append(",value: " + order.getTotal());
-        sb.append(",shipping:" + order.getTotalShipping() + "");
-        sb.append(",tax: " + order.getTotalTax());
+        sb.append(",value: " + jsNumber(order.getTotal()));
+        sb.append(",shipping:" + jsNumber(order.getTotalShipping()));
+        sb.append(",tax: " + jsNumber(order.getTotalTax()));
 
         if (order.getCurrency() != null) {
-            sb.append(",currency: '" + order.getCurrency().getCurrencyCode() + "'");
+            sb.append(",currency: " + js(order.getCurrency().getCurrencyCode()));
         }
 
         sb.append(getItemJs(order));
@@ -221,10 +223,10 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
                     if (SkuAccessor.class.isAssignableFrom(orderItem.getClass())) {
                         sb.append(comma).append("{");
                         Sku sku = ((SkuAccessor) orderItem).getSku();
-                        sb.append("item_id: '" + sku.getId() + "'");
-                        sb.append(",item_name: '" + sku.getName() + "'");
-                        sb.append(",item_category: '" + getVariation(orderItem) + "'");
-                        sb.append(",price: " + orderItem.getAveragePrice());
+                        sb.append("item_id: " + js(sku.getId()));
+                        sb.append(",item_name: " + js(sku.getName()));
+                        sb.append(",item_category: " + js(getVariation(orderItem)));
+                        sb.append(",price: " + jsNumber(orderItem.getAveragePrice()));
                         sb.append(",quantity: " + orderItem.getQuantity());
                         sb.append("}");
                         comma = ",";
@@ -237,8 +239,9 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
     }
 
     /**
-     * Returns the product option values separated by a space if they are
-     * relevant for the item, or the product category if no options are available
+     * Returns the raw (unescaped) product option values separated by a space if they are
+     * relevant for the item, or the product category if no options are available. Callers must escape the result
+     * before writing it into a script, see {@link #js(Object)}.
      *
      * @return
      */
@@ -255,6 +258,23 @@ public class GoogleAnalytics4Processor extends AbstractBroadleafTagReplacementPr
 
         //the result has a space at the end, ensure that is stripped out
         return result.substring(0, result.length() - 1);
+    }
+
+    /**
+     * @return the given value as a single-quoted JavaScript string literal that is safe to embed in an inline script
+     */
+    protected String js(Object value) {
+        return JavaScriptStringUtils.quote(value);
+    }
+
+    /**
+     * @return the amount as a JavaScript number literal, or {@code null} if there is no amount
+     */
+    protected String jsNumber(Money money) {
+        if (money == null || money.getAmount() == null) {
+            return "null";
+        }
+        return money.getAmount().toPlainString();
     }
 
     public String getTagIdForProperty() {
