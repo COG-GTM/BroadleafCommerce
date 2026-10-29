@@ -31,6 +31,8 @@ import org.broadleafcommerce.openadmin.dto.Property;
 import org.broadleafcommerce.openadmin.server.dao.DynamicEntityDao;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermission;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminPermissionImpl;
+import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
+import org.broadleafcommerce.openadmin.server.security.remote.SecurityVerifier;
 import org.broadleafcommerce.openadmin.server.security.service.type.PermissionType;
 import org.broadleafcommerce.openadmin.server.service.handler.CustomPersistenceHandlerAdapter;
 import org.broadleafcommerce.openadmin.server.service.persistence.module.PersistenceModule;
@@ -39,11 +41,16 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
+import jakarta.annotation.Resource;
+
 /**
  * @author Jeff Fischer
  */
 @Component("blAdminPermissionCustomPersistenceHandler")
 public class AdminPermissionCustomPersistenceHandler extends CustomPersistenceHandlerAdapter {
+
+    @Resource(name = "blAdminSecurityRemoteService")
+    protected SecurityVerifier adminRemoteSecurityService;
 
     @Override
     public Boolean canHandleAdd(PersistencePackage persistencePackage) {
@@ -69,6 +76,8 @@ public class AdminPermissionCustomPersistenceHandler extends CustomPersistenceHa
     public Entity add(PersistencePackage persistencePackage, DynamicEntityDao dynamicEntityDao, RecordHelper helper) throws ServiceException {
         if (persistencePackage.getEntity().findProperty("id") != null
                 && !StringUtils.isEmpty(persistencePackage.getEntity().findProperty("id").getValue())) {
+            // The framework only verified ADD; modifying an existing permission also requires UPDATE
+            adminRemoteSecurityService.securityCheck(persistencePackage, EntityOperationType.UPDATE);
             return update(persistencePackage, dynamicEntityDao, helper);
         }
         Entity entity = checkPermissionName(persistencePackage);
