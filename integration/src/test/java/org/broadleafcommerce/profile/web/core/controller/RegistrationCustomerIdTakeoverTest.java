@@ -51,9 +51,6 @@ public class RegistrationCustomerIdTakeoverTest extends TestNGSiteIntegrationSet
     private static final String VICTIM_PASSWORD = "VictimPassword1";
 
     @Resource
-    private RegisterCustomerController registerCustomerController;
-
-    @Resource
     private CustomerService customerService;
 
     @AfterMethod
@@ -64,7 +61,9 @@ public class RegistrationCustomerIdTakeoverTest extends TestNGSiteIntegrationSet
     @Test
     public void deprecatedRegisterCustomerControllerIgnoresSubmittedCustomerId() throws Exception {
         Customer victim = registerVictim("victim-legacy@example.com");
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(registerCustomerController).build();
+        RegisterCustomerController controller = new RegisterCustomerController();
+        applicationContext.getAutowireCapableBeanFactory().autowireBean(controller);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
 
         mockMvc.perform(post("/registerCustomer/registerCustomer")
                 .param("customer.id", String.valueOf(victim.getId()))

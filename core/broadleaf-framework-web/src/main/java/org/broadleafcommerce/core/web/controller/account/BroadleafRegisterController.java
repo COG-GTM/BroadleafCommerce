@@ -66,6 +66,7 @@ public class BroadleafRegisterController extends BroadleafAbstractController {
             "customer.id",
             "customer.password",
             "customer.passwordChangeRequired",
+            "customer.challengeAnswer",
             "customer.registered",
             "customer.deactivated",
             "customer.anonymous",
