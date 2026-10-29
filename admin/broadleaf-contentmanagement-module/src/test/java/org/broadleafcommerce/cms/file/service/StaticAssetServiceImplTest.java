@@ -157,6 +157,13 @@ public class StaticAssetServiceImplTest {
     }
 
     @Test(expected = IOException.class)
+    public void testBlacklistChecksAlternateExtensionsOfDetectedContentType() throws IOException {
+        StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
+        assetService.setDisabledFileExtensions("jpeg");
+        assetService.validateFileExtension(upload("photo.jpg", JPEG_HEADER));
+    }
+
+    @Test(expected = IOException.class)
     public void testRejectsNameThatDoesNotMatchContent() throws IOException {
         StaticAssetServiceImpl assetService = new StaticAssetServiceImpl();
         assetService.setDisabledFileExtensions("pdf");
