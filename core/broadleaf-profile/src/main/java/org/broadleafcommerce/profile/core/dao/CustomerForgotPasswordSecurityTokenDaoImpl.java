@@ -18,11 +18,13 @@
 package org.broadleafcommerce.profile.core.dao;
 
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.common.util.dao.TQOrder;
 import org.broadleafcommerce.common.util.dao.TypedQueryBuilder;
 import org.broadleafcommerce.profile.core.domain.CustomerForgotPasswordSecurityToken;
 import org.broadleafcommerce.profile.core.domain.CustomerForgotPasswordSecurityTokenImpl;
 import org.springframework.stereotype.Repository;
 
+import java.util.Date;
 import java.util.List;
 
 import jakarta.annotation.Resource;
@@ -63,6 +65,34 @@ public class CustomerForgotPasswordSecurityTokenDaoImpl implements CustomerForgo
                 .addRestriction("token.tokenUsedFlag", "=", false)
                 .toQuery(em);
         return query.getResultList();
+    }
+
+    @Override
+    public List<CustomerForgotPasswordSecurityToken> readUnusedTokensByCustomerId(Long customerId, Date createdAfter) {
+        TypedQuery<CustomerForgotPasswordSecurityToken> query = new TypedQueryBuilder<>(
+                CustomerForgotPasswordSecurityTokenImpl.class,
+                "token",
+                CustomerForgotPasswordSecurityToken.class
+        )
+                .addRestriction("token.customerId", "=", customerId)
+                .addRestriction("token.tokenUsedFlag", "=", false)
+                .addRestriction("token.createDate", ">", createdAfter)
+                .addOrder(new TQOrder("token.createDate", false))
+                .toQuery(em);
+        return query.getResultList();
+    }
+
+    @Override
+    public Long countTokensCreatedSince(Long customerId, Date createdAfter) {
+        TypedQuery<Long> query = new TypedQueryBuilder<>(
+                CustomerForgotPasswordSecurityTokenImpl.class,
+                "token",
+                CustomerForgotPasswordSecurityToken.class
+        )
+                .addRestriction("token.customerId", "=", customerId)
+                .addRestriction("token.createDate", ">", createdAfter)
+                .toCountQuery(em);
+        return query.getSingleResult();
     }
 
     @Override

@@ -22,6 +22,7 @@ import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.service.GenericResponse;
 import org.broadleafcommerce.common.util.BLCRequestUtils;
 import org.broadleafcommerce.common.web.controller.BroadleafAbstractController;
+import org.broadleafcommerce.core.web.service.ForgotPasswordRequestThrottle;
 import org.broadleafcommerce.profile.core.service.CustomerService;
 import org.broadleafcommerce.profile.core.service.validator.ResetPasswordValidator;
 import org.broadleafcommerce.profile.web.core.service.login.LoginService;
@@ -61,6 +62,8 @@ public class BroadleafLoginController extends BroadleafAbstractController {
     protected ResetPasswordValidator resetPasswordValidator;
     @Resource(name = "blLoginService")
     protected LoginService loginService;
+    @Resource(name = "blForgotPasswordRequestThrottle")
+    protected ForgotPasswordRequestThrottle forgotPasswordRequestThrottle;
 
     /**
      * Redirects to the login view.
@@ -101,6 +104,10 @@ public class BroadleafLoginController extends BroadleafAbstractController {
      * @return the return view
      */
     public String processForgotPassword(String username, HttpServletRequest request, Model model) {
+        if (!isForgotPasswordRequestAllowed(username, request)) {
+            model.addAttribute("errorCode", "tooManyRequests");
+            return getForgotPasswordView();
+        }
         GenericResponse errorResponse = customerService.sendForgotPasswordNotification(
                 username, getResetPasswordUrl(request)
         );
@@ -121,6 +128,10 @@ public class BroadleafLoginController extends BroadleafAbstractController {
     }
 
     public String processForcedPasswordChange(String username, HttpServletRequest request, Model model) {
+        if (!isForgotPasswordRequestAllowed(username, request)) {
+            model.addAttribute("errorCode", "tooManyRequests");
+            return getForcedPasswordChangeView();
+        }
         final String resetPasswordUrl = getResetPasswordUrl(request);
         final GenericResponse errorResponse = customerService.sendForcedPasswordChangeNotification(
                 username, resetPasswordUrl
@@ -137,6 +148,10 @@ public class BroadleafLoginController extends BroadleafAbstractController {
 
             return getForcedPasswordChangeSuccessView();
         }
+    }
+
+    protected boolean isForgotPasswordRequestAllowed(String username, HttpServletRequest request) {
+        return forgotPasswordRequestThrottle == null || forgotPasswordRequestThrottle.tryAcquire(request, username);
     }
 
     /**

@@ -85,6 +85,8 @@ public class CustomerServiceImpl implements CustomerService {
     protected RoleDao roleDao;
     protected int tokenExpiredMinutes = 30;
     protected int passwordTokenLength = 20;
+    protected int forgotPasswordTokenWindowMinutes = 60;
+    protected int maxForgotPasswordTokensPerWindow = 5;
     protected List<PasswordUpdatedHandler> passwordResetHandlers = new ArrayList<>();
     protected List<PasswordUpdatedHandler> passwordChangedHandlers = new ArrayList<>();
 
@@ -369,7 +371,16 @@ public class CustomerServiceImpl implements CustomerService {
 
         checkCustomer(customer, response);
 
+        if (!response.getHasErrors() && isForgotPasswordRequestLimitReached(customer)) {
+            if (LOG.isWarnEnabled()) {
+                LOG.warn("Forgot password request limit reached for customer " + customer.getId());
+            }
+            response.addErrorCode("tooManyRequests");
+        }
+
         if (!response.getHasErrors()) {
+            invalidateAllTokensForCustomer(customer);
+
             String token = PasswordUtils.generateSecurePassword(getPasswordTokenLength());
             token = token.toLowerCase();
 
@@ -418,7 +429,7 @@ public class CustomerServiceImpl implements CustomerService {
                 fpst = customerForgotPasswordSecurityTokenDao.readToken(encodePassword(token));
             } else {
                 List<CustomerForgotPasswordSecurityToken> fpstoks = customerForgotPasswordSecurityTokenDao
-                        .readUnusedTokensByCustomerId(customer.getId());
+                        .readUnusedTokensByCustomerId(customer.getId(), getTokenExpirationCutoff());
                 for (CustomerForgotPasswordSecurityToken fpstok : fpstoks) {
                     if (isPasswordValid(rawToken, fpstok.getToken())) {
                         fpst = fpstok;
@@ -478,6 +489,27 @@ public class CustomerServiceImpl implements CustomerService {
         }
     }
 
+    /**
+     * Caps how many reset tokens (and therefore reset emails) a single customer can be issued within
+     * {@link #getForgotPasswordTokenWindowMinutes()}. A non-positive max disables the limit.
+     */
+    protected boolean isForgotPasswordRequestLimitReached(Customer customer) {
+        if (maxForgotPasswordTokensPerWindow <= 0) {
+            return false;
+        }
+        Date windowStart = new Date(SystemTime.asMillis() - forgotPasswordTokenWindowMinutes * 60000L);
+        Long issued = customerForgotPasswordSecurityTokenDao.countTokensCreatedSince(customer.getId(), windowStart);
+        return issued != null && issued >= maxForgotPasswordTokensPerWindow;
+    }
+
+    /**
+     * Matches {@link #isTokenExpired}, which compares whole elapsed minutes and so accepts a token until
+     * {@code tokenExpiredMinutes + 1} minutes have passed.
+     */
+    protected Date getTokenExpirationCutoff() {
+        return new Date(SystemTime.asMillis() - (tokenExpiredMinutes + 1) * 60000L);
+    }
+
     protected void checkCustomer(Customer customer, GenericResponse response) {
         if (customer == null) {
             response.addErrorCode("invalidCustomer");
@@ -510,6 +542,22 @@ public class CustomerServiceImpl implements CustomerService {
 
     public void setTokenExpiredMinutes(int tokenExpiredMinutes) {
         this.tokenExpiredMinutes = tokenExpiredMinutes;
+    }
+
+    public int getForgotPasswordTokenWindowMinutes() {
+        return forgotPasswordTokenWindowMinutes;
+    }
+
+    public void setForgotPasswordTokenWindowMinutes(int forgotPasswordTokenWindowMinutes) {
+        this.forgotPasswordTokenWindowMinutes = forgotPasswordTokenWindowMinutes;
+    }
+
+    public int getMaxForgotPasswordTokensPerWindow() {
+        return maxForgotPasswordTokensPerWindow;
+    }
+
+    public void setMaxForgotPasswordTokensPerWindow(int maxForgotPasswordTokensPerWindow) {
+        this.maxForgotPasswordTokensPerWindow = maxForgotPasswordTokensPerWindow;
     }
 
     public int getPasswordTokenLength() {
