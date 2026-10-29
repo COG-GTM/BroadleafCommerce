@@ -31,6 +31,7 @@ import com.googlecode.pngtastic.core.PngOptimizer;
 import java.awt.image.BufferedImage;
 import java.awt.image.BufferedImageOp;
 import java.awt.image.ColorConvertOp;
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -109,9 +110,9 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
     @Override
     public InputStream convert(InputStream artifactStream, Operation[] operations, String mimeType) throws Exception {
         if (operations != null && operations.length > 0) {
-            byte[] imageBytes = IOUtils.toByteArray(artifactStream);
-            String formatName = readFormatAndValidateSourceSize(imageBytes);
-            BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+            InputStream imageStream = markSupportingStream(artifactStream);
+            String formatName = readFormatAndValidateSourceSize(imageStream);
+            BufferedImage image = ImageIO.read(imageStream);
 
             //before
             if (formatName.toLowerCase().equals("jpeg") || formatName.toLowerCase().equals("jpg")) {
@@ -143,9 +144,9 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
     }
 
     public InputStream convert(InputStream artifactStream, BufferedImageOp filter) throws Exception {
-        byte[] imageBytes = IOUtils.toByteArray(artifactStream);
-        String formatName = readFormatAndValidateSourceSize(imageBytes);
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+        InputStream imageStream = markSupportingStream(artifactStream);
+        String formatName = readFormatAndValidateSourceSize(imageStream);
+        BufferedImage image = ImageIO.read(imageStream);
 
         //before
         if (formatName.toLowerCase().equals("jpeg") || formatName.toLowerCase().equals("jpg")) {
@@ -205,12 +206,18 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
         return responseStream;
     }
 
+    protected InputStream markSupportingStream(InputStream artifactStream) {
+        return artifactStream.markSupported() ? artifactStream : new BufferedInputStream(artifactStream);
+    }
+
     /**
      * Returns the image format name, rejecting source images whose declared dimensions exceed the configured
-     * limits before the full image is decoded into memory.
+     * limits. Only the image header is read; the stream is reset afterwards so it can be fully decoded.
      */
-    protected String readFormatAndValidateSourceSize(byte[] imageBytes) throws Exception {
-        try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
+    protected String readFormatAndValidateSourceSize(InputStream imageStream) throws Exception {
+        imageStream.mark(Integer.MAX_VALUE);
+        ImageInputStream iis = ImageIO.createImageInputStream(imageStream);
+        try {
             Iterator<ImageReader> iter = ImageIO.getImageReaders(iis);
             ImageReader reader = iter.next();
             try {
@@ -227,6 +234,9 @@ public class ImageArtifactProcessor implements ArtifactProcessor {
             } finally {
                 reader.dispose();
             }
+        } finally {
+            iis.close();
+            imageStream.reset();
         }
     }
 

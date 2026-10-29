@@ -27,9 +27,13 @@ import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.cha
 import org.junit.Test;
 
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.Random;
 
 import javax.imageio.ImageIO;
 
@@ -122,5 +126,34 @@ public class ImageManipulationLimitsTest {
         BufferedImage converted = ImageIO.read(result);
         assertEquals(20, converted.getWidth());
         assertEquals(20, converted.getHeight());
+    }
+
+    @Test
+    public void convertDecodesFileStreamsAfterHeaderCheck() throws Exception {
+        BufferedImage noisy = image(600, 400);
+        Random random = new Random(42);
+        for (int x = 0; x < noisy.getWidth(); x++) {
+            for (int y = 0; y < noisy.getHeight(); y++) {
+                noisy.setRGB(x, y, random.nextInt());
+            }
+        }
+        File file = File.createTempFile("image-limits", ".jpg");
+        file.deleteOnExit();
+        ImageIO.write(noisy, "jpeg", file);
+        assertTrue("source must exceed the default BufferedInputStream buffer", file.length() > 8192);
+
+        ImageArtifactProcessor processor = new ImageArtifactProcessor();
+        // mirrors StaticAssetStorageServiceImpl, which passes a BufferedInputStream marked with a zero read limit
+        try (BufferedInputStream original = new BufferedInputStream(new FileInputStream(file))) {
+            original.mark(0);
+            BufferedImage converted = ImageIO.read(processor.convert(original, new Resize(60, 40, false, false, false, false, null)));
+            assertEquals(60, converted.getWidth());
+            assertEquals(40, converted.getHeight());
+        }
+        try (InputStream unmarkable = new FileInputStream(file)) {
+            BufferedImage converted = ImageIO.read(processor.convert(unmarkable, new Resize(30, 20, false, false, false, false, null)));
+            assertEquals(30, converted.getWidth());
+            assertEquals(20, converted.getHeight());
+        }
     }
 }
