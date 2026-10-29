@@ -25,6 +25,7 @@ import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.openadmin.dto.ClassMetadata;
 import org.broadleafcommerce.openadmin.dto.Entity;
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
 import org.broadleafcommerce.openadmin.server.security.service.RowLevelSecurityService;
@@ -107,9 +108,14 @@ public class AdminCatalogActionsController extends AdminAbstractController {
         PersistencePackageRequest ppr = PersistencePackageRequest.standard()
                 .withCeilingEntityClassname(Product.class.getName());
         ClassMetadata cmd = service.getClassMetadata(ppr).getDynamicResultSet().getClassMetaData();
-        Entity[] records = service.getRecord(ppr, String.valueOf(productId), cmd, false)
-                .getDynamicResultSet()
-                .getRecords();
+        Entity[] records;
+        try {
+            records = service.getRecord(ppr, String.valueOf(productId), cmd, false)
+                    .getDynamicResultSet()
+                    .getRecords();
+        } catch (EntityNotFoundException e) {
+            throw new SecurityServiceException("Security Check Failed: cannot generate Skus for product " + productId, e);
+        }
         if (records == null || records.length == 0
                 || !rowLevelSecurityService.canUpdate(adminRemoteSecurityService.getPersistentAdminUser(), records[0])) {
             throw new SecurityServiceException("Security Check Failed: cannot generate Skus for product " + productId);

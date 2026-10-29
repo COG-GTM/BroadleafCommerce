@@ -25,6 +25,7 @@ import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.openadmin.dto.ClassMetadata;
 import org.broadleafcommerce.openadmin.dto.DynamicResultSet;
 import org.broadleafcommerce.openadmin.dto.Entity;
+import org.broadleafcommerce.openadmin.exception.EntityNotFoundException;
 import org.broadleafcommerce.openadmin.server.domain.PersistencePackageRequest;
 import org.broadleafcommerce.openadmin.server.security.domain.AdminUser;
 import org.broadleafcommerce.openadmin.server.security.remote.EntityOperationType;
@@ -129,6 +130,20 @@ public class AdminCatalogActionsControllerTest {
     public void rejectsProductNotVisibleToUser() throws Exception {
         expectEntityPermissions();
         expectProductRecord(new Entity[0]);
+        expectForbidden();
+
+        assertForbidden(invoke());
+    }
+
+    @Test
+    public void rejectsProductHiddenByFetchRestrictions() throws Exception {
+        expectEntityPermissions();
+        ClassMetadata cmd = new ClassMetadata();
+        EasyMock.expect(adminEntityService.getClassMetadata(EasyMock.anyObject(PersistencePackageRequest.class)))
+                .andReturn(new PersistenceResponse().withDynamicResultSet(new DynamicResultSet(cmd)));
+        EasyMock.expect(adminEntityService.getRecord(EasyMock.anyObject(PersistencePackageRequest.class),
+                EasyMock.eq(String.valueOf(PRODUCT_ID)), EasyMock.same(cmd), EasyMock.eq(false)))
+                .andThrow(new EntityNotFoundException("not found"));
         expectForbidden();
 
         assertForbidden(invoke());
