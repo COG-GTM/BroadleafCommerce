@@ -23,8 +23,12 @@ import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.web.order.security.CartStateRequestProcessor;
 import org.broadleafcommerce.profile.core.domain.Customer;
 import org.easymock.EasyMock;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.StaticApplicationContext;
+import org.springframework.util.ReflectionUtils;
 import org.springframework.web.context.request.WebRequest;
+
+import java.lang.reflect.Field;
 
 /**
  * Binds a customer and cart to the current thread so that {@code CustomerState} and {@code CartState}
@@ -32,10 +36,24 @@ import org.springframework.web.context.request.WebRequest;
  */
 public final class RequestStateTestSupport {
 
+    private static final Field RESOLVER_CONTEXT_FIELD = ReflectionUtils.findField(
+            BroadleafRequestCustomerResolverImpl.class, "applicationContext", ApplicationContext.class);
+
+    private static boolean bound;
+    private static ApplicationContext previousResolverContext;
+
+    static {
+        ReflectionUtils.makeAccessible(RESOLVER_CONTEXT_FIELD);
+    }
+
     private RequestStateTestSupport() {
     }
 
     public static void bind(Customer customer, Order cart) {
+        if (!bound) {
+            previousResolverContext = (ApplicationContext) ReflectionUtils.getField(RESOLVER_CONTEXT_FIELD, null);
+            bound = true;
+        }
         StaticApplicationContext applicationContext = new StaticApplicationContext();
         applicationContext.registerSingleton("blRequestCustomerResolver", BroadleafRequestCustomerResolverImpl.class);
         applicationContext.refresh();
@@ -56,6 +74,11 @@ public final class RequestStateTestSupport {
 
     public static void clear() {
         BroadleafRequestContext.setBroadleafRequestContext(null);
+        if (bound) {
+            ReflectionUtils.setField(RESOLVER_CONTEXT_FIELD, null, previousResolverContext);
+            previousResolverContext = null;
+            bound = false;
+        }
     }
 
 }
