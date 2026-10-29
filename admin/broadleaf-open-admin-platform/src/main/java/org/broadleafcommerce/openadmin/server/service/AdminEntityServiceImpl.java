@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.broadleafcommerce.common.admin.domain.AdminMainEntity;
+import org.broadleafcommerce.common.exception.SecurityServiceException;
 import org.broadleafcommerce.common.exception.ServiceException;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
 import org.broadleafcommerce.common.presentation.client.AddMethodType;
@@ -151,7 +152,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         // They are typically done in their own custom persistence handlers, which will get triggered
         // based on the criteria specific in the PersistencePackage.
         for (Entry<String, EntityForm> entry : entityForm.getDynamicForms().entrySet()) {
-            DynamicEntityFormInfo info = entityForm.getDynamicFormInfo(entry.getKey());
+            DynamicEntityFormInfo info = getValidatedDynamicFormInfo(entityForm, entry.getKey(), entry.getValue());
 
             if (info.getCustomCriteriaOverride() != null) {
                 customCriteria = info.getCustomCriteriaOverride();
@@ -167,6 +168,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
             }
 
             PersistencePackageRequest subRequest = getRequestForEntityForm(entry.getValue(), customCriteria, sectionCrumb);
+            subRequest.withSecurityCeilingEntityClassname(info.getSecurityCeilingClassName());
             ppr.addSubRequest(info.getPropertyName(), subRequest);
         }
         return add(ppr);
@@ -184,7 +186,7 @@ public class AdminEntityServiceImpl implements AdminEntityService {
         // They are typically done in their own custom persistence handlers, which will get triggered
         // based on the criteria specific in the PersistencePackage.
         for (Entry<String, EntityForm> entry : entityForm.getDynamicForms().entrySet()) {
-            DynamicEntityFormInfo info = entityForm.getDynamicFormInfo(entry.getKey());
+            DynamicEntityFormInfo info = getValidatedDynamicFormInfo(entityForm, entry.getKey(), entry.getValue());
 
             if (info.getCustomCriteriaOverride() != null) {
                 customCriteria = info.getCustomCriteriaOverride();
@@ -199,6 +201,26 @@ public class AdminEntityServiceImpl implements AdminEntityService {
             ppr.addSubRequest(info.getPropertyName(), subRequest);
         }
         return update(ppr);
+    }
+
+    /**
+     * Every dynamic form must have been registered by server code with a {@link DynamicEntityFormInfo} whose
+     * ceiling class matches the dynamic form's ceiling entity. Anything else did not originate from the server
+     * and is rejected, since the info determines the security ceiling of the nested persistence request.
+     */
+    protected DynamicEntityFormInfo getValidatedDynamicFormInfo(
+            EntityForm entityForm,
+            String dynamicFormName,
+            EntityForm dynamicForm
+    ) throws SecurityServiceException {
+        DynamicEntityFormInfo info = entityForm.getDynamicFormInfo(dynamicFormName);
+        if (info == null || dynamicForm == null
+                || StringUtils.isBlank(info.getCeilingClassName())
+                || !info.getCeilingClassName().equals(dynamicForm.getCeilingEntityClassname())) {
+            throw new SecurityServiceException("Dynamic form '" + dynamicFormName
+                    + "' does not match a server-registered dynamic form definition");
+        }
+        return info;
     }
 
     @Override
