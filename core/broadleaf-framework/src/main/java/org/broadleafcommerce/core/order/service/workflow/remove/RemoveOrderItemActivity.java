@@ -26,7 +26,10 @@ import org.broadleafcommerce.core.workflow.BaseActivity;
 import org.broadleafcommerce.core.workflow.ProcessContext;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import jakarta.annotation.Resource;
 
@@ -56,7 +59,32 @@ public class RemoveOrderItemActivity extends BaseActivity<ProcessContext<CartOpe
         CartOperationRequest request = context.getSeedData();
 
         OrderItem orderItem = request.getOrderItem();
-        removeItemAndChildren(request.getOisToDelete(), orderItem);
+        List<OrderItem> itemsToDelete = new ArrayList<>();
+        removeItemAndChildren(itemsToDelete, orderItem);
+
+        // children attached from another order must not be deleted through this order
+        Set<Long> orderItemIdsInOrder = new HashSet<>();
+        for (OrderItem oi : request.getOrder().getOrderItems()) {
+            orderItemIdsInOrder.add(oi.getId());
+        }
+        List<OrderItem> foreignItems = new ArrayList<>();
+        for (OrderItem itemToDelete : itemsToDelete) {
+            if (itemToDelete == orderItem || orderItemIdsInOrder.contains(itemToDelete.getId())) {
+                request.getOisToDelete().add(itemToDelete);
+            } else {
+                foreignItems.add(itemToDelete);
+            }
+        }
+
+        // detach foreign items from a parent that is about to be deleted so the parent reference does not block deletion
+        for (OrderItem foreignItem : foreignItems) {
+            OrderItem parent = foreignItem.getParentOrderItem();
+            if (parent != null && request.getOisToDelete().contains(parent)) {
+                parent.getChildOrderItems().remove(foreignItem);
+                foreignItem.setParentOrderItem(null);
+                orderItemService.saveOrderItem(foreignItem);
+            }
+        }
 
         return context;
     }

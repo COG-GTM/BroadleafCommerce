@@ -20,6 +20,9 @@ package org.broadleafcommerce.core.spec.order.service.workflow.add
 import org.broadleafcommerce.common.currency.domain.BroadleafCurrencyImpl
 import org.broadleafcommerce.core.catalog.domain.SkuImpl
 import org.broadleafcommerce.core.catalog.service.CatalogService
+import org.broadleafcommerce.core.order.domain.Order
+import org.broadleafcommerce.core.order.domain.OrderImpl
+import org.broadleafcommerce.core.order.domain.OrderItem
 import org.broadleafcommerce.core.order.service.OrderItemService
 import org.broadleafcommerce.core.order.service.OrderService
 import org.broadleafcommerce.core.order.service.ProductOptionValidationService
@@ -41,6 +44,8 @@ import org.broadleafcommerce.core.order.service.workflow.service.OrderItemReques
  * <li> pass all above -> itemRequest.skuId set to sku.getId()
  * <li> orderItemRequestDTO not NonDiscrete && getOrder.getCurrency != null && sku.getCurrency != null && getOrder.currency!=sku.currency -> IllegalArgumentException
  * <li> parentOrderItemId != null && orderItemService.readOrderItemById == null -> IllegalArgumentException
+ * <li> parentOrderItemId != null && parent belongs to a different order -> IllegalArgumentException
+ * <li> parentOrderItemId != null && parent belongs to the same order -> passes
  * <li> all pass
  * </ol>
  * 
@@ -277,5 +282,57 @@ class ValidateAddRequestActivitySpec extends BaseAddItemActivitySpec {
 
         then: "An IllegalArgumentException is thrown"
         IllegalArgumentException e = thrown()
+    }
+
+    def "If parentOrderItemId belongs to a different order, throw an IllegalArgumentException"(){
+        setup: "the parent order item exists but belongs to another customer's order"
+        context.seedData.itemRequest.setProductId(null)
+        context.seedData.itemRequest.setQuantity(1)
+
+        SkuImpl testSku = Mock(SkuImpl)
+        activity.determineSku(*_) >> testSku
+        testSku.isActive() >> true
+        testSku.getId() >> 2
+
+        Order otherOrder = new OrderImpl()
+        otherOrder.id = 2
+        OrderItem foreignParent = Mock(OrderItem)
+        foreignParent.getOrder() >> otherOrder
+
+        context.seedData.itemRequest.parentOrderItemId = 99
+        activity.orderItemService.readOrderItemById(99) >> foreignParent
+
+        when: "The activity is executed"
+        context = activity.execute(context)
+
+        then: "An IllegalArgumentException is thrown"
+        thrown(IllegalArgumentException)
+    }
+
+    def "If parentOrderItemId belongs to the same order, the request is accepted"(){
+        setup: "the parent order item belongs to the cart being modified"
+        context.seedData.itemRequest.setProductId(null)
+        context.seedData.itemRequest.setQuantity(1)
+
+        SkuImpl testSku = Mock(SkuImpl)
+        activity.determineSku(*_) >> testSku
+        testSku.isActive() >> true
+        testSku.getId() >> 2
+
+        Order sameOrder = new OrderImpl()
+        sameOrder.id = context.seedData.order.id
+        OrderItem parent = Mock(OrderItem)
+        parent.getOrder() >> sameOrder
+
+        context.seedData.itemRequest.parentOrderItemId = 5
+        activity.orderItemService.readOrderItemById(5) >> parent
+
+        when: "The activity is executed"
+        context = activity.execute(context)
+
+        then: "No exception is thrown, the sku is set and the overridable single-argument hook still runs"
+        notThrown(IllegalArgumentException)
+        context.seedData.itemRequest.skuId == 2
+        1 * activity.validateIfParentOrderItemExists(_)
     }
 }

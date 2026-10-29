@@ -244,6 +244,7 @@ public class FulfillmentGroupItemStrategyImpl implements FulfillmentGroupItemStr
                 fgisToDelete.addAll(updateItemQuantity(order, orderItem, orderItemQuantityDelta));
 
                 List<OrderItem> itemsToUpdate = new ArrayList<>(orderItem.getChildOrderItems());
+                itemsToUpdate.retainAll(order.getOrderItems());
                 for (OrderItem oi : itemsToUpdate) {
                     int quantityPer = oi.getQuantity() / orderItem.getQuantity();
                     fgisToDelete.addAll(updateItemQuantity(order, oi, (quantityPer * orderItemQuantityDelta)));

@@ -358,7 +358,11 @@ public class FulfillmentGroupServiceImpl implements FulfillmentGroupService {
             // This is necessary because an order item may have child items associated
             List<OrderItem> fgItemOrderItems = new ArrayList<>();
             fgItemOrderItems.add(option.getOrderItem());
-            fgItemOrderItems.addAll(option.getOrderItem().getChildOrderItems());
+            for (OrderItem child : option.getOrderItem().getChildOrderItems()) {
+                if (order.getOrderItems().contains(child)) {
+                    fgItemOrderItems.add(child);
+                }
+            }
 
             for (OrderItem orderItem : fgItemOrderItems) {
                 // See if there is a fulfillment group item that matches this OrderMultishipOption

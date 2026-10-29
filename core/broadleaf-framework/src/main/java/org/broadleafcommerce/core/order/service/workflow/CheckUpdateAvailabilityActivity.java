@@ -104,6 +104,9 @@ public class CheckUpdateAvailabilityActivity extends AbstractCheckAvailabilityAc
 
         Integer previousQty = orderItem.getQuantity();
         for (OrderItem child : orderItem.getChildOrderItems()) {
+            if (!order.getOrderItems().contains(child)) {
+                continue;
+            }
             Sku childSku = ((DiscreteOrderItem) child).getSku();
             if (childSku.getProduct().getEnableDefaultSkuInInventory()) {
                 childSku = childSku.getProduct().getDefaultSku();
