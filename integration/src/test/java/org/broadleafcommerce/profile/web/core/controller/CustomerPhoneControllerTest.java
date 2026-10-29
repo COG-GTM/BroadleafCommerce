@@ -26,11 +26,13 @@ import org.broadleafcommerce.profile.web.core.controller.dataprovider.CustomerPh
 import org.broadleafcommerce.profile.web.core.model.PhoneNameForm;
 import org.broadleafcommerce.profile.web.core.security.CustomerStateRequestProcessor;
 import org.broadleafcommerce.test.TestNGSiteIntegrationSetup;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.server.ResponseStatusException;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -102,6 +104,8 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         }
 
         request = this.getNewServletInstance();
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(),
+                customerService.readCustomerByUsername("customer1"));
 
         String view = customerPhoneController.makePhoneDefault(nonDefaultPhoneId, request);
         assert (view.indexOf("viewPhone") >= 0);
@@ -124,12 +128,43 @@ public class CustomerPhoneControllerTest extends TestNGSiteIntegrationSetup {
         int phones_1_size = phones_1.size();
 
         request = this.getNewServletInstance();
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(),
+                customerService.readCustomerByUsername("customer1"));
 
         String view = customerPhoneController.deletePhone(createdCustomerPhoneIds.get(0), request);
         assert (view.indexOf("viewPhone") >= 0);
 
         List<CustomerPhone> phones_2 = customerPhoneService.readAllCustomerPhonesByCustomerId(userId);
         assert ((phones_1_size - phones_2.size()) == 1);
+    }
+
+    @Test(groups = "otherCustomerCannotMutateCustomerPhone", dependsOnGroups = "createCustomerPhoneFromController")
+    @Transactional
+    public void otherCustomerCannotMutateCustomerPhone() {
+        List<CustomerPhone> phones = customerPhoneService.readAllCustomerPhonesByCustomerId(userId);
+        assert (!phones.isEmpty());
+        Long victimPhoneId = phones.get(0).getId();
+        boolean victimPhoneWasDefault = phones.get(0).getPhone().isDefault();
+
+        request = this.getNewServletInstance();
+        request.setAttribute(CustomerStateRequestProcessor.getCustomerRequestAttributeName(),
+                customerService.readCustomerByUsername("customer2"));
+
+        assertNotFound(() -> customerPhoneController.makePhoneDefault(victimPhoneId, request));
+        assertNotFound(() -> customerPhoneController.deletePhone(victimPhoneId, request));
+
+        CustomerPhone victimPhone = customerPhoneService.readCustomerPhoneById(victimPhoneId);
+        assert (victimPhone != null);
+        assert (victimPhone.getPhone().isDefault() == victimPhoneWasDefault);
+    }
+
+    private void assertNotFound(Runnable call) {
+        try {
+            call.run();
+            assert false : "Expected ResponseStatusException(404)";
+        } catch (ResponseStatusException e) {
+            assert (e.getStatusCode() == HttpStatus.NOT_FOUND);
+        }
     }
 
     @Test(groups = "viewCustomerPhoneFromController",dependsOnGroups = "readCustomer")

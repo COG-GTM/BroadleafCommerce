@@ -19,6 +19,7 @@ package org.broadleafcommerce.profile.web.controller;
 
 import org.apache.commons.validator.GenericValidator;
 import org.broadleafcommerce.common.persistence.EntityConfiguration;
+import org.broadleafcommerce.profile.core.domain.Customer;
 import org.broadleafcommerce.profile.core.domain.CustomerPhone;
 import org.broadleafcommerce.profile.core.domain.Phone;
 import org.broadleafcommerce.profile.core.service.CustomerPhoneService;
@@ -27,6 +28,7 @@ import org.broadleafcommerce.profile.web.controller.validator.PhoneValidator;
 import org.broadleafcommerce.profile.web.core.CustomerState;
 import org.broadleafcommerce.profile.web.core.model.PhoneNameForm;
 import org.broadleafcommerce.profile.web.core.util.PhoneFormatter;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -76,18 +79,19 @@ public class CustomerPhoneController {
     private String viewPhoneSuccessView = prefix;
 
     /**
-     * Completely deletes the customerPhone with the given customerPhoneId from the database.
+     * Completely deletes the customerPhone with the given customerPhoneId from the database. The customerPhone must
+     * belong to the customer on the current request.
      *
      * @param customerPhoneId
      * @param request
      * @return
+     * @throws ResponseStatusException (404) if the customerPhone does not exist or belongs to another customer
      */
-    @RequestMapping(value = "deletePhone", method = {
-            RequestMethod.GET, RequestMethod.POST}
-    )
+    @RequestMapping(value = "deletePhone", method = RequestMethod.POST)
     public String deletePhone(@RequestParam(required = true)
                               Long customerPhoneId, HttpServletRequest request) {
-        customerPhoneService.deleteCustomerPhoneById(customerPhoneId);
+        CustomerPhone customerPhone = readOwnedCustomerPhone(customerPhoneId, getCurrentCustomer(request));
+        customerPhoneService.deleteCustomerPhoneById(customerPhone.getId());
 
         request.setAttribute("phone.deletedPhone", "true");
 
@@ -112,21 +116,21 @@ public class CustomerPhoneController {
     }
 
     /**
-     * Sets the passed in customerPhoneId as the default phone for the user.
+     * Sets the passed in customerPhoneId as the default phone for the current customer.
      *
      * @param customerPhoneId
      * @param request
      * @return
+     * @throws ResponseStatusException (404) if the customerPhone does not exist or belongs to another customer
      */
-    @RequestMapping(value = "makePhoneDefault", method = {
-            RequestMethod.GET, RequestMethod.POST}
-    )
+    @RequestMapping(value = "makePhoneDefault", method = RequestMethod.POST)
     public String makePhoneDefault(
             @RequestParam(required = true) Long customerPhoneId,
             HttpServletRequest request
     ) {
-        CustomerPhone customerPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
-        customerPhoneService.makeCustomerPhoneDefault(customerPhone.getId(), customerPhone.getCustomer().getId());
+        Customer currentCustomer = getCurrentCustomer(request);
+        CustomerPhone customerPhone = readOwnedCustomerPhone(customerPhoneId, currentCustomer);
+        customerPhoneService.makeCustomerPhoneDefault(customerPhone.getId(), currentCustomer.getId());
 
         request.setAttribute("phone.madePhoneDefault", "true");
 
@@ -191,6 +195,32 @@ public class CustomerPhoneController {
         } else {
             return savePhoneErrorView;
         }
+    }
+
+    /**
+     * Reads the customerPhone with the given id, but only if it belongs to the given customer. Unknown ids and ids
+     * owned by other customers are rejected identically so record existence is not disclosed.
+     */
+    protected CustomerPhone readOwnedCustomerPhone(Long customerPhoneId, Customer customer) {
+        CustomerPhone customerPhone = customerPhoneId == null
+                ? null
+                : customerPhoneService.readCustomerPhoneById(customerPhoneId);
+        if (!isOwnedBy(customerPhone, customer)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return customerPhone;
+    }
+
+    protected boolean isOwnedBy(CustomerPhone customerPhone, Customer customer) {
+        return customer != null
+                && customer.getId() != null
+                && customerPhone != null
+                && customerPhone.getCustomer() != null
+                && customer.getId().equals(customerPhone.getCustomer().getId());
+    }
+
+    protected Customer getCurrentCustomer(HttpServletRequest request) {
+        return customerState.getCustomer(request);
     }
 
     public void setCustomerPhoneService(CustomerPhoneService customerPhoneService) {
@@ -263,13 +293,10 @@ public class CustomerPhoneController {
         if (customerPhoneId == null) {
             return viewPhoneSuccessView;
         } else {
-            Long currCustomerId = customerState.getCustomer(request).getId();
             CustomerPhone cPhone = customerPhoneService.readCustomerPhoneById(customerPhoneId);
 
             if (cPhone != null) {
-                // TODO: verify this is the current customers phone
-                //? - do we really need this since we read the phone with the currCustomerId?
-                if (!cPhone.getCustomer().getId().equals(currCustomerId)) {
+                if (!isOwnedBy(cPhone, getCurrentCustomer(request))) {
                     return viewPhoneErrorView;
                 }
 
