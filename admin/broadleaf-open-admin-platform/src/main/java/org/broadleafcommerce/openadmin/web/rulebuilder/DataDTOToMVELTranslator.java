@@ -56,6 +56,16 @@ public class DataDTOToMVELTranslator {
     public static final String SIZE_EQUALS_OPERATOR = ".size()==";
     public static final String ZERO_OPERATOR = "0";
 
+    /**
+     * Value passed by the null operators so that the MVEL {@code null} token is emitted instead of a string literal.
+     */
+    protected static final Object NULL_LITERAL = new Object() {
+        @Override
+        public String toString() {
+            return "null";
+        }
+    };
+
     protected static final Pattern FIELD_REFERENCE = Pattern.compile(
             "[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*|\\['[A-Za-z0-9_\\-]*'\\])*");
 
@@ -222,7 +232,7 @@ public class DataDTOToMVELTranslator {
                 break;
             }
             case IS_NULL: {
-                buildExpression(sb, entityKey, field, new Object[]{"null"}, type, secondaryType, EQUALS_OPERATOR,
+                buildExpression(sb, entityKey, field, new Object[]{NULL_LITERAL}, type, secondaryType, EQUALS_OPERATOR,
                         false, false, false, false, true);
                 break;
             }
@@ -268,7 +278,7 @@ public class DataDTOToMVELTranslator {
                 break;
             }
             case NOT_NULL: {
-                buildExpression(sb, entityKey, field, new Object[]{"null"}, type, secondaryType, NOT_EQUALS_OPERATOR,
+                buildExpression(sb, entityKey, field, new Object[]{NULL_LITERAL}, type, secondaryType, NOT_EQUALS_OPERATOR,
                         false, false, false, false, true);
                 break;
             }
@@ -635,6 +645,13 @@ public class DataDTOToMVELTranslator {
             for (int j = 0; j < value.length; j++) {
                 if (StringUtils.isBlank(value[j].toString())) {
                     break;
+                }
+                if (value[j] == NULL_LITERAL) {
+                    response.append("null");
+                    if (j < value.length - 1) {
+                        response.append(",");
+                    }
+                    continue;
                 }
 
                 String parsableVal = value[j].toString();

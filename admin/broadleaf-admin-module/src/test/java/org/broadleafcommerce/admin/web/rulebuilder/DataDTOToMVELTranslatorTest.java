@@ -393,4 +393,30 @@ public class DataDTOToMVELTranslatorTest extends TestCase {
         assertEquals(translated, 2, translated.length() - translated.replace("\"", "").length());
     }
 
+    public void testNullOperatorsOnStringFieldsUseNullToken() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("emailAddress");
+
+        expressionDTO.setOperator(BLCOperator.IS_NULL.name());
+        assertEquals("?customer.?emailAddress==null", translator.createMVEL("customer", expressionDTO, customerFieldService));
+
+        expressionDTO.setOperator(BLCOperator.NOT_NULL.name());
+        assertEquals("?customer.?emailAddress!=null", translator.createMVEL("customer", expressionDTO, customerFieldService));
+
+        expressionDTO.setOperator(BLCOperator.EQUALS.name());
+        expressionDTO.setValue("null");
+        assertEquals("?customer.?emailAddress==\"null\"", translator.createMVEL("customer", expressionDTO, customerFieldService));
+    }
+
+    public void testItemCriteriaValueWithQuotesIsEscaped() throws MVELTranslationException {
+        DataDTOToMVELTranslator translator = new DataDTOToMVELTranslator();
+        ExpressionDTO expressionDTO = new ExpressionDTO();
+        expressionDTO.setId("category.name");
+        expressionDTO.setOperator(BLCOperator.EQUALS.name());
+        expressionDTO.setValue("Men's \"Sale\"");
+        assertEquals("?discreteOrderItem.?category.?name==\"Men's \\\"Sale\\\"\"",
+                translator.createMVEL("discreteOrderItem", expressionDTO, orderItemFieldService));
+    }
+
 }

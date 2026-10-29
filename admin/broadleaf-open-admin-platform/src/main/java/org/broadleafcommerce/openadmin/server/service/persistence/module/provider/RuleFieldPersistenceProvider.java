@@ -911,7 +911,6 @@ public class RuleFieldPersistenceProvider extends FieldPersistenceProviderAdapte
                 translator, entityKey, dto, fieldService
         );
         if (mvelString != null) {
-            mvelString = mvelString.replace("\\\"", "\"");
             ruleFieldExtractionUtility.validateMvel(mvelString);
         }
         return mvelString;
