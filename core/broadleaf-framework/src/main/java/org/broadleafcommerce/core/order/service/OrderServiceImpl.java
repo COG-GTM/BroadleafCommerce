@@ -829,10 +829,11 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(value = "blTransactionManager", rollbackFor = {RemoveFromCartException.class})
     public Order removeItem(Long orderId, Long orderItemId, boolean priceOrder) throws RemoveFromCartException {
-        preValidateCartOperation(findOrderById(orderId));
+        Order order = findOrderById(orderId);
+        preValidateCartOperation(order);
         try {
             OrderItem oi = orderItemService.readOrderItemById(orderItemId);
-            if (oi == null) {
+            if (oi == null || !isOrderItemRemovableFromOrder(order, oi)) {
                 throw new WorkflowException(new ItemNotFoundException());
             }
             List<Long> childrenToRemove = new ArrayList<Long>();
@@ -889,13 +890,43 @@ public class OrderServiceImpl implements OrderService {
         return context.getSeedData().getOrder();
     }
 
+    /**
+     * Resolves the order a remove operation should run against. This is the order identified by {@code orderId}, except
+     * when the item lives in a named order (wishlist) owned by the same customer as a non-named {@code orderId} order,
+     * which supports replacing a wishlist item from the cart.
+     */
     protected Order findOrderByIdOrByOrderItemId(final Long orderId, final Long orderItemId) {
+        final Order requestedOrder = findOrderById(orderId);
         final OrderItem orderItem = orderItemService.readOrderItemById(orderItemId);
-        final String namedType = OrderStatus.NAMED.getType();
-        if (orderItem != null && orderItem.getOrder() != null && namedType.equals(orderItem.getOrder().getStatus().getType())) {
+        if (orderItem != null && isSameCustomerNamedOrder(requestedOrder, orderItem.getOrder())) {
             return orderItem.getOrder();
         }
-        return findOrderById(orderId);
+        return requestedOrder;
+    }
+
+    protected boolean isOrderItemRemovableFromOrder(final Order requestedOrder, final OrderItem orderItem) {
+        final Order owningOrder = orderItem.getOrder();
+        if (requestedOrder == null || owningOrder == null) {
+            return false;
+        }
+        if (requestedOrder.getId() != null && requestedOrder.getId().equals(owningOrder.getId())) {
+            return true;
+        }
+        return isSameCustomerNamedOrder(requestedOrder, owningOrder);
+    }
+
+    protected boolean isSameCustomerNamedOrder(final Order requestedOrder, final Order owningOrder) {
+        if (requestedOrder == null || owningOrder == null || !isNamedOrder(owningOrder) || isNamedOrder(requestedOrder)) {
+            return false;
+        }
+        final Customer requestedCustomer = requestedOrder.getCustomer();
+        final Customer owningCustomer = owningOrder.getCustomer();
+        return requestedCustomer != null && owningCustomer != null && requestedCustomer.getId() != null
+                && requestedCustomer.getId().equals(owningCustomer.getId());
+    }
+
+    protected boolean isNamedOrder(final Order order) {
+        return order.getStatus() != null && OrderStatus.NAMED.getType().equals(order.getStatus().getType());
     }
 
     @Override
