@@ -64,6 +64,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 
 import jakarta.annotation.Resource;
@@ -565,6 +566,10 @@ public class OrderItemServiceImpl implements OrderItemService {
 
         if (orderItemRequestDTO.getParentOrderItemId() != null) {
             OrderItem parent = readOrderItemById(orderItemRequestDTO.getParentOrderItemId());
+            if (parent == null || !isOrderItemInOrder(parent, order)) {
+                throw new IllegalArgumentException("Could not find parent order item by the given id ("
+                        + orderItemRequestDTO.getParentOrderItemId() + ") in the current order");
+            }
             item.setParentOrderItem(parent);
         }
 
@@ -653,6 +658,18 @@ public class OrderItemServiceImpl implements OrderItemService {
     @Override
     public Long readNumberOfOrderItems() {
         return orderItemDao.readNumberOfOrderItems();
+    }
+
+    protected boolean isOrderItemInOrder(OrderItem orderItem, Order order) {
+        if (order == null || order.getId() == null) {
+            return false;
+        }
+        Order itemOrder = orderItem.getOrder();
+        if (itemOrder == null && orderItem instanceof DiscreteOrderItem) {
+            BundleOrderItem bundle = ((DiscreteOrderItem) orderItem).getBundleOrderItem();
+            itemOrder = bundle == null ? null : bundle.getOrder();
+        }
+        return itemOrder != null && Objects.equals(itemOrder.getId(), order.getId());
     }
 
 }

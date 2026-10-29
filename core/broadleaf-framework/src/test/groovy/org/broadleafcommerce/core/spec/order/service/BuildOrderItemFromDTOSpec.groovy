@@ -40,6 +40,7 @@ class BuildOrderItemFromDTOSpec extends BaseBuildOrderItemFromDTOSpec {
      *  d) not a b or c -> BundleOrderItem
      * 2) category == null and product != null -> category is Default
      * 3) parentOrderItemId != null-> item.getParentOrderItem = orderItemService.readOrderItemById()
+     * 4) parentOrderItemId belongs to a different order -> IllegalArgumentException
      * 
      * 
      */
@@ -196,6 +197,7 @@ class BuildOrderItemFromDTOSpec extends BaseBuildOrderItemFromDTOSpec {
 
         BundleOrderItem testItem = new BundleOrderItemImpl()
         OrderItem testParent = Mock(OrderItem)
+        testParent.getOrder() >> context.seedData.order
 
         testItemRequest.getParentOrderItemId() >> 1
 
@@ -209,5 +211,33 @@ class BuildOrderItemFromDTOSpec extends BaseBuildOrderItemFromDTOSpec {
         1 * orderItemService.readOrderItemById(_) >> testParent
         orderItem == testItem
         orderItem.getParentOrderItem() == testParent
+    }
+
+    def "If the parent order item belongs to a different order, an IllegalArgumentException is thrown"() {
+        setup:
+        OrderItemRequestDTO testItemRequest = Spy(OrderItemRequestDTO).with {
+            skuId = 1
+            productId = 1
+            categoryId = 1
+            quantity = 1
+            it
+        }
+        context.seedData.itemRequest = testItemRequest
+        testItemRequest.getParentOrderItemId() >> 1
+
+        Order otherOrder = new OrderImpl()
+        otherOrder.id = 2
+        OrderItem foreignParent = Mock(OrderItem)
+        foreignParent.getOrder() >> otherOrder
+
+        mockCatalogService.findProductById(_) >> Mock(ProductImpl)
+        orderItemService.createDiscreteOrderItem(_) >> new DiscreteOrderItemImpl()
+        orderItemService.readOrderItemById(1) >> foreignParent
+
+        when: "The activity is executed"
+        orderItemService.buildOrderItemFromDTO(context.seedData.order, context.seedData.itemRequest)
+
+        then: "The foreign parent is rejected"
+        thrown(IllegalArgumentException)
     }
 }

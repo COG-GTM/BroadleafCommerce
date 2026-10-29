@@ -30,6 +30,9 @@ import org.broadleafcommerce.core.catalog.domain.ProductOption;
 import org.broadleafcommerce.core.catalog.domain.ProductOptionXref;
 import org.broadleafcommerce.core.catalog.domain.Sku;
 import org.broadleafcommerce.core.catalog.service.CatalogService;
+import org.broadleafcommerce.core.order.domain.BundleOrderItem;
+import org.broadleafcommerce.core.order.domain.DiscreteOrderItem;
+import org.broadleafcommerce.core.order.domain.Order;
 import org.broadleafcommerce.core.order.domain.OrderItem;
 import org.broadleafcommerce.core.order.service.OrderItemService;
 import org.broadleafcommerce.core.order.service.OrderService;
@@ -52,6 +55,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 
@@ -142,7 +146,7 @@ public class ValidateAddRequestActivity extends BaseActivity<ProcessContext<Cart
                 throw new IllegalArgumentException("Cannot have items with differing currencies in one cart");
             }
 
-            validateIfParentOrderItemExists(orderItemRequestDTO);
+            validateIfParentOrderItemExists(orderItemRequestDTO, request);
         }
 
         return context;
@@ -333,8 +337,12 @@ public class ValidateAddRequestActivity extends BaseActivity<ProcessContext<Cart
         }
     }
 
+    /**
+     * @deprecated use {@link #validateIfParentOrderItemExists(OrderItemRequestDTO, CartOperationRequest)}, which
+     * also verifies that the parent order item belongs to the order being modified
+     */
+    @Deprecated
     protected void validateIfParentOrderItemExists(OrderItemRequestDTO orderItemRequestDTO) {
-        // If the user has specified a parent order item to attach this to, it must exist in this cart
         if (orderItemRequestDTO.getParentOrderItemId() != null) {
             OrderItem parent = orderItemService.readOrderItemById(orderItemRequestDTO.getParentOrderItemId());
             if (parent == null) {
@@ -342,6 +350,29 @@ public class ValidateAddRequestActivity extends BaseActivity<ProcessContext<Cart
                         + orderItemRequestDTO.getParentOrderItemId() + ")");
             }
         }
+    }
+
+    protected void validateIfParentOrderItemExists(OrderItemRequestDTO orderItemRequestDTO, CartOperationRequest request) {
+        // If the user has specified a parent order item to attach this to, it must exist in this cart
+        if (orderItemRequestDTO.getParentOrderItemId() != null) {
+            OrderItem parent = orderItemService.readOrderItemById(orderItemRequestDTO.getParentOrderItemId());
+            if (parent == null || !isOrderItemInOrder(parent, request.getOrder())) {
+                throw new IllegalArgumentException("Could not find parent order item by the given id ("
+                        + orderItemRequestDTO.getParentOrderItemId() + ") in the current order");
+            }
+        }
+    }
+
+    protected boolean isOrderItemInOrder(OrderItem orderItem, Order order) {
+        if (order == null || order.getId() == null) {
+            return false;
+        }
+        Order itemOrder = orderItem.getOrder();
+        if (itemOrder == null && orderItem instanceof DiscreteOrderItem) {
+            BundleOrderItem bundle = ((DiscreteOrderItem) orderItem).getBundleOrderItem();
+            itemOrder = bundle == null ? null : bundle.getOrder();
+        }
+        return itemOrder != null && Objects.equals(itemOrder.getId(), order.getId());
     }
 
 }

@@ -87,6 +87,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -844,8 +845,18 @@ public class OrderServiceImpl implements OrderService {
             } else {
                 findAllChildrenToRemove(childrenToRemove, oi);
             }
+            Set<Long> orderItemIdsInOrder = new HashSet<>();
+            Order order = findOrderById(orderId);
+            if (order != null) {
+                for (OrderItem orderItem : order.getOrderItems()) {
+                    orderItemIdsInOrder.add(orderItem.getId());
+                }
+            }
             for (Long childToRemove : childrenToRemove) {
-                removeItemInternal(orderId, childToRemove, false);
+                // children attached from another order cannot be removed through this order
+                if (orderItemIdsInOrder.contains(childToRemove)) {
+                    removeItemInternal(orderId, childToRemove, false);
+                }
             }
 
             return removeItemInternal(orderId, orderItemId, priceOrder);
