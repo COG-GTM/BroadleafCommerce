@@ -25,7 +25,9 @@ import org.broadleafcommerce.core.catalog.domain.Category;
 import org.broadleafcommerce.core.search.domain.SearchCriteria;
 import org.broadleafcommerce.core.search.domain.SearchFacetDTO;
 import org.broadleafcommerce.core.search.domain.SearchFacetResultDTO;
+import org.broadleafcommerce.core.search.service.solr.SolrRequestHandlerValidator;
 import org.broadleafcommerce.core.web.catalog.CategoryHandlerMapping;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -43,12 +45,22 @@ public class SearchFacetDTOServiceImpl implements SearchFacetDTOService {
     @Resource(name = "blExploitProtectionService")
     protected ExploitProtectionService exploitProtectionService;
 
+    @Value("${" + SolrRequestHandlerValidator.ALLOWED_REQUEST_HANDLERS_PROPERTY + ":}")
+    protected String allowedRequestHandlers;
+
     protected int getDefaultPageSize() {
         return BLCSystemProperty.resolveIntSystemProperty("web.defaultPageSize");
     }
 
     protected int getMaxPageSize() {
         return BLCSystemProperty.resolveIntSystemProperty("web.maxPageSize");
+    }
+
+    /**
+     * @return comma-separated Solr request handlers that the {@code qt} request parameter may select
+     */
+    protected String getAllowedRequestHandlers() {
+        return allowedRequestHandlers;
     }
 
     @Override
@@ -80,11 +92,9 @@ public class SearchFacetDTOServiceImpl implements SearchFacetDTOService {
                 }
                 searchCriteria.setQuery(query);
             } else if (Objects.equals(key, SearchCriteria.REQUEST_HANDLER)) {
-                String requestHandler = entry.getValue()[0];
-                if (!requestHandler.startsWith("/")) {
-                    requestHandler = "/" + requestHandler;
-                }
-                searchCriteria.setRequestHandler(requestHandler);
+                searchCriteria.setRequestHandler(SolrRequestHandlerValidator.resolve(
+                        entry.getValue()[0], getAllowedRequestHandlers()
+                ));
             } else {
                 facets.put(key, entry.getValue());
             }
