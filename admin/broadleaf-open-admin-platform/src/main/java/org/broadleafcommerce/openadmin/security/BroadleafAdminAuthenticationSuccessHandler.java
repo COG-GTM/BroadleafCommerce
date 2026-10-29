@@ -30,6 +30,8 @@ import org.springframework.security.web.savedrequest.SavedRequest;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.ServletException;
@@ -42,6 +44,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
     private static final String successUrlParameter = "successUrl=";
+    private static final int MAX_DECODE_PASSES = 3;
     protected String loginUri = "/login"; // default login uri but can be overridden in admin security config
     @Resource(name = "blAdminSecurityRemoteService")
     protected SecurityVerifier adminRemoteSecurityService;
@@ -103,9 +106,100 @@ public class BroadleafAdminAuthenticationSuccessHandler extends SimpleUrlAuthent
         // Remove the login URI so we don't continuously redirect to the login page
         targetUrl = removeLoginSegment(targetUrl);
 
+        // The target may have been replaced by the embedded successUrl value after the check above,
+        // so the value actually redirected to is validated on its own
+        if (!isLocalRedirectTarget(targetUrl, request)) {
+            logger.error("SECURITY FAILURE Bad redirect location, using the default target url instead: "
+                    + StringUtil.sanitize(targetUrl));
+            targetUrl = getDefaultTargetUrl();
+        }
+
         logger.debug("Redirecting to DefaultSavedRequest Url: " + StringUtil.sanitize(targetUrl));
 
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
+    }
+
+    /**
+     * Determines whether the redirect target stays on the current host: either a host relative path starting with a
+     * single '/', or an absolute url whose scheme, host and port match the current request. Protocol relative urls
+     * ("//host"), backslash variants ("/\\host"), other schemes and url encoded forms of these are rejected.
+     *
+     * @param url the redirect target
+     * @param request the current request
+     * @return true if the url is safe to redirect to
+     */
+    protected boolean isLocalRedirectTarget(String url, HttpServletRequest request) {
+        if (url == null) {
+            return false;
+        }
+        String path = stripCurrentOrigin(url, request);
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '\\' || Character.isWhitespace(c) || Character.isISOControl(c)) {
+                return false;
+            }
+        }
+        int queryPosition = path.length();
+        for (int i = 0; i < path.length(); i++) {
+            if (path.charAt(i) == '?' || path.charAt(i) == '#') {
+                queryPosition = i;
+                break;
+            }
+        }
+        // only the part before the query or fragment determines where the browser goes
+        String current = path.substring(0, queryPosition);
+        for (int i = 0; i <= MAX_DECODE_PASSES; i++) {
+            if (!isHostRelativePath(current)) {
+                return false;
+            }
+            String decoded;
+            try {
+                decoded = URLDecoder.decode(current, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+            if (decoded.equals(current)) {
+                return true;
+            }
+            current = decoded;
+        }
+        return false;
+    }
+
+    protected boolean isHostRelativePath(String path) {
+        if (path.isEmpty()) {
+            return true;
+        }
+        if (path.charAt(0) != '/' || path.contains("://")) {
+            return false;
+        }
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '\\' || Character.isWhitespace(c) || Character.isISOControl(c)) {
+                return false;
+            }
+        }
+        return path.length() == 1 || path.charAt(1) != '/';
+    }
+
+    /**
+     * Removes a leading scheme, host and optional port when they match the current request. Urls for any other origin
+     * are returned unchanged so that they fail the host relative path check.
+     */
+    protected String stripCurrentOrigin(String url, HttpServletRequest request) {
+        String origin = request.getScheme() + "://" + request.getServerName();
+        if (!url.regionMatches(true, 0, origin, 0, origin.length())) {
+            return url;
+        }
+        String remainder = url.substring(origin.length());
+        String port = ":" + request.getServerPort();
+        if (remainder.startsWith(port)) {
+            remainder = remainder.substring(port.length());
+        }
+        if (remainder.isEmpty() || remainder.charAt(0) == '/') {
+            return remainder;
+        }
+        return url;
     }
 
     /**
