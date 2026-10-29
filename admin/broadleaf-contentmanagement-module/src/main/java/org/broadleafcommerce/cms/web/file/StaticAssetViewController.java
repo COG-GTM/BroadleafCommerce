@@ -28,6 +28,7 @@ import org.broadleafcommerce.cms.file.service.operation.StaticMapNamedOperationC
 import org.broadleafcommerce.common.classloader.release.ThreadLocalManager;
 import org.broadleafcommerce.common.web.BroadleafRequestContext;
 import org.broadleafcommerce.common.web.BroadleafSiteResolver;
+import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.ImageDimensionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
@@ -154,6 +155,10 @@ public class StaticAssetViewController extends AbstractController {
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             LOG.error("Could not retrieve asset request " + fullUrl
                     + " from the StaticAssetStorage. The underlying file path checked was " + e.getMessage());
+            return null;
+        } catch (ImageDimensionException e) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            LOG.debug("Rejected image manipulation request for " + fullUrl + ": " + e.getMessage());
             return null;
         } catch (Exception e) {
             LOG.error("Unable to retrieve static asset", e);

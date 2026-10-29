@@ -142,6 +142,8 @@ public class Resize extends BaseFilter {
                     "same as the dst image");
         }
 
+        validateDimensions(targetWidth, targetHeight);
+
         if (src.getWidth() <= targetWidth && src.getHeight() <= targetHeight && reduceOnly) {
             return src;
         }
@@ -197,6 +199,7 @@ public class Resize extends BaseFilter {
             destW = targetWidth;
             destH = targetHeight;
         }
+        validateDimensions(destW, destH);
 
         if (higherQuality) {
             // Use multi-step technique: start with original size, then

@@ -24,18 +24,21 @@ import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.cha
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.AlterHSB;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.AlterRGB;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.AutoLevelsRGB;
+import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.BaseFilter;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.Crop;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.FilterTypeEnum;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.GaussianBlur;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.Resize;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.Rotate;
 import org.broadleafcommerce.openadmin.server.service.artifact.image.effects.chain.filter.UnsharpMask;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -50,6 +53,13 @@ public class EffectsManager {
     @Resource(name = "blImageConversionManager")
     protected ConversionManager conversionManager;
     protected Map<String, OperationBuilder> filters = new HashMap<>();
+
+    /**
+     * Upper bound, in pixels per side, for images produced by the built-in effects. Requests above it are rejected
+     * with an {@link ImageDimensionException} before the destination image is allocated.
+     */
+    @Value("${asset.server.max.image.dimension:" + BaseFilter.DEFAULT_MAX_DIMENSION + "}")
+    protected int maxImageDimension = BaseFilter.DEFAULT_MAX_DIMENSION;
 
     public EffectsManager() {
         filters.put(FilterTypeEnum.ALTERHSB.toString().toLowerCase(), new AlterHSB());
@@ -123,11 +133,19 @@ public class EffectsManager {
 
         Method setImageFormatMethod = filterClass.getMethod("setImageFormat", String.class);
         setImageFormatMethod.invoke(filterInstance, formatName);
+        if (filterInstance instanceof BaseFilter) {
+            ((BaseFilter) filterInstance).setMaxDimension(maxImageDimension);
+        }
 
         Method filterMethod = filterClass.getMethod("filter", new Class[]{BufferedImage.class, BufferedImage.class});
-        Object result = filterMethod.invoke(filterInstance, new Object[]{src, null});
-
-        return (BufferedImage) result;
+        try {
+            return (BufferedImage) filterMethod.invoke(filterInstance, new Object[]{src, null});
+        } catch (InvocationTargetException e) {
+            if (e.getCause() instanceof ImageDimensionException) {
+                throw (ImageDimensionException) e.getCause();
+            }
+            throw e;
+        }
     }
 
     /**
@@ -142,6 +160,14 @@ public class EffectsManager {
      */
     public void setFilters(Map<String, OperationBuilder> filters) {
         this.filters.putAll(filters);
+    }
+
+    public int getMaxImageDimension() {
+        return maxImageDimension;
+    }
+
+    public void setMaxImageDimension(int maxImageDimension) {
+        this.maxImageDimension = maxImageDimension;
     }
 
     /**
