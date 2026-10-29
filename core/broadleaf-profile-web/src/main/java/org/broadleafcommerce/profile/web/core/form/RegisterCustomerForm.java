@@ -28,6 +28,23 @@ public class RegisterCustomerForm implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Request parameters that may be bound onto a {@link RegisterCustomerForm}. The form carries a persistent
+     * {@link Customer} entity, so binding must be restricted to these fields; anything else (e.g. {@code customer.id},
+     * {@code customer.registered} or {@code customer.password}) would let a client overwrite another customer's record.
+     */
+    public static final String[] DEFAULT_ALLOWED_BINDING_FIELDS = {
+            "customer.firstName",
+            "customer.lastName",
+            "customer.emailAddress",
+            "customer.username",
+            "customer.receiveEmail",
+            "password",
+            "passwordConfirm",
+            "redirectUrl",
+            "providerId"
+    };
+
     protected Customer customer;
     protected String password;
     protected String passwordConfirm;

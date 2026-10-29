@@ -33,7 +33,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -49,6 +51,11 @@ import jakarta.servlet.http.HttpServletResponse;
  * then calls saveCustomer.
  */
 public class RegisterCustomerController {
+
+    protected static final String[] CHALLENGE_BINDING_FIELDS = {
+            "customer.challengeQuestion",
+            "customer.unencodedChallengeAnswer"
+    };
 
     // URLs For success and failure
     protected String displayRegistrationFormView = "/account/registration/registerCustomer";
@@ -66,6 +73,20 @@ public class RegisterCustomerController {
 
     @Resource(name = "blLoginService")
     protected LoginService loginService;
+
+    @InitBinder
+    public void initRegisterCustomerFormBinder(WebDataBinder binder) {
+        if (binder.getTarget() instanceof RegisterCustomerForm) {
+            binder.setAllowedFields(getRegisterCustomerFormAllowedFields());
+        }
+    }
+
+    protected String[] getRegisterCustomerFormAllowedFields() {
+        return Stream.concat(
+                Arrays.stream(RegisterCustomerForm.DEFAULT_ALLOWED_BINDING_FIELDS),
+                Arrays.stream(CHALLENGE_BINDING_FIELDS)
+        ).toArray(String[]::new);
+    }
 
     @RequestMapping(value = "registerCustomer", method = {RequestMethod.GET})
     public String registerCustomer() {
