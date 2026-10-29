@@ -40,7 +40,12 @@ public class LocalRedirectStrategyTest {
             "https://evil.example/account",
             "http://acme-store.example@evil.example/",
             "https://evil.example\\@acme-store.example/account",
-            "javascript:alert(1)"
+            "javascript:alert(1)",
+            "/%2fevil.example",
+            "/%2Fevil.example/account",
+            "/%5cevil.example",
+            "/%252fevil.example",
+            "/%09/evil.example"
     };
 
     @Test
@@ -73,6 +78,22 @@ public class LocalRedirectStrategyTest {
     public void rejectsOffSiteUrlUnderContextPath() throws Exception {
         assertRejected("/store", "successUrl", "https://acme-store.example/other/account");
         assertRejected("/store", "successUrl", "https://acme-store.example/storefront/account");
+        assertRejected("/store", "successUrl", "https://acme-store.example/store/../admin");
+        assertRejected("/store", "successUrl", "https://acme-store.example/store/%2e%2e/admin");
+        assertRejected("/store", "successUrl", "https://acme-store.example/store/%252e%252e/admin");
+        assertRejected("/store", "successUrl", "/../admin");
+        assertRejected("/store", "successUrl", "/./account");
+    }
+
+    @Test
+    public void contextRelativeRedirectToContextRootStaysOnContextRoot() throws Exception {
+        LocalRedirectStrategy strategy = new LocalRedirectStrategy();
+        strategy.setContextRelative(true);
+        MockHttpServletRequest request = request("/store");
+        request.setParameter("successUrl", "https://acme-store.example/store");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        strategy.sendRedirect(request, response, "https://acme-store.example/store");
+        assertEquals("/store/", response.getRedirectedUrl());
     }
 
     @Test
@@ -112,10 +133,13 @@ public class LocalRedirectStrategyTest {
 
     @Test
     public void detectsUnsafeRedirectSyntax() {
-        for (String url : new String[] {"//evil.example", "/\\evil.example", "/a\\b", "/\t/evil", " /account", "/a\u0085b"}) {
+        for (String url : new String[] {"//evil.example", "/\\evil.example", "/a\\b", "/\t/evil", " /account", "/a\u0085b",
+                "/%2fevil.example", "/%5Cevil.example", "/%25252fevil.example", "/a/%2e%2E/b", "/a/..", "https://host/a/../b",
+                "/a%0d%0aSet-Cookie:x"}) {
             assertEquals(url, true, LocalRedirectStrategy.hasUnsafeRedirectSyntax(url));
         }
-        for (String url : new String[] {null, "", "/", "/account", "/login?error=true", "account"}) {
+        for (String url : new String[] {null, "", "/", "/account", "/login?error=true", "account", "/category/men%20shirts",
+                "/search?q=a%2F..%2Fb", "/a/..b/c", "https://host//account", "/100%", "/account#/../x"}) {
             assertEquals(url, false, LocalRedirectStrategy.hasUnsafeRedirectSyntax(url));
         }
     }

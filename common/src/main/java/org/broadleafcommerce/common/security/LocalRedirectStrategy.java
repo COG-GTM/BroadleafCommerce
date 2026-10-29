@@ -22,9 +22,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.security.web.RedirectStrategy;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -37,6 +41,8 @@ import jakarta.servlet.http.HttpServletResponse;
 public class LocalRedirectStrategy implements RedirectStrategy {
 
     private static final Log LOG = LogFactory.getLog(LocalRedirectStrategy.class);
+    private static final Pattern ABSOLUTE_URL_PREFIX = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://[^/?#]*");
+    private static final int MAX_DECODE_PASSES = 3;
     private boolean contextRelative = false;
     private boolean enforcePortMatch = false;
 
@@ -68,9 +74,11 @@ public class LocalRedirectStrategy implements RedirectStrategy {
     }
 
     /**
-     * Whether the url contains syntax that browsers may interpret as pointing at a different host, i.e. a
-     * protocol-relative prefix ({@code //host}), a backslash (treated as {@code /} by browsers) or a whitespace /
-     * control character (stripped by browsers, so {@code /<tab>/host} becomes {@code //host}).
+     * Whether the url contains syntax that browsers (or intermediaries that decode the url) may interpret as pointing
+     * outside the application, i.e. a protocol-relative prefix ({@code //host}), a backslash (treated as {@code /} by
+     * browsers), a whitespace / control character (stripped by browsers, so {@code /<tab>/host} becomes
+     * {@code //host}), or a {@code .} / {@code ..} path segment. The path is also checked in percent-decoded form so
+     * that encoded variants such as {@code /%2fhost}, {@code /%5chost} or {@code /%2e%2e/} are rejected.
      *
      * @param url the url to check
      * @return true if the url should not be used as a redirect target
@@ -79,16 +87,68 @@ public class LocalRedirectStrategy implements RedirectStrategy {
         if (url == null) {
             return false;
         }
-        if (url.startsWith("//")) {
+        if (url.startsWith("//") || containsUnsafeCharacter(url, true)) {
             return true;
         }
-        for (int i = 0; i < url.length(); i++) {
-            char c = url.charAt(i);
-            if (c == '\\' || c <= ' ' || Character.isISOControl(c) || Character.isWhitespace(c)) {
+        Matcher absolutePrefix = ABSOLUTE_URL_PREFIX.matcher(url);
+        boolean relative = !absolutePrefix.find();
+        String path = relative ? url : url.substring(absolutePrefix.end());
+        int queryOrFragment = StringUtils.indexOfAny(path, "?#");
+        if (queryOrFragment >= 0) {
+            path = path.substring(0, queryOrFragment);
+        }
+        for (int i = 0; i < MAX_DECODE_PASSES; i++) {
+            if (hasDotSegment(path)) {
+                return true;
+            }
+            String decoded = percentDecode(path);
+            if (decoded.equals(path)) {
+                return false;
+            }
+            path = decoded;
+            if ((relative && path.startsWith("//")) || containsUnsafeCharacter(path, false)) {
+                return true;
+            }
+        }
+        return hasDotSegment(path) || !percentDecode(path).equals(path);
+    }
+
+    private static boolean containsUnsafeCharacter(String value, boolean rejectSpace) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\\' || Character.isISOControl(c) || (Character.isWhitespace(c) && (rejectSpace || c != ' '))) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean hasDotSegment(String path) {
+        for (String segment : path.split("/", -1)) {
+            if (".".equals(segment) || "..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String percentDecode(String value) {
+        if (value.indexOf('%') < 0) {
+            return value;
+        }
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '%' && i + 2 < value.length()
+                    && Character.digit(value.charAt(i + 1), 16) >= 0 && Character.digit(value.charAt(i + 2), 16) >= 0) {
+                bytes.write(Character.digit(value.charAt(i + 1), 16) << 4 | Character.digit(value.charAt(i + 2), 16));
+                i += 2;
+            } else {
+                byte[] encoded = String.valueOf(c).getBytes(StandardCharsets.UTF_8);
+                bytes.write(encoded, 0, encoded.length);
+            }
+        }
+        return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
     }
 
     /**
@@ -112,6 +172,10 @@ public class LocalRedirectStrategy implements RedirectStrategy {
 
         url = url.substring(url.indexOf("://") + 3);
         url = url.substring(url.indexOf(contextPath) + contextPath.length());
+
+        if (url.isEmpty()) {
+            return contextPath + "/";
+        }
 
         if ((url.length() > 1) && (url.charAt(0) == '/')) {
             url = url.substring(1);
