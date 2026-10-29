@@ -38,8 +38,9 @@ import java.util.Map;
  * When adding a bundle using this DTO, you MUST have the {@link ProductBundle} included in the productId for it to
  * properly instantiate the {@link BundleOrderItem}
  * <p>
- * Important Note:  To protect against misuse, the {@link OrderService}'s addItemToCart method will blank out
- * any values passed in on this DTO for the overrideSalePrice or overrideRetailPrice.
+ * Important Note:  To protect against misuse, the {@link OrderService}'s addItem method will blank out
+ * any values passed in on this DTO, and on any of its child order item requests, for the overrideSalePrice
+ * or overrideRetailPrice.
  * <p>
  * Instead, implementors should call the more explicit addItemWithPriceOverrides.
  */
