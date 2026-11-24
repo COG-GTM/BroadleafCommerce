@@ -431,24 +431,26 @@ public class OrderServiceImpl implements OrderService {
                 TransactionDefinition.PROPAGATION_REQUIRED,
                 transactionManager
         );
-        Session session = em.unwrap(Session.class);
-        FlushMode current = session.getHibernateFlushMode();
         Order pricedOrder;
         try {
-            if (!autoFlushSaveCart) {
-                //Performance measure. Hibernate will sometimes perform an autoflush when performing query operations and this can
-                //be expensive. It is possible to avoid the autoflush if there's no concern about queries in the flow returning
-                //incorrect results because something has not been flushed to the database yet.
-                session.setHibernateFlushMode(FlushMode.MANUAL);
+            Session session = em.unwrap(Session.class);
+            FlushMode current = session.getHibernateFlushMode();
+            try {
+                if (!autoFlushSaveCart) {
+                    //Performance measure. Hibernate will sometimes perform an autoflush when performing query operations and this can
+                    //be expensive. It is possible to avoid the autoflush if there's no concern about queries in the flow returning
+                    //incorrect results because something has not been flushed to the database yet.
+                    session.setHibernateFlushMode(FlushMode.MANUAL);
+                }
+                pricedOrder = pricingService.executePricing(order);
+            } finally {
+                if (!autoFlushSaveCart) {
+                    session.setHibernateFlushMode(current);
+                }
             }
-            pricedOrder = pricingService.executePricing(order);
-        } catch (PricingException | RuntimeException ex) {
+        } catch (Throwable ex) {
             TransactionUtils.finalizeTransaction(status, transactionManager, true);
             throw ex;
-        } finally {
-            if (!autoFlushSaveCart) {
-                session.setHibernateFlushMode(current);
-            }
         }
         transactionManager.commit(status);
         return pricedOrder;
