@@ -333,16 +333,8 @@ public class OrderServiceImpl implements OrderService {
             int retryCount = 0;
             boolean isValid = false;
             while (!isValid) {
-                Session session = em.unwrap(Session.class);
-                FlushMode current = session.getHibernateFlushMode();
                 try {
-                    if (!autoFlushSaveCart) {
-                        //Performance measure. Hibernate will sometimes perform an autoflush when performing query operations and this can
-                        //be expensive. It is possible to avoid the autoflush if there's no concern about queries in the flow returning
-                        //incorrect results because something has not been flushed to the database yet.
-                        session.setHibernateFlushMode(FlushMode.MANUAL);
-                    }
-                    order = pricingService.executePricing(order);
+                    order = executePricingWithFlushMode(order);
                     isValid = true;
                 } catch (Exception ex) {
                     boolean isValidCause = false;
@@ -387,10 +379,6 @@ public class OrderServiceImpl implements OrderService {
                             throw new PricingException(ex);
                         }
                     }
-                } finally {
-                    if (!autoFlushSaveCart) {
-                        session.setHibernateFlushMode(current);
-                    }
                 }
             }
 
@@ -429,6 +417,41 @@ public class OrderServiceImpl implements OrderService {
         }
 
         return order;
+    }
+
+    /**
+     * Runs the pricing workflow inside a transaction started here, so the {@link FlushMode#MANUAL} set below applies to the
+     * session the workflow uses. Setting it before a transaction exists has no effect: Spring resets a MANUAL flush mode to
+     * AUTO when the transactional pricing service begins its own transaction. The flush mode is restored before commit, so
+     * the pricing changes are still flushed then.
+     */
+    protected Order executePricingWithFlushMode(Order order) throws PricingException {
+        TransactionStatus status = TransactionUtils.createTransaction(
+                "priceOrder",
+                TransactionDefinition.PROPAGATION_REQUIRED,
+                transactionManager
+        );
+        Session session = em.unwrap(Session.class);
+        FlushMode current = session.getHibernateFlushMode();
+        Order pricedOrder;
+        try {
+            if (!autoFlushSaveCart) {
+                //Performance measure. Hibernate will sometimes perform an autoflush when performing query operations and this can
+                //be expensive. It is possible to avoid the autoflush if there's no concern about queries in the flow returning
+                //incorrect results because something has not been flushed to the database yet.
+                session.setHibernateFlushMode(FlushMode.MANUAL);
+            }
+            pricedOrder = pricingService.executePricing(order);
+        } catch (PricingException | RuntimeException ex) {
+            TransactionUtils.finalizeTransaction(status, transactionManager, true);
+            throw ex;
+        } finally {
+            if (!autoFlushSaveCart) {
+                session.setHibernateFlushMode(current);
+            }
+        }
+        transactionManager.commit(status);
+        return pricedOrder;
     }
 
     // This method exists to provide OrderService methods the ability to save an order
