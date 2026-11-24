@@ -19,7 +19,6 @@ package org.broadleafcommerce.core.order.service;
 
 import org.broadleafcommerce.core.catalog.domain.Product;
 import org.broadleafcommerce.core.order.domain.Order;
-import org.broadleafcommerce.core.order.domain.OrderImpl;
 import org.broadleafcommerce.core.order.service.call.OrderItemRequestDTO;
 import org.broadleafcommerce.core.pricing.service.PricingService;
 import org.broadleafcommerce.core.pricing.service.exception.PricingException;
@@ -31,6 +30,7 @@ import org.springframework.orm.jpa.EntityManagerHolder;
 import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testng.annotations.Test;
@@ -38,12 +38,17 @@ import org.testng.annotations.Test;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import jakarta.annotation.Resource;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceContext;
 
+/**
+ * Covers {@link OrderServiceImpl#save(Order, Boolean)} with pricing when no transaction is open yet, as from a storefront
+ * request where only the open-entity-manager-in-view entity manager is bound.
+ */
 public class CartPricingFlushModeTest extends CommonSetupBaseTest {
 
     @Resource(name = "entityManagerFactory")
@@ -59,48 +64,115 @@ public class CartPricingFlushModeTest extends CommonSetupBaseTest {
     protected EntityManager em;
 
     @Test(groups = "testCartPricingFlushMode")
-    public void testPricingKeepsManualFlushModeWithoutOuterTransaction() throws Exception {
-        Product product = addTestProduct("flush mode product", "flush mode category");
+    public void testPricingKeepsManualFlushModeAndFlushesAtPricingCommit() throws Exception {
+        Order cart = createUnpricedCart("flush mode product");
+        BigDecimal totalBeforePricing = readCommittedTotal(cart.getId());
+        List<FlushMode> flushModesDuringPricing = new ArrayList<>();
+        List<BigDecimal> totalsCommittedByPricing = new ArrayList<>();
+
+        Order priced = saveWithPricing(cart, order -> {
+            flushModesDuringPricing.add(em.unwrap(Session.class).getHibernateFlushMode());
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    totalsCommittedByPricing.add(readCommittedTotal(order.getId()));
+                }
+            });
+            return pricingService.executePricing(order);
+        });
+
+        assert flushModesDuringPricing.equals(List.of(FlushMode.MANUAL)) : flushModesDuringPricing;
+        assert priced.getTotal() != null && priced.getTotal().greaterThan(BigDecimal.ZERO);
+        assert !sameAmount(totalBeforePricing, priced.getTotal().getAmount()) : totalBeforePricing;
+        assert totalsCommittedByPricing.size() == 1 : totalsCommittedByPricing;
+        assert sameAmount(totalsCommittedByPricing.get(0), priced.getTotal().getAmount())
+                : totalsCommittedByPricing.get(0) + " != " + priced.getTotal();
+    }
+
+    @Test(groups = "testCartPricingFlushMode")
+    public void testFailedPricingRollsBackAndRestoresFlushMode() throws Exception {
+        Order cart = createUnpricedCart("flush mode rollback product");
+        BigDecimal totalBeforePricing = readCommittedTotal(cart.getId());
+        List<FlushMode> flushModesAroundSave = new ArrayList<>();
+
+        PricingService failingPricingService = order -> {
+            pricingService.executePricing(order);
+            throw new IllegalStateException("pricing failed after changing the order");
+        };
+        PricingException thrown = null;
+        try {
+            saveWithPricing(cart, failingPricingService, flushModesAroundSave);
+        } catch (PricingException e) {
+            thrown = e;
+        }
+
+        assert thrown != null && thrown.getCause() instanceof IllegalStateException : thrown;
+        assert flushModesAroundSave.size() == 2 && flushModesAroundSave.get(0) == flushModesAroundSave.get(1)
+                : flushModesAroundSave;
+        assert !TransactionSynchronizationManager.isActualTransactionActive();
+        assert sameAmount(readCommittedTotal(cart.getId()), totalBeforePricing);
+    }
+
+    protected Order createUnpricedCart(String productName) throws Exception {
+        Product product = addTestProduct(productName, "flush mode category");
         Customer customer = customerService.saveCustomer(customerService.createCustomerFromId(null));
         Order cart = orderService.createNewCartForCustomer(customer);
-        cart = orderService.addItem(cart.getId(), new OrderItemRequestDTO(product.getId(),
+        return orderService.addItem(cart.getId(), new OrderItemRequestDTO(product.getId(),
                 product.getDefaultSku().getId(), product.getCategory().getId(), 2), false);
+    }
 
+    protected Order saveWithPricing(Order cart, PricingService pricing) throws PricingException {
+        return saveWithPricing(cart, pricing, new ArrayList<>());
+    }
+
+    /**
+     * Calls {@code save(cart, true)} with a request-scoped entity manager bound and no outer transaction. The given pricing
+     * runs the way {@code @Transactional} {@code executePricing} does: in a transaction it joins or starts.
+     */
+    protected Order saveWithPricing(Order cart, PricingService pricing, List<FlushMode> flushModesAroundSave)
+            throws PricingException {
         OrderServiceImpl target = AopTestUtils.getUltimateTargetObject(orderService);
-        List<FlushMode> flushModesDuringPricing = new ArrayList<>();
         TransactionTemplate pricingTransaction = new TransactionTemplate(transactionManager);
-        PricingService recordingPricingService = order -> pricingTransaction.execute(status -> {
-            flushModesDuringPricing.add(em.unwrap(Session.class).getHibernateFlushMode());
+        PricingService transactionalPricing = order -> pricingTransaction.execute(status -> {
             try {
-                return pricingService.executePricing(order);
+                return pricing.executePricing(order);
             } catch (PricingException e) {
-                throw new RuntimeException(e);
+                throw new IllegalStateException(e);
             }
         });
 
-        // Mirrors a storefront request: an open-entity-manager-in-view entity manager and no outer transaction
         TransactionSynchronizationManager.bindResource(emf, new EntityManagerHolder(emf.createEntityManager()));
-        ReflectionTestUtils.setField(target, "pricingService", recordingPricingService);
-        Order priced;
+        ReflectionTestUtils.setField(target, "pricingService", transactionalPricing);
         try {
-            priced = orderService.save(cart, true);
+            flushModesAroundSave.add(em.unwrap(Session.class).getHibernateFlushMode());
+            try {
+                return orderService.save(cart, true);
+            } finally {
+                flushModesAroundSave.add(em.unwrap(Session.class).getHibernateFlushMode());
+            }
         } finally {
             ReflectionTestUtils.setField(target, "pricingService", pricingService);
             EntityManagerHolder holder = (EntityManagerHolder) TransactionSynchronizationManager.unbindResource(emf);
             holder.getEntityManager().close();
         }
+    }
 
-        assert flushModesDuringPricing.size() == 1 : flushModesDuringPricing;
-        assert flushModesDuringPricing.get(0) == FlushMode.MANUAL : flushModesDuringPricing;
-        assert priced.getTotal() != null && priced.getTotal().greaterThan(BigDecimal.ZERO);
-
+    /**
+     * Reads the order total straight from the database, bypassing the persistence context and the second-level cache.
+     */
+    protected BigDecimal readCommittedTotal(Long orderId) {
         EntityManager fresh = emf.createEntityManager();
         try {
-            Order reloaded = fresh.find(OrderImpl.class, priced.getId());
-            assert reloaded.getSubTotal().equals(priced.getSubTotal()) : reloaded.getSubTotal() + " != " + priced.getSubTotal();
-            assert reloaded.getTotal().equals(priced.getTotal()) : reloaded.getTotal() + " != " + priced.getTotal();
+            Object total = fresh.createNativeQuery("SELECT ORDER_TOTAL FROM BLC_ORDER WHERE ORDER_ID = ?1")
+                    .setParameter(1, orderId)
+                    .getSingleResult();
+            return total == null ? null : new BigDecimal(total.toString());
         } finally {
             fresh.close();
         }
+    }
+
+    protected boolean sameAmount(BigDecimal a, BigDecimal b) {
+        return a == null || b == null ? Objects.equals(a, b) : a.compareTo(b) == 0;
     }
 }
