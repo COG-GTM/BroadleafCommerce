@@ -95,9 +95,10 @@ public class CartPricingFlushModeTest extends CommonSetupBaseTest {
         BigDecimal totalBeforePricing = readCommittedTotal(cart.getId());
         List<FlushMode> flushModesAroundSave = new ArrayList<>();
 
+        IllegalStateException injectedFailure = new IllegalStateException("pricing failed after changing the order");
         PricingService failingPricingService = order -> {
             pricingService.executePricing(order);
-            throw new IllegalStateException("pricing failed after changing the order");
+            throw injectedFailure;
         };
         PricingException thrown = null;
         try {
@@ -106,7 +107,7 @@ public class CartPricingFlushModeTest extends CommonSetupBaseTest {
             thrown = e;
         }
 
-        assert thrown != null && thrown.getCause() instanceof IllegalStateException : thrown;
+        assert thrown != null && thrown.getCause() == injectedFailure : thrown;
         assert flushModesAroundSave.size() == 2 && flushModesAroundSave.get(0) == flushModesAroundSave.get(1)
                 : flushModesAroundSave;
         assert !TransactionSynchronizationManager.isActualTransactionActive();
