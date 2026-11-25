@@ -534,18 +534,18 @@ public class ZookeeperDistributedQueueDeserializationTest {
     @SuppressWarnings("unchecked")
     public void entryRejectedOnlyByThisNodesJvmFilterIsSkippedNotDeleted() throws Exception {
         ZookeeperDistributedQueue<Serializable> local = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
-                .addMockedMethods("getZookeeperClient", "getQueueAccessLock", "getQueueEntryFolder", "getQueueFolderPath")
-                .addMockedMethod("deserialize", byte[].class)
+                .addMockedMethods("getZookeeperClient", "getQueueAccessLock", "getQueueEntryFolder", "getQueueFolderPath",
+                        "getJvmWideDeserializationFilter")
                 .createMock();
         EasyMock.expect(local.getZookeeperClient()).andReturn(zk).anyTimes();
         EasyMock.expect(local.getQueueAccessLock()).andReturn(lock).anyTimes();
         EasyMock.expect(local.getQueueEntryFolder()).andReturn(ENTRY_FOLDER).anyTimes();
         EasyMock.expect(local.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(local.getJvmWideDeserializationFilter()).andReturn(info ->
+                info.serialClass() == CatalogReindexCommand.class
+                        ? ObjectInputFilter.Status.REJECTED : ObjectInputFilter.Status.UNDECIDED).anyTimes();
         byte[] blocked = serialize(new CatalogReindexCommand(1L));
-        byte[] accepted = serialize(new CatalogReindexCommand(2L));
-        EasyMock.expect(local.deserialize(EasyMock.aryEq(blocked)))
-                .andThrow(new ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException("jvm filter", null));
-        EasyMock.expect(local.deserialize(EasyMock.aryEq(accepted))).andReturn(new CatalogReindexCommand(2L));
+        byte[] accepted = serialize(new FullReindexCommand());
         EasyMock.replay(local);
         Field monitor = ZookeeperDistributedQueue.class.getDeclaredField("QUEUE_MONITOR");
         monitor.setAccessible(true);
@@ -559,7 +559,12 @@ public class ZookeeperDistributedQueueDeserializationTest {
         EasyMock.replay(zk);
 
         // entry-1 must not be deleted: an unexpected delete call would fail the mock.
-        assertEquals(new CatalogReindexCommand(2L), local.poll());
+        try {
+            local.deserialize(blocked);
+            fail("Expected a node-local rejection");
+        } catch (ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException expected) {
+        }
+        assertTrue(local.poll() instanceof FullReindexCommand);
         EasyMock.verify(zk);
     }
 
