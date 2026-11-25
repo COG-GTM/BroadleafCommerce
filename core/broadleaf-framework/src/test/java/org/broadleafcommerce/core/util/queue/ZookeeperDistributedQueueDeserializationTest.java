@@ -37,6 +37,7 @@ import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.lang.reflect.Field;
@@ -232,6 +233,30 @@ public class ZookeeperDistributedQueueDeserializationTest {
             current = next;
         }
         assertRejected(serialize((Serializable) root), "depth=" + (ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_DEPTH + 1));
+    }
+
+    @Test
+    public void jvmWideFilterRejectionIsNotAQueueRejection() {
+        ObjectInputFilter rejectAll = info -> ObjectInputFilter.Status.REJECTED;
+        ObjectInputFilter.FilterInfo info = new ObjectInputFilter.FilterInfo() {
+            public Class<?> serialClass() { return CatalogReindexCommand.class; }
+            public long arrayLength() { return -1; }
+            public long depth() { return 1; }
+            public long references() { return 1; }
+            public long streamBytes() { return 10; }
+        };
+
+        ZookeeperDistributedQueue.RejectionTrackingFilter jvmOnly = new ZookeeperDistributedQueue.RejectionTrackingFilter(
+                info2 -> ObjectInputFilter.Status.ALLOWED, rejectAll);
+        assertEquals(ObjectInputFilter.Status.REJECTED, jvmOnly.checkInput(info));
+        assertFalse("A node-local JVM filter must not cause a shared entry to be deleted", jvmOnly.isRejected());
+        assertTrue(jvmOnly.isRejectedByJvmWideFilter());
+
+        ZookeeperDistributedQueue.RejectionTrackingFilter queueRejects = new ZookeeperDistributedQueue.RejectionTrackingFilter(
+                rejectAll, info2 -> ObjectInputFilter.Status.ALLOWED);
+        assertEquals(ObjectInputFilter.Status.REJECTED, queueRejects.checkInput(info));
+        assertTrue(queueRejects.isRejected());
+        assertFalse(queueRejects.isRejectedByJvmWideFilter());
     }
 
     @Test
@@ -474,36 +499,6 @@ public class ZookeeperDistributedQueueDeserializationTest {
         EasyMock.verify(zk);
     }
 
-    private void expectGetData(String entryName, byte[] data) throws Exception {
-        EasyMock.expect(zk.getData(EasyMock.eq(ENTRY_FOLDER + '/' + entryName), EasyMock.<Watcher>isNull(), EasyMock.<Stat>isNull()))
-                .andReturn(data);
-    }
-
-    private void assertRejected(byte[] data, String expectedReason) {
-        try {
-            queue.deserialize(data);
-            fail("Expected RejectedQueueEntryException");
-        } catch (RejectedQueueEntryException e) {
-            assertTrue(e.getMessage(), e.getMessage().contains(expectedReason));
-        }
-        assertFalse("Gadget readObject must never run", Gadget.triggered);
-    }
-
-    private static byte[] serialize(Serializable obj) {
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
-            oos.writeObject(obj);
-            oos.flush();
-            return baos.toByteArray();
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    static class NotAllowed extends SolrUpdateCommand {
-        private static final long serialVersionUID = 1L;
-    }
-}
     @Test
     public void nullEntryWithChildNodesDoesNotBlockReads() throws Exception {
         EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
@@ -539,3 +534,33 @@ public class ZookeeperDistributedQueueDeserializationTest {
         EasyMock.verify(zk);
     }
 
+    private void expectGetData(String entryName, byte[] data) throws Exception {
+        EasyMock.expect(zk.getData(EasyMock.eq(ENTRY_FOLDER + '/' + entryName), EasyMock.<Watcher>isNull(), EasyMock.<Stat>isNull()))
+                .andReturn(data);
+    }
+
+    private void assertRejected(byte[] data, String expectedReason) {
+        try {
+            queue.deserialize(data);
+            fail("Expected RejectedQueueEntryException");
+        } catch (RejectedQueueEntryException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains(expectedReason));
+        }
+        assertFalse("Gadget readObject must never run", Gadget.triggered);
+    }
+
+    private static byte[] serialize(Serializable obj) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(obj);
+            oos.flush();
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    static class NotAllowed extends SolrUpdateCommand {
+        private static final long serialVersionUID = 1L;
+    }
+}

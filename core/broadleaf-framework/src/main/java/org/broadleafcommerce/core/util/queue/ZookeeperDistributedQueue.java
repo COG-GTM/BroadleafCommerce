@@ -1005,6 +1005,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new RejectedQueueEntryException("Refusing to deserialize an element from the Zookeeper queue, "
                         + getQueueFolderPath() + ": " + filter.getRejectionReason(), e);
             }
+            if (filter.isRejectedByJvmWideFilter()) {
+                throw new DistributedQueueException("This node's JVM-wide jdk.serialFilter rejected an element from the Zookeeper queue, "
+                        + getQueueFolderPath() + ", so it is left for other nodes: " + filter.getJvmWideRejectionReason(), e);
+            }
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {
             if (ois != null) {
@@ -1153,6 +1157,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             getZookeeperClient().delete(entryPath, -1);
         } catch (KeeperException.NoNodeException e) {
             //Already removed by another consumer.
+        } catch (KeeperException.NotEmptyException e) {
+            //Children were created under the entry; leave it, since readers skip it anyway.
+            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
         }
     }
 
@@ -1162,13 +1169,13 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      */
     protected void discardNullEntry(String entryPath) throws Exception {
         LOG.warn("Discarding Zookeeper queue entry " + entryPath + " because it deserialized to null.");
-        } catch (KeeperException.NotEmptyException e) {
-            //Children were created under the entry; leave it, since readers skip it anyway.
-            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
         try {
             getZookeeperClient().delete(entryPath, -1);
         } catch (KeeperException.NoNodeException e) {
             //Already removed by another consumer.
+        } catch (KeeperException.NotEmptyException e) {
+            //Children were created under the entry; leave it, since readers skip it anyway.
+            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
         }
     }
 
@@ -1178,9 +1185,6 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 getLocksFolder() + "/access",
                 "queueAccessLock",
                 false,
-        } catch (KeeperException.NotEmptyException e) {
-            //Children were created under the entry; leave it, since readers skip it anyway.
-            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
                 getAcls()
         );
     }
@@ -1287,33 +1291,49 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     /**
      * Per-stream filter that delegates to the queue's allowlist, also honours any JVM-wide {@code jdk.serialFilter},
      * and records whether a rejection actually happened. That lets callers tell a filter rejection apart from other
-     * {@link java.io.InvalidClassException}s such as a serialVersionUID mismatch during a rolling deploy.
+     * {@link java.io.InvalidClassException}s such as a serialVersionUID mismatch during a rolling deploy. Rejections
+     * by the JVM-wide filter alone are node-local config, so they are tracked separately and never count as a queue
+     * rejection (which deletes the entry for every node).
      */
     protected static class RejectionTrackingFilter implements ObjectInputFilter {
 
         private final ObjectInputFilter delegate;
         private final ObjectInputFilter jvmWideFilter;
         private volatile String rejectionReason;
+        private volatile String jvmWideRejectionReason;
 
         public RejectionTrackingFilter(ObjectInputFilter delegate) {
+            this(delegate, ObjectInputFilter.Config.getSerialFilter());
+        }
+
+        protected RejectionTrackingFilter(ObjectInputFilter delegate, ObjectInputFilter jvmWideFilter) {
             this.delegate = delegate;
-            this.jvmWideFilter = ObjectInputFilter.Config.getSerialFilter();
+            this.jvmWideFilter = jvmWideFilter;
         }
 
         @Override
         public Status checkInput(FilterInfo filterInfo) {
             Status status = delegate.checkInput(filterInfo);
-            if (status != Status.REJECTED && jvmWideFilter != null
-                    && jvmWideFilter.checkInput(filterInfo) == Status.REJECTED) {
-                status = Status.REJECTED;
+            if (status == Status.REJECTED) {
+                if (rejectionReason == null) {
+                    rejectionReason = describe(filterInfo);
+                }
+                return status;
             }
-            if (status == Status.REJECTED && rejectionReason == null) {
-                Class<?> clazz = filterInfo.serialClass();
-                rejectionReason = "filter rejected input (serialClass=" + (clazz != null ? clazz.getName() : "none")
-                        + ", depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
-                        + ", arrayLength=" + filterInfo.arrayLength() + ", bytes=" + filterInfo.streamBytes() + ")";
+            if (jvmWideFilter != null && jvmWideFilter.checkInput(filterInfo) == Status.REJECTED) {
+                if (jvmWideRejectionReason == null) {
+                    jvmWideRejectionReason = describe(filterInfo);
+                }
+                return Status.REJECTED;
             }
             return status;
+        }
+
+        private static String describe(FilterInfo filterInfo) {
+            Class<?> clazz = filterInfo.serialClass();
+            return "filter rejected input (serialClass=" + (clazz != null ? clazz.getName() : "none")
+                    + ", depth=" + filterInfo.depth() + ", references=" + filterInfo.references()
+                    + ", arrayLength=" + filterInfo.arrayLength() + ", bytes=" + filterInfo.streamBytes() + ")";
         }
 
         public boolean isRejected() {
@@ -1322,6 +1342,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
 
         public String getRejectionReason() {
             return rejectionReason;
+        }
+
+        public boolean isRejectedByJvmWideFilter() {
+            return jvmWideRejectionReason != null;
+        }
+
+        public String getJvmWideRejectionReason() {
+            return jvmWideRejectionReason;
         }
     }
 
