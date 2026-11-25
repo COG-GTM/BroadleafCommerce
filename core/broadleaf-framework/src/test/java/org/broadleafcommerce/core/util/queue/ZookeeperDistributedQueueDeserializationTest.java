@@ -18,6 +18,7 @@
 package org.broadleafcommerce.core.util.queue;
 
 import org.apache.solr.common.SolrInputDocument;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
@@ -466,7 +467,7 @@ public class ZookeeperDistributedQueueDeserializationTest {
                 .andReturn(new ArrayList<>(Collections.singletonList("entry-1")))
                 .andReturn(new ArrayList<>()).anyTimes();
         expectGetData("entry-1", serialize(null));
-        zk.delete(ENTRY_FOLDER + "/entry-1", 0);
+        zk.delete(ENTRY_FOLDER + "/entry-1", -1);
         EasyMock.replay(zk);
 
         assertNull(queue.poll(100L, TimeUnit.MILLISECONDS));
@@ -503,3 +504,38 @@ public class ZookeeperDistributedQueueDeserializationTest {
         private static final long serialVersionUID = 1L;
     }
 }
+    @Test
+    public void nullEntryWithChildNodesDoesNotBlockReads() throws Exception {
+        EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
+                .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1"))).times(2);
+        expectGetData("entry-1", serialize(null));
+        zk.delete(ENTRY_FOLDER + "/entry-1", -1);
+        EasyMock.expectLastCall().andThrow(new KeeperException.NotEmptyException(ENTRY_FOLDER + "/entry-1"));
+        expectGetData("entry-2", serialize(new CatalogReindexCommand(7L)));
+        expectGetData("entry-1", serialize(null));
+        zk.delete(ENTRY_FOLDER + "/entry-1", -1);
+        EasyMock.expectLastCall().andThrow(new KeeperException.NotEmptyException(ENTRY_FOLDER + "/entry-1"));
+        expectGetData("entry-2", serialize(new CatalogReindexCommand(7L)));
+        zk.delete(ENTRY_FOLDER + "/entry-2", 0);
+        EasyMock.replay(zk);
+
+        assertEquals(new CatalogReindexCommand(7L), queue.peek());
+        assertEquals(new CatalogReindexCommand(7L), queue.poll());
+        EasyMock.verify(zk);
+    }
+
+    @Test
+    public void rejectedEntryWithChildNodesDoesNotBlockReads() throws Exception {
+        EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
+                .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
+        expectGetData("entry-1", serialize(new Gadget()));
+        zk.delete(ENTRY_FOLDER + "/entry-1", -1);
+        EasyMock.expectLastCall().andThrow(new KeeperException.NotEmptyException(ENTRY_FOLDER + "/entry-1"));
+        expectGetData("entry-2", serialize(new CatalogReindexCommand(8L)));
+        EasyMock.replay(zk);
+
+        assertEquals(new CatalogReindexCommand(8L), queue.peek());
+        assertFalse(Gadget.triggered);
+        EasyMock.verify(zk);
+    }
+

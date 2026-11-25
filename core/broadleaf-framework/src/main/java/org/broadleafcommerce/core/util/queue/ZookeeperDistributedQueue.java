@@ -760,10 +760,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                                 return null;
                                             }
 
-                                            if (remove) {
-                                                getZookeeperClient().delete(entryPath, 0);
-                                            } else if (deserialized == null) {
+                                            if (deserialized == null) {
                                                 discardNullEntry(entryPath);
+                                            } else if (remove) {
+                                                getZookeeperClient().delete(entryPath, 0);
                                             }
 
                                             return deserialized;
@@ -1162,6 +1162,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      */
     protected void discardNullEntry(String entryPath) throws Exception {
         LOG.warn("Discarding Zookeeper queue entry " + entryPath + " because it deserialized to null.");
+        } catch (KeeperException.NotEmptyException e) {
+            //Children were created under the entry; leave it, since readers skip it anyway.
+            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
         try {
             getZookeeperClient().delete(entryPath, -1);
         } catch (KeeperException.NoNodeException e) {
@@ -1175,6 +1178,9 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 getLocksFolder() + "/access",
                 "queueAccessLock",
                 false,
+        } catch (KeeperException.NotEmptyException e) {
+            //Children were created under the entry; leave it, since readers skip it anyway.
+            LOG.error("Unable to discard Zookeeper queue entry " + entryPath + " because it has child nodes.", e);
                 getAcls()
         );
     }
