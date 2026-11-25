@@ -1118,6 +1118,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()
                     + " cannot be added to Zookeeper queue " + getQueueFolderPath()
                     + " because consumers would reject it. Override getDeserializationAllowlist() to allow its classes.", e);
+        } catch (NodeLocallyRejectedQueueEntryException e) {
+            throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()
+                    + " cannot be added to Zookeeper queue " + getQueueFolderPath()
+                    + " because this node's JVM-wide jdk.serialFilter rejects it.", e);
         }
         if (roundTrip == null) {
             throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()

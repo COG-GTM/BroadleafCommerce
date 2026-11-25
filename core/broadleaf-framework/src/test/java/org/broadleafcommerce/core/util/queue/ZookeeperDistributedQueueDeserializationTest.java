@@ -583,7 +583,8 @@ public class ZookeeperDistributedQueueDeserializationTest {
         try {
             local.serializeForQueue(new CatalogReindexCommand(1L));
             fail("The producer's JVM-wide filter must not be bypassed");
-        } catch (ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException expected) {
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getCause() instanceof ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException);
         }
     }
 
