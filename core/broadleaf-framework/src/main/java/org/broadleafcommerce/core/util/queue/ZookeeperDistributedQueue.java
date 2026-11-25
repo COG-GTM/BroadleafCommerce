@@ -1000,6 +1000,11 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
             ois = new ObjectInputStream(bais);
             ois.setObjectInputFilter(filter);
             return ois.readObject();
+        } catch (StackOverflowError e) {
+            //Cyclic graphs of allowed collections (e.g. a list containing itself, hashed by a set) recurse without
+            //bound in hashCode/equals during readObject; the filter's depth limit doesn't see back-references.
+            throw new RejectedQueueEntryException("Refusing to deserialize an element from the Zookeeper queue, "
+                    + getQueueFolderPath() + ": stack exhausted while reading the object graph", e);
         } catch (IOException | ClassNotFoundException e) {
             if (filter.isRejected()) {
                 throw new RejectedQueueEntryException("Refusing to deserialize an element from the Zookeeper queue, "
