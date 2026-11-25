@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -233,6 +234,16 @@ public class ZookeeperDistributedQueueDeserializationTest {
             current = next;
         }
         assertRejected(serialize((Serializable) root), "depth=" + (ZookeeperDistributedQueue.DEFAULT_DESERIALIZATION_MAX_DEPTH + 1));
+    }
+
+    @Test
+    public void rejectsCyclicGraphsThatExhaustTheStack() {
+        // Hashing a list that contains itself recurses without bound once HashSet.readObject re-adds it.
+        ArrayList<Object> selfReferencing = new ArrayList<>();
+        HashSet<Object> set = new HashSet<>();
+        set.add(selfReferencing);
+        selfReferencing.add(selfReferencing);
+        assertRejected(serialize(set), "stack exhausted");
     }
 
     @Test
