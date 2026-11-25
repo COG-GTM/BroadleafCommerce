@@ -945,14 +945,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
      * @throws RejectedQueueEntryException if the data contains a class or graph that the filter rejects
      */
     protected Object deserialize(byte[] bytes) {
-        return deserialize(bytes, getDeserializationFilter(), getJvmWideDeserializationFilter());
+        return deserialize(bytes, getDeserializationFilter());
     }
 
     /**
      * Deserializes one of the queue's internal config values using {@link #CONFIG_DESERIALIZATION_FILTER}.
      */
     protected final Object deserializeConfigValue(byte[] bytes) {
-        return deserialize(bytes, CONFIG_DESERIALIZATION_FILTER, getJvmWideDeserializationFilter());
+        return deserialize(bytes, CONFIG_DESERIALIZATION_FILTER);
     }
 
     /**
@@ -1004,10 +1004,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 && (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF)) == (ObjectStreamConstants.STREAM_MAGIC & 0xFFFF);
     }
 
-    private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter, ObjectInputFilter jvmWideFilter) {
+    private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
-        RejectionTrackingFilter filter = new RejectionTrackingFilter(streamFilter, jvmWideFilter);
+        RejectionTrackingFilter filter = new RejectionTrackingFilter(streamFilter, getJvmWideDeserializationFilter());
         try {
             ois = new ObjectInputStream(bais);
             ois.setObjectInputFilter(filter);
@@ -1105,12 +1105,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         byte[] data = serialize(entry);
         Object roundTrip;
         try {
-            try {
-                roundTrip = deserialize(data);
-            } catch (NodeLocallyRejectedQueueEntryException e) {
-                //This node's JVM-wide filter is not the consumers' policy, so validate against the queue filter alone.
-                roundTrip = deserialize(data, getDeserializationFilter(), null);
-            }
+            roundTrip = deserialize(data);
         } catch (RejectedQueueEntryException e) {
             throw new IllegalArgumentException("Entry of type " + entry.getClass().getName()
                     + " cannot be added to Zookeeper queue " + getQueueFolderPath()

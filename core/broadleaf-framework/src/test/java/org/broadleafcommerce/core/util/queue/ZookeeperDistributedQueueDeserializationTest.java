@@ -570,7 +570,7 @@ public class ZookeeperDistributedQueueDeserializationTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    public void producerJvmFilterDoesNotBlockEnqueue() {
+    public void producerJvmFilterRejectionRefusesEnqueue() {
         ZookeeperDistributedQueue<Serializable> local = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
                 .addMockedMethods("getQueueFolderPath", "getJvmWideDeserializationFilter")
                 .createMock();
@@ -580,11 +580,10 @@ public class ZookeeperDistributedQueueDeserializationTest {
                         ? ObjectInputFilter.Status.REJECTED : ObjectInputFilter.Status.UNDECIDED).anyTimes();
         EasyMock.replay(local);
 
-        assertTrue(local.serializeForQueue(new CatalogReindexCommand(1L)).length > 0);
         try {
-            local.serializeForQueue(new Gadget());
-            fail("The queue allowlist must still apply");
-        } catch (IllegalArgumentException expected) {
+            local.serializeForQueue(new CatalogReindexCommand(1L));
+            fail("The producer's JVM-wide filter must not be bypassed");
+        } catch (ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException expected) {
         }
     }
 
