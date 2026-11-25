@@ -569,6 +569,26 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void producerJvmFilterDoesNotBlockEnqueue() {
+        ZookeeperDistributedQueue<Serializable> local = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("getQueueFolderPath", "getJvmWideDeserializationFilter")
+                .createMock();
+        EasyMock.expect(local.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        EasyMock.expect(local.getJvmWideDeserializationFilter()).andReturn(info ->
+                info.serialClass() == CatalogReindexCommand.class
+                        ? ObjectInputFilter.Status.REJECTED : ObjectInputFilter.Status.UNDECIDED).anyTimes();
+        EasyMock.replay(local);
+
+        assertTrue(local.serializeForQueue(new CatalogReindexCommand(1L)).length > 0);
+        try {
+            local.serializeForQueue(new Gadget());
+            fail("The queue allowlist must still apply");
+        } catch (IllegalArgumentException expected) {
+        }
+    }
+
+    @Test
     public void rejectedEntryWithChildNodesDoesNotBlockReads() throws Exception {
         EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
                 .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
