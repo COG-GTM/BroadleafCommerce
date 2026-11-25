@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InvalidClassException;
 import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -999,6 +1000,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         return ObjectInputFilter.Config.getSerialFilter();
     }
 
+    static boolean isStreamFilterRejection(Exception e) {
+        return e instanceof InvalidClassException && String.valueOf(e.getMessage()).startsWith("filter status: REJECTED");
+    }
+
     private static boolean isJavaSerializationStream(byte[] bytes) {
         return bytes != null && bytes.length >= 2
                 && (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF)) == (ObjectStreamConstants.STREAM_MAGIC & 0xFFFF);
@@ -1022,9 +1027,12 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                 throw new RejectedQueueEntryException("Refusing to deserialize an element from the Zookeeper queue, "
                         + getQueueFolderPath() + ": " + filter.getRejectionReason(), e);
             }
-            if (filter.isRejectedByJvmWideFilter()) {
+            //A custom jdk.serialFilterFactory can merge the JVM-wide filter into the stream filter and reject before
+            //the queue filter runs; that is still a node-local decision.
+            if (filter.isRejectedByJvmWideFilter() || isStreamFilterRejection(e)) {
                 throw new NodeLocallyRejectedQueueEntryException("This node's JVM-wide jdk.serialFilter rejected an element from the Zookeeper queue, "
-                        + getQueueFolderPath() + ", so it is left for other nodes: " + filter.getJvmWideRejectionReason(), e);
+                        + getQueueFolderPath() + ", so it is left for other nodes: "
+                        + (filter.isRejectedByJvmWideFilter() ? filter.getJvmWideRejectionReason() : e.getMessage()), e);
             }
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
         } finally {

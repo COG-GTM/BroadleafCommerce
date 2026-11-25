@@ -588,6 +588,15 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    public void rejectionOutsideTheQueueFilterIsNodeLocal() {
+        assertTrue(ZookeeperDistributedQueue.isStreamFilterRejection(
+                new java.io.InvalidClassException("filter status: REJECTED")));
+        assertFalse(ZookeeperDistributedQueue.isStreamFilterRejection(
+                new java.io.InvalidClassException("org.example.Foo; local class incompatible")));
+        assertFalse(ZookeeperDistributedQueue.isStreamFilterRejection(new IOException("filter status: REJECTED")));
+    }
+
+    @Test
     public void rejectedEntryWithChildNodesDoesNotBlockReads() throws Exception {
         EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
                 .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
