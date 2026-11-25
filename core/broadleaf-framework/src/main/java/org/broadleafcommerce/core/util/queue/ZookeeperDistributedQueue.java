@@ -991,6 +991,14 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         return (Integer) value;
     }
 
+    /**
+     * The JVM-wide filter applied on top of the queue filter. Its rejections are node-local, so readers skip the
+     * entry instead of deleting it.
+     */
+    protected ObjectInputFilter getJvmWideDeserializationFilter() {
+        return ObjectInputFilter.Config.getSerialFilter();
+    }
+
     private static boolean isJavaSerializationStream(byte[] bytes) {
         return bytes != null && bytes.length >= 2
                 && (((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF)) == (ObjectStreamConstants.STREAM_MAGIC & 0xFFFF);
@@ -999,7 +1007,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
     private Object deserialize(byte[] bytes, ObjectInputFilter streamFilter) {
         ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         ObjectInputStream ois = null;
-        RejectionTrackingFilter filter = new RejectionTrackingFilter(streamFilter);
+        RejectionTrackingFilter filter = new RejectionTrackingFilter(streamFilter, getJvmWideDeserializationFilter());
         try {
             ois = new ObjectInputStream(bais);
             ois.setObjectInputFilter(filter);
