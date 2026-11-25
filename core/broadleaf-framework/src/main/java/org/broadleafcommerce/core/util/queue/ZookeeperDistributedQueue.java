@@ -758,6 +758,10 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                                             } catch (RejectedQueueEntryException e) {
                                                 discardRejectedEntry(entryPath, e);
                                                 return null;
+                                            } catch (NodeLocallyRejectedQueueEntryException e) {
+                                                //Skip it here without deleting it, so nodes that accept it can still process it.
+                                                LOG.warn("Skipping Zookeeper queue entry " + entryPath + " on this node.", e);
+                                                return null;
                                             }
 
                                             if (deserialized == null) {
@@ -1011,7 +1015,7 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
                         + getQueueFolderPath() + ": " + filter.getRejectionReason(), e);
             }
             if (filter.isRejectedByJvmWideFilter()) {
-                throw new DistributedQueueException("This node's JVM-wide jdk.serialFilter rejected an element from the Zookeeper queue, "
+                throw new NodeLocallyRejectedQueueEntryException("This node's JVM-wide jdk.serialFilter rejected an element from the Zookeeper queue, "
                         + getQueueFolderPath() + ", so it is left for other nodes: " + filter.getJvmWideRejectionReason(), e);
             }
             throw new DistributedQueueException("Unable to deserialze an element from the Zookeeper queue.", e);
@@ -1289,6 +1293,19 @@ public class ZookeeperDistributedQueue<T extends Serializable> implements Distri
         private static final long serialVersionUID = 1L;
 
         public RejectedQueueEntryException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    /**
+     * Thrown by {@link #deserialize(byte[])} when only this node's JVM-wide {@code jdk.serialFilter} rejects the
+     * payload. Readers skip such an entry without deleting it, since other nodes may accept it.
+     */
+    public static class NodeLocallyRejectedQueueEntryException extends DistributedQueueException {
+
+        private static final long serialVersionUID = 1L;
+
+        public NodeLocallyRejectedQueueEntryException(String message, Throwable cause) {
             super(message, cause);
         }
     }

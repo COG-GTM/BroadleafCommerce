@@ -531,6 +531,39 @@ public class ZookeeperDistributedQueueDeserializationTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void entryRejectedOnlyByThisNodesJvmFilterIsSkippedNotDeleted() throws Exception {
+        ZookeeperDistributedQueue<Serializable> local = EasyMock.partialMockBuilder(ZookeeperDistributedQueue.class)
+                .addMockedMethods("getZookeeperClient", "getQueueAccessLock", "getQueueEntryFolder", "getQueueFolderPath")
+                .addMockedMethod("deserialize", byte[].class)
+                .createMock();
+        EasyMock.expect(local.getZookeeperClient()).andReturn(zk).anyTimes();
+        EasyMock.expect(local.getQueueAccessLock()).andReturn(lock).anyTimes();
+        EasyMock.expect(local.getQueueEntryFolder()).andReturn(ENTRY_FOLDER).anyTimes();
+        EasyMock.expect(local.getQueueFolderPath()).andReturn("/test-queue").anyTimes();
+        byte[] blocked = serialize(new CatalogReindexCommand(1L));
+        byte[] accepted = serialize(new CatalogReindexCommand(2L));
+        EasyMock.expect(local.deserialize(EasyMock.aryEq(blocked)))
+                .andThrow(new ZookeeperDistributedQueue.NodeLocallyRejectedQueueEntryException("jvm filter", null));
+        EasyMock.expect(local.deserialize(EasyMock.aryEq(accepted))).andReturn(new CatalogReindexCommand(2L));
+        EasyMock.replay(local);
+        Field monitor = ZookeeperDistributedQueue.class.getDeclaredField("QUEUE_MONITOR");
+        monitor.setAccessible(true);
+        monitor.set(local, new Object());
+
+        EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
+                .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
+        expectGetData("entry-1", blocked);
+        expectGetData("entry-2", accepted);
+        zk.delete(ENTRY_FOLDER + "/entry-2", 0);
+        EasyMock.replay(zk);
+
+        // entry-1 must not be deleted: an unexpected delete call would fail the mock.
+        assertEquals(new CatalogReindexCommand(2L), local.poll());
+        EasyMock.verify(zk);
+    }
+
+    @Test
     public void rejectedEntryWithChildNodesDoesNotBlockReads() throws Exception {
         EasyMock.expect(zk.getChildren(EasyMock.eq(ENTRY_FOLDER), EasyMock.anyObject(Watcher.class)))
                 .andReturn(new ArrayList<>(Arrays.asList("entry-2", "entry-1")));
