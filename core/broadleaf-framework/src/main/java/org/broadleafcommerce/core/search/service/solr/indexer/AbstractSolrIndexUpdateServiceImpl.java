@@ -211,7 +211,13 @@ public abstract class AbstractSolrIndexUpdateServiceImpl implements SolrIndexUpd
                                 return;
                             }
 
-                            command = (SolrUpdateCommand) queue.poll(getQueuePollTime(), TimeUnit.MILLISECONDS);
+                            Object polled = queue.poll(getQueuePollTime(), TimeUnit.MILLISECONDS);
+                            if (polled != null && !(polled instanceof SolrUpdateCommand)) {
+                                LOG.error("Discarding unexpected " + polled.getClass().getName()
+                                        + " polled from the Solr command queue.");
+                                continue;
+                            }
+                            command = (SolrUpdateCommand) polled;
 
                             if (command != null) {
                                 try {
